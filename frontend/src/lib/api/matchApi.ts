@@ -1,0 +1,132 @@
+// src/lib/api/matchApi.ts
+/**
+ * @fileoverview Match API client for frontend.
+ * @description API client for match CRUD operations.
+ * 
+ * @socexplanation
+ * - This module isolates API communication from presentation logic.
+ * - The frontend fetches structured JSON data, allowing React to render
+ *   the match report dynamically rather than parsing Markdown.
+ * - Updated to use requirementEntityId/offeringEntityId.
+ */
+import { EntityMatch } from '../types';
+import { fetchWrapper } from './apiClient';
+
+export interface MatchFiles {
+  files: string[];
+}
+
+/**
+ * Parameters for querying matches with pagination, search, and status filtering.
+ * @responsibility - Defines the contract for match query operations.
+ * @boundary_rules - Must align with backend API query parameters.
+ */
+export interface MatchQueryParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+}
+
+/**
+ * Response structure for paginated match queries.
+ * @responsibility - Encapsulates match data with pagination metadata.
+ * @boundary_rules - Used by useMatches hook to derive pagination state.
+ */
+export interface MatchQueryResponse {
+  matches: EntityMatch[];
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
+export const matchApi = {
+  /**
+   * Fetches matches with pagination, search, and status filtering.
+   * @param {MatchQueryParams} params - Query parameters for pagination, search, and filtering.
+   * @returns {Promise<MatchQueryResponse>} Matches with pagination metadata.
+   * @throws {Error} If the request fails.
+   */
+  async getMatches(params: MatchQueryParams = {}): Promise<MatchQueryResponse> {
+    const { page = 1, limit = 10, search, status } = params;
+    
+    const queryParams = new URLSearchParams();
+    queryParams.set('page', String(page));
+    queryParams.set('limit', String(limit));
+    
+    if (search) {
+      queryParams.set('search', search);
+    }
+    if (status && status !== 'all') {
+      queryParams.set('status', status);
+    }
+    
+    const data = await fetchWrapper<MatchQueryResponse>(`/matches?${queryParams.toString()}`);
+    return data;
+  },
+
+  /**
+   * Fetches a specific match by ID.
+   * @param {number} id - The match ID.
+   * @returns {Promise<EntityMatch>} The match object.
+   * @throws {Error} If the request fails.
+   */
+  async getMatch(id: number): Promise<EntityMatch> {
+    const data = await fetchWrapper<{ match: EntityMatch }>(`/matches/${id}`);
+    return data.match;
+  },
+
+  /**
+   * Creates a new match and queues an assessment.
+   * @param {number} requirementEntityId - The requirement entity ID.
+   * @param {number} offeringEntityId - The offering entity ID.
+   * @returns {Promise<number>} The ID of the newly created match.
+   * @throws {Error} If the request fails.
+   */
+  async createMatch(requirementEntityId: number, offeringEntityId: number): Promise<number> {
+    const data = await fetchWrapper<{ matchId: number }>('/matches', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requirementEntityId, offeringEntityId }),
+    });
+    return data.matchId;
+  },
+
+  /**
+   * Deletes a match by ID.
+   * @param {number} id - The match ID.
+   * @returns {Promise<void>}
+   * @throws {Error} If the request fails.
+   */
+  async deleteMatch(id: number): Promise<void> {
+    return fetchWrapper(`/matches/${id}`, { method: 'DELETE' });
+  },
+
+  /**
+   * Fetches files in the match folder.
+   * @param {number} id - The match ID.
+   * @returns {Promise<MatchFiles>} The files in the match folder.
+   * @throws {Error} If the request fails.
+   */
+  async getMatchFiles(id: number): Promise<MatchFiles> {
+    return fetchWrapper<MatchFiles>(`/matches/${id}/files`);
+  },
+
+  /**
+   * Fetches the match report JSON data for a specific match.
+   * @param {number} id - The match ID.
+   * @param {string} filename - The report filename (e.g., 'match_report.json').
+   * @returns {Promise<Object>} The parsed JSON match report data.
+   * @throws {Error} If the request fails.
+   */
+  async getMatchReportData(id: number, filename: string): Promise<any> {
+    return fetchWrapper(`/matches/${id}/files/${encodeURIComponent(filename)}`);
+  },
+
+  async openFolder(id: number): Promise<void> {
+    return fetchWrapper(`/matches/${id}/folder/open`, { method: 'POST' });
+  },
+};

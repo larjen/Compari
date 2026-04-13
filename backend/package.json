@@ -1,0 +1,27 @@
+{
+    "name": "compari-backend",
+    "version": "1.0.0",
+    "description": "Express API for Compari",
+    "main": "server.js",
+    "scripts": {
+        "dev": "NODE_ENV=development DEBUG_MODE=true nodemon server.js",
+        "dev:wipe": "NODE_ENV=development DEBUG_MODE=true nodemon server.js --wipe",
+        "start": "DOTENV_MUTE=1 node server.js"
+    },
+    "dependencies": {
+        "all": "^0.0.0",
+        "better-sqlite3": "^11.0.0",
+        "dotenv": "^17.3.1",
+        "express": "^4.19.2",
+        "multer": "^1.4.5-lts.1",
+        "openai": "^4.77.0",
+        "pdf-parse": "^1.1.1",
+        "puppeteer": "^24.40.0",
+        "zod": "^3.25.76"
+    },
+    "devDependencies": {
+        "@types/express": "^5.0.6",
+        "@types/node": "^25.6.0",
+        "nodemon": "^3.1.14"
+    }
+}

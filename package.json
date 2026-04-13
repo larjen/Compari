@@ -1,0 +1,18 @@
+{
+    "name": "compari",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "install:all": "npm install --legacy-peer-deps && cd backend && npm install --legacy-peer-deps && cd ../frontend && npm install --legacy-peer-deps",
+        "dev": "concurrently -n \"API,WEB\" -c \"cyan.bold,magenta.bold\" --kill-others \"cd backend && npm run dev\" \"cd frontend && npm run dev\"",
+        "dev:wipe": "concurrently -n \"API,WEB\" -c \"cyan.bold,magenta.bold\" --kill-others \"cd backend && npm run dev:wipe\" \"cd frontend && npm run dev\"",
+        "build": "cd frontend && npm run build",
+        "start": "concurrently -n \"API,WEB\" -c \"blue.bold,green.bold\" --kill-others \"cd backend && npm start\" \"cd frontend && npm start\""
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    },
+    "dependencies": {
+        "all": "^0.0.0"
+    }
+}

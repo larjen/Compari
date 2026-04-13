@@ -1,0 +1,1 @@
+The following text is extracted from a PDF of a webpage. It contains page markers like <PAGE_NUMBERING_START>. Please remove repetitive headers, footers, and navigation menus, then format the remaining main content into clean Markdown, preserving the original reading flow. Only output the text, no intro no filler.
