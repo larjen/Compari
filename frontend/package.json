@@ -1,6 +1,6 @@
 {
   "name": "compari-frontend",
-  "version": "1.0.0",
+  "version": "0.7.1",
   "private": true,
   "description": "Next.js frontend for Compari",
   "scripts": {

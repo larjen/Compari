@@ -1,6 +1,6 @@
 {
     "name": "compari-backend",
-    "version": "1.0.0",
+    "version": "0.7.1",
     "description": "Express API for Compari",
     "main": "server.js",
     "scripts": {

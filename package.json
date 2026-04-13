@@ -1,6 +1,6 @@
 {
     "name": "compari",
-    "version": "1.0.0",
+    "version": "0.7.1",
     "private": true,
     "scripts": {
         "install:all": "npm install --legacy-peer-deps && cd backend && npm install --legacy-peer-deps && cd ../frontend && npm install --legacy-peer-deps",
