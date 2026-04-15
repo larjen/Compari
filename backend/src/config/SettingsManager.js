@@ -26,7 +26,6 @@
  */
 
 const db = require('../repositories/Database');
-const AiService = require('../services/AiService');
 
 class SettingsManager {
     constructor() {
@@ -117,11 +116,15 @@ class SettingsManager {
 
     /**
      * Tests AI connectivity by sending a test message.
+     * @description Uses deferred require for AiService to prevent circular dependency crashes.
      * @param {string} message - The test message to send to the AI.
      * @returns {Promise<string>} The AI's response.
      * @throws {Error} If the AI connection fails.
      */
     async testAiConnection(message) {
+        // DEFERRED REQUIRE: Breaks circular dependency with AiService
+        const AiService = require('../services/AiService');
+
         const host = this.get('ollama_host');
         const model = this.get('ollama_model');
         return await AiService.testChat(message, host, model);

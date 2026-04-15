@@ -37,7 +37,6 @@
 const { OpenAI } = require('openai');
 const logService = require('./LogService');
 const aiModelRepo = require('../repositories/AiModelRepo');
-const settingsManager = require('../config/SettingsManager');
 
 const DEFAULT_CHAT_MODEL = 'gemma4:e4b';
 const DEFAULT_EMBEDDING_MODEL = 'nomic-embed-text';
@@ -100,7 +99,16 @@ class AiService {
         };
     }
 
+    /**
+     * @private
+     * @description Resolves model configuration based on specific task types.
+     * @note This method uses deferred requiring for SettingsManager to break a 
+     * circular dependency chain during application bootstrap.
+     */
     _getModelConfigForTask(taskType, defaultConfig) {
+        // DEFERRED REQUIRE: Breaks circular dependency with SettingsManager
+        const settingsManager = require('../config/SettingsManager');
+
         let settingKey = null;
         let fallbackRole = null;
 
