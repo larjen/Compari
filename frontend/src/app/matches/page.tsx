@@ -54,8 +54,40 @@ function MatchesPageContent() {
 
   const [createMatchOpen, setCreateMatchOpen] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [deepLinkedMatch, setDeepLinkedMatch] = useState<EntityMatch | null>(null);
+  const [isFetchingDeepLink, setIsFetchingDeepLink] = useState(false);
 
-  const selectedMatchData = matchIdParam ? matches.find(m => m.id === Number(matchIdParam)) || null : null;
+  // Deep-link fallback: fetch match directly if not in local array
+  const matchId = matchIdParam ? parseInt(matchIdParam, 10) : null;
+  const localMatch = matchId ? matches.find((m: any) => m.id === matchId) : null;
+
+  useEffect(() => {
+    if (matchId && !localMatch && !deepLinkedMatch && !isFetchingDeepLink) {
+      const fetchDeepLink = async () => {
+        setIsFetchingDeepLink(true);
+        try {
+          const response = await fetch(`/api/matches/${matchId}`);
+          if (response.ok) {
+            const data = await response.json();
+            setDeepLinkedMatch(data);
+          }
+        } catch (error) {
+          console.error("Failed to fetch deep-linked match:", error);
+        } finally {
+          setIsFetchingDeepLink(false);
+        }
+      };
+      fetchDeepLink();
+    }
+  }, [matchId, localMatch, deepLinkedMatch, isFetchingDeepLink]);
+
+  useEffect(() => {
+    if (!matchId && deepLinkedMatch) {
+      setDeepLinkedMatch(null);
+    }
+  }, [matchId, deepLinkedMatch]);
+
+  const selectedMatchData = localMatch || deepLinkedMatch;
 
   useEffect(() => {
     if (activeModal === 'create-match') {

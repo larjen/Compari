@@ -27,7 +27,7 @@ const criteriaManagerWorkflow = require('../workflows/CriteriaManagerWorkflow');
 const queueService = require('../services/QueueService');
 const entityService = require('../services/EntityService');
 const matchService = require('../services/MatchService');
-const { QUEUE_TASKS, QUEUE_STATUSES, ENTITY_STATUS } = require('../config/constants');
+const { QUEUE_TASKS, ENTITY_STATUS } = require('../config/constants');
 
 /**
  * Wrapper function that enforces Separation of Concerns by decoupling infrastructure
@@ -118,7 +118,7 @@ function withTaskHandling(taskName, handlerFn) {
 function registerTaskListeners() {
 
     // Listen for Entity Document Processing tasks
-    eventService.on(`task:${QUEUE_TASKS.PROCESS_ENTITY_DOCUMENT}`, withTaskHandling(QUEUE_TASKS.PROCESS_ENTITY_DOCUMENT, async ({ task, payload, signal }) => {
+    eventService.on(`task:${QUEUE_TASKS.PROCESS_ENTITY_DOCUMENT}`, withTaskHandling(QUEUE_TASKS.PROCESS_ENTITY_DOCUMENT, async ({ _task, payload, signal }) => {
         const { entityId, folderPath, fileName } = payload;
         
         if (!fileName) {
@@ -138,7 +138,7 @@ function registerTaskListeners() {
     }));
 
     // Listen for AI Assessment tasks
-    eventService.on(`task:${QUEUE_TASKS.ASSESS_ENTITY_MATCH}`, withTaskHandling(QUEUE_TASKS.ASSESS_ENTITY_MATCH, async ({ task, payload, signal }) => {
+    eventService.on(`task:${QUEUE_TASKS.ASSESS_ENTITY_MATCH}`, withTaskHandling(QUEUE_TASKS.ASSESS_ENTITY_MATCH, async ({ _task, payload, _signal }) => {
         const { sourceEntityId, targetEntityId, matchId } = payload;
         if (!sourceEntityId || !targetEntityId) {
             throw new Error('Missing sourceEntityId or targetEntityId in ASSESS_ENTITY_MATCH payload');
@@ -149,7 +149,7 @@ function registerTaskListeners() {
     }));
 
     // Listen for Entity Criteria Extraction tasks
-    eventService.on(`task:${QUEUE_TASKS.EXTRACT_ENTITY_CRITERIA}`, withTaskHandling(QUEUE_TASKS.EXTRACT_ENTITY_CRITERIA, async ({ task, payload, signal }) => {
+    eventService.on(`task:${QUEUE_TASKS.EXTRACT_ENTITY_CRITERIA}`, withTaskHandling(QUEUE_TASKS.EXTRACT_ENTITY_CRITERIA, async ({ _task, payload, signal }) => {
         const { entityId, fileName } = payload;
         if (!entityId) {
             throw new Error('Missing entityId in EXTRACT_ENTITY_CRITERIA payload');

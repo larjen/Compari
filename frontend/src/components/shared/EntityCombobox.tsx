@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Check, ChevronsUpDown, Loader2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, getEntityDisplayNames } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import {
   Command,
@@ -19,7 +19,6 @@ import {
 } from '@/components/ui/Popover';
 import { useEntities } from '@/hooks/useEntities';
 import { useDebounce } from '@/hooks/useDebounce';
-import { getNuancedEntityName } from '@/lib/utils';
 import { Blueprint } from '@/lib/types';
 
 interface EntityComboboxProps {
@@ -49,7 +48,7 @@ export function EntityCombobox({ type, label, value, onChange, blueprints, disab
   }, [open, refetch]);
 
   const selectedEntity = entities.find((e) => e.id === value);
-  const displayValue = selectedEntity ? `#${selectedEntity.id} - ${getNuancedEntityName(selectedEntity, blueprints)}` : '';
+  const displayValue = selectedEntity ? `#${selectedEntity.id} - ${getEntityDisplayNames(selectedEntity, blueprints).full}` : '';
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -88,7 +87,7 @@ export function EntityCombobox({ type, label, value, onChange, blueprints, disab
             )}
             <CommandGroup>
               {entities.map((entity) => {
-                const entityName = `#${entity.id} - ${getNuancedEntityName(entity, blueprints)}`;
+                const entityName = `#${entity.id} - ${getEntityDisplayNames(entity, blueprints).full}`;
                 return (
                   <CommandItem
                     key={entity.id}

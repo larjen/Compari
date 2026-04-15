@@ -12,7 +12,7 @@
  * - ❌ MUST NOT contain business logic (delegated to hooks).
  * - ❌ MUST NOT fetch data directly (delegated to entityApi via hooks).
  * @requires_props
- * - title: Computed from entity using getNuancedEntityName; falls back to 'Entity Details' if unavailable.
+ * - title: Computed from entity using getEntityDisplayNames; falls back to 'Unnamed Entity' if unavailable.
  * - footer: DeleteAction rendered via footerActions prop; show only when entity exists.
  * @validation Renders fallback UI with console warning if entity data is missing.
  */
@@ -21,7 +21,7 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { DeleteAction, EditButton } from '@/components/ui';
 import { Entity, Blueprint } from '@/lib/types';
 import { entityApi } from '@/lib/api/entityApi';
-import { getNuancedEntityName } from '@/lib/utils';
+import { getEntityDisplayNames } from '@/lib/utils';
 import { Info, Files, ListChecks, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CriteriaViewer } from '@/components/shared/CriteriaViewer';
@@ -82,7 +82,7 @@ export function EntityDetailModal({ entity, open, onClose, onDelete, onEdit }: E
   const { files, loading: loadingFiles } = useEntityFiles(entity?.id);
   const { criteria, loading: loadingCriteria } = useEntityCriteria(activeTab === 'criteria' && entity?.id ? entity.id : undefined);
   const { topMatches, loading: loadingMatches, processedCount, totalCount, isComplete } = useTopMatches(entity?.id, activeTab === 'top-matches');
-  const { matches, deleteMatch, addMatch } = useMatches();
+  const { matches, deleteMatch, addMatch } = useMatches({ immediate: open });
 
   useEffect(() => {
     setCurrentEntity(entity);
@@ -142,38 +142,46 @@ const handleSaveMetadata = async (key: string, value: string) => {
     router.push(`/matches?matchId=${matchId}&tab=report`);
   };
 
+  /**
+   * Navigates the user to view an opposing entity.
+   */
+  const handleViewEntity = (matchedEntityId: number, matchedEntityType: string) => {
+    const basePath = matchedEntityType === 'requirement' ? '/' : '/offerings';
+    router.push(`${basePath}?entityId=${matchedEntityId}`);
+  };
+
   if (!entity) return null;
 
-  const entityName = getNuancedEntityName(entity, blueprints) || entity.name || 'Entity Details';
+  // 1. Resolve names using the centralized utility
+  const { primary: primaryName, secondary: secondaryName } = getEntityDisplayNames(entity, blueprints);
 
-  const roleSpecificFields = matchedBlueprint?.fields?.filter(f => f.entity_role === entity.type) || [];
-  const headerFields = roleSpecificFields.filter(f => f.is_required).slice(0, 2);
-  const firstFieldValue = headerFields[0] ? metadata?.[headerFields[0].field_name] : undefined;
-  const secondFieldValue = headerFields[1] ? metadata?.[headerFields[1].field_name] : undefined;
+  // 2. Resolve the dynamic type label (e.g., "Job Listing") from the blueprint
+  const entityBlueprint = blueprints.find(bp => bp.id === entity?.blueprint_id);
+  const typeLabel = entity?.type === 'requirement' 
+    ? (entityBlueprint?.requirementLabelSingular || 'Requirement')
+    : (entityBlueprint?.offeringLabelSingular || 'Offering');
 
-  if (!entityName || entityName === 'Entity Details') {
-    console.warn('EntityDetailModal rendered with missing or fallback title:', entity?.id);
-  }
-
-  const customTitle = headerFields.length > 0 ? (
+  const customTitle = (
     <div className="flex flex-col gap-1.5 pt-1 w-full overflow-hidden">
       <div className="flex items-start gap-2">
-        <span className="text-xs uppercase tracking-wider font-bold text-accent-forest/50 w-24 shrink-0 mt-1.5">{headerFields[0]?.field_name}</span>
-        <span className="text-xl font-serif font-semibold text-accent-forest truncate whitespace-nowrap">{firstFieldValue || '—'}</span>
+        {/* Use the resolved typeLabel to fix the undefined reference error */}
+        <span className="text-xs uppercase tracking-wider font-bold text-accent-forest/50 w-24 shrink-0 mt-1.5">
+          {typeLabel}
+        </span>
+        <span className="text-xl font-serif font-semibold text-accent-forest truncate whitespace-nowrap">
+          {primaryName}
+        </span>
       </div>
-      {headerFields[1] && (
+      {secondaryName && (
         <div className="flex items-start gap-2">
-          <span className="text-xs uppercase tracking-wider font-bold text-accent-forest/50 w-24 shrink-0 mt-1">{headerFields[1]?.field_name}</span>
-          <span className="text-lg font-medium text-accent-forest/80 truncate whitespace-nowrap">{secondFieldValue || '—'}</span>
+          <span className="text-xs uppercase tracking-wider font-bold text-accent-forest/50 w-24 shrink-0 mt-1">
+            Details
+          </span>
+          <span className="text-lg font-medium text-accent-forest/80 truncate whitespace-nowrap">
+            {secondaryName}
+          </span>
         </div>
       )}
-    </div>
-  ) : (
-    <div className="flex flex-col gap-1.5 pt-1 w-full overflow-hidden">
-      <div className="flex items-start gap-2">
-        <span className="text-xs uppercase tracking-wider font-bold text-accent-forest/50 w-24 shrink-0 mt-1.5">{entity?.type === 'requirement' ? 'Requirement' : 'Offering'}</span>
-        <span className="text-xl font-serif font-semibold text-accent-forest truncate whitespace-nowrap">{entityName}</span>
-      </div>
     </div>
   );
 
@@ -268,6 +276,7 @@ const handleSaveMetadata = async (key: string, value: string) => {
               onCloseModal={onClose} 
               onCreateMatchReport={handleCreateMatchReport}
               onViewMatchReport={handleViewMatchReport}
+              onViewEntity={handleViewEntity}
             />
           </motion.div>
         )}

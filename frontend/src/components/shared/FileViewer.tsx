@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, FileText, ExternalLink, Sparkles, FolderOpen, Eye } from 'lucide-react';
+import { Loader2, FileText, ExternalLink, Sparkles, Folder, Eye } from 'lucide-react';
 
 interface FileViewerProps {
   folderPath: string | null;
@@ -35,36 +35,54 @@ export function FileViewer({
   onOpenFolder,
 }: FileViewerProps) {
 
-  return (
-    <div>
+return (
+    <div className="pr-2 space-y-2">
+      {/* 1. Folder Path Pill */}
       {folderPath ? (
-        <div className="mb-4 p-3 bg-background rounded-lg">
-          <p className="text-xs uppercase tracking-wide text-accent-forest/50 mb-1">Folder Path</p>
-          {onOpenFolder ? (
-            <button
-              onClick={onOpenFolder}
-              className="flex items-center gap-1.5 text-xs text-accent-forest/70 hover:bg-accent-sand/20 hover:text-accent-forest rounded px-1 py-0.5 transition-colors cursor-pointer group"
-            >
-              <span className="break-all text-left">{folderPath}</span>
-              <FolderOpen className="w-3.5 h-3.5 text-accent-forest/40 group-hover:text-accent-forest flex-shrink-0" />
-            </button>
-          ) : (
-            <p className="text-xs text-accent-forest/70 break-all">{folderPath}</p>
-          )}
-        </div>
+        onOpenFolder ? (
+          <button
+            onClick={onOpenFolder}
+            className="w-full flex items-center gap-3 p-2 rounded-lg border border-border-light bg-accent-sand/10 hover:bg-accent-sand/20 group transition-all text-left cursor-pointer"
+            title="Open Folder Externally"
+          >
+            <div className="p-2 bg-white rounded border border-border-light text-accent-forest/40 group-hover:text-accent-forest/60 transition-colors shrink-0">
+              <Folder className="w-4 h-4" />
+            </div>
+            
+            <span className="text-sm text-accent-forest/70 group-hover:text-accent-forest truncate flex-1 font-medium transition-colors">
+              {folderPath}
+            </span>
+
+            <div className="flex items-center gap-1 pr-1">
+              <div className="p-1.5 text-accent-forest/40 group-hover:text-accent-forest transition-colors shrink-0">
+                <ExternalLink className="w-4 h-4" />
+              </div>
+            </div>
+          </button>
+        ) : (
+          <div className="w-full flex items-center gap-3 p-2 rounded-lg border border-border-light bg-accent-sand/10 text-left">
+            <div className="p-2 bg-white rounded border border-border-light text-accent-forest/40 shrink-0">
+              <Folder className="w-4 h-4" />
+            </div>
+            <span className="text-sm text-accent-forest/70 truncate flex-1 font-medium">
+              {folderPath}
+            </span>
+          </div>
+        )
       ) : (
-        <div className="mb-4 p-3 bg-red-50 rounded-lg">
-          <p className="text-xs text-red-600">No folder path associated with this entity. Files cannot be stored or viewed.</p>
+        <div className="w-full p-3 bg-red-50 rounded-lg border border-red-100">
+          <p className="text-xs text-red-600 font-medium">No folder path associated with this entity. Files cannot be stored or viewed.</p>
         </div>
       )}
 
+      {/* 2. Files List */}
       {isLoading ? (
-        <div className="flex items-center gap-2 text-accent-forest/50 py-8">
+        <div className="flex items-center gap-2 text-accent-forest/50 py-4">
           <Loader2 className="w-4 h-4 animate-spin" />
           <span>Loading...</span>
         </div>
       ) : files.length > 0 ? (
-        <div className="pr-2 space-y-2">
+        <>
           {files.map((file) => {
             const isViewable = file.endsWith('.jsonl') || file.endsWith('.json') || file.endsWith('.md') || file.endsWith('.txt');
             const downloadUrl = getDownloadUrl(file);
@@ -73,7 +91,7 @@ export function FileViewer({
 
             const PillContent = () => (
               <>
-                <div className="p-2 bg-white rounded border border-border-light text-accent-forest/40 group-hover:text-accent-forest/60 transition-colors">
+                <div className="p-2 bg-white rounded border border-border-light text-accent-forest/40 group-hover:text-accent-forest/60 transition-colors shrink-0">
                   <FileText className="w-4 h-4" />
                 </div>
                 
@@ -83,11 +101,11 @@ export function FileViewer({
 
                 <div className="flex items-center gap-1 pr-1">
                   {isViewable ? (
-                    <div className="p-1.5 text-accent-forest/40 group-hover:text-accent-sage transition-colors">
+                    <div className="p-1.5 text-accent-forest/40 group-hover:text-accent-sage transition-colors shrink-0">
                       <Eye className="w-4 h-4" />
                     </div>
                   ) : (
-                    <div className="p-1.5 text-accent-forest/40 group-hover:text-accent-forest transition-colors">
+                    <div className="p-1.5 text-accent-forest/40 group-hover:text-accent-forest transition-colors shrink-0">
                       <ExternalLink className="w-4 h-4" />
                     </div>
                   )}
@@ -124,9 +142,9 @@ export function FileViewer({
               </a>
             );
           })}
-        </div>
+        </>
       ) : (
-        <p className="text-sm text-accent-forest/40 italic py-8">{emptyMessage}</p>
+        <p className="text-sm text-accent-forest/40 italic py-4">{emptyMessage}</p>
       )}
     </div>
   );

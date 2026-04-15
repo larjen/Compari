@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { Entity, BlueprintField } from '@/lib/types';
-import { Pencil, Link as LinkIcon, X, Save } from 'lucide-react';
+import { Pencil, X, Save } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { DetailItem } from '@/components/shared/DetailItem';
 import { cn } from '@/lib/utils';
@@ -123,7 +123,6 @@ export function MetadataEditor({ entity, metadataFields, onSave }: MetadataEdito
         return (
           <DetailItem
             key={key}
-            icon={key.includes('url') ? LinkIcon : Pencil}
             label={key}
             tooltip={fieldDescription}
           >

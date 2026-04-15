@@ -19,7 +19,7 @@ interface ViewButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 export function ViewButton({ 
   entityName = 'Details', 
   variant = 'secondary', 
-  size = 'sm', 
+  size = 'md', 
   className, 
   ...props 
 }: ViewButtonProps) {
@@ -28,7 +28,7 @@ export function ViewButton({
   return (
     <Button variant={variant} size={size} className={className} {...props}>
       <Eye className="w-4 h-4 mr-2 shrink-0" />
-      <span className="pr-1">View {formattedEntity}</span>
+      <span className="pr-1 truncate">View {formattedEntity}</span>
     </Button>
   );
 }

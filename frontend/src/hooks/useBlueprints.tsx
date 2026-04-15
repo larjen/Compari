@@ -1,52 +1,26 @@
-/**
- * @fileoverview Custom hook for managing Blueprint state with race condition prevention.
- * @description Provides centralized state management for blueprint CRUD operations.
- * @responsibility
- * - Manages blueprint data, loading, and error states.
- * - Provides CRUD methods for blueprint operations.
- * - Uses useSafeFetch for race condition prevention.
- * @boundary_rules
- * - ❌ MUST NOT contain UI components.
- * - ❌ MUST NOT make direct database calls.
- * - All requests go through the blueprintApi.
- * @example
- * const { blueprints, loading, error, addBlueprint, updateBlueprint, deleteBlueprint, refetch } = useBlueprints();
- */
 'use client';
 
-import { useCallback } from 'react';
+import { createContext, useContext, useCallback, ReactNode } from 'react';
 import { useSafeFetch } from './useSafeFetch';
 import { useSSE } from './useSSE';
 import { blueprintApi, CreateBlueprintData, UpdateBlueprintData } from '@/lib/api/blueprintApi';
 import { Blueprint } from '@/lib/types';
 
 export interface UseBlueprintsReturn {
-  /** Array of Blueprint objects */
   blueprints: Blueprint[];
-  /** Whether a fetch operation is currently in progress */
   loading: boolean;
-  /** Error message if the fetch or mutation failed */
   error: string | null;
-  /** Function to manually trigger a refetch */
   refetch: () => Promise<void>;
-  /** Function to create a new blueprint */
   addBlueprint: (data: CreateBlueprintData) => Promise<number>;
-  /** Function to update an existing blueprint */
   updateBlueprint: (id: number, data: UpdateBlueprintData) => Promise<void>;
-  /** Function to delete a blueprint */
   deleteBlueprint: (id: number) => Promise<void>;
-  /** Function to set a blueprint as active */
   setActiveBlueprint: (id: number) => Promise<void>;
 }
 
-/**
- * Custom hook for managing Blueprint state and CRUD operations.
- * @param {('requirement' | 'offering' | null)} [role] - Optional role filter for fetching blueprints.
- * @returns {UseBlueprintsReturn} Object containing blueprints, loading, error states and CRUD functions.
- */
-export function useBlueprints(role?: 'requirement' | 'offering'): UseBlueprintsReturn {
-  const fetcher = useCallback(() => blueprintApi.getBlueprints(role), [role]);
+const BlueprintContext = createContext<UseBlueprintsReturn | undefined>(undefined);
 
+export function BlueprintProvider({ children }: { children: ReactNode }) {
+  const fetcher = useCallback(() => blueprintApi.getBlueprints(), []);
   const { data, loading, error, execute: refetch } = useSafeFetch<Blueprint[]>(fetcher, true);
 
   const handleBlueprintUpdate = useCallback(() => {
@@ -78,7 +52,7 @@ export function useBlueprints(role?: 'requirement' | 'offering'): UseBlueprintsR
     await refetch();
   }, [refetch]);
 
-  return {
+  const value = {
     blueprints: data || [],
     loading,
     error,
@@ -88,4 +62,14 @@ export function useBlueprints(role?: 'requirement' | 'offering'): UseBlueprintsR
     deleteBlueprint,
     setActiveBlueprint,
   };
+
+  return <BlueprintContext.Provider value={value}>{children}</BlueprintContext.Provider>;
+}
+
+export function useBlueprints(): UseBlueprintsReturn {
+  const context = useContext(BlueprintContext);
+  if (!context) {
+    throw new Error('useBlueprints must be used within a BlueprintProvider');
+  }
+  return context;
 }

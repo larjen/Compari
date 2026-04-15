@@ -15,9 +15,9 @@ import { useBlueprints } from '@/hooks/useBlueprints';
 import { entityApi } from '@/lib/api/entityApi';
 import { Entity } from '@/lib/types';
 import { CreateEntityData } from '@/lib/api/entityApi';
-import { getNuancedEntityName } from '@/lib/utils';
+import { getEntityDisplayNames } from '@/lib/utils';
 import { ENTITY_STATUS } from '@/lib/constants';
-import { Loader2, Briefcase } from 'lucide-react';
+import { Loader2, Scale } from 'lucide-react';
 import { EmptyState, ContentLoader } from '@/components/shared/PageStates';
 import { FilterBar } from '@/components/shared/FilterBar';
 import { Pagination } from '@/components/shared/Pagination';
@@ -60,12 +60,42 @@ function DashboardContent() {
   const requirementLabelSingular = activeBlueprint?.requirementLabelSingular || 'Requirement';
   const requirementLabelPlural = activeBlueprint?.requirementLabelPlural || 'Requirements';
 
-  const selectedEntity = entityIdParam 
-    ? entities.find(e => e.id === Number(entityIdParam)) || null 
-    : null;
-
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [deepLinkedEntity, setDeepLinkedEntity] = useState<Entity | null>(null);
+  const [isFetchingDeepLink, setIsFetchingDeepLink] = useState(false);
+
+  // Deep-link fallback: fetch entity directly if not in local array
+  const entityId = entityIdParam ? parseInt(entityIdParam, 10) : null;
+  const localEntity = entityId ? entities.find((e: any) => e.id === entityId) : null;
+
+  useEffect(() => {
+    if (entityId && !localEntity && !deepLinkedEntity && !isFetchingDeepLink) {
+      const fetchDeepLink = async () => {
+        setIsFetchingDeepLink(true);
+        try {
+          const response = await fetch(`/api/entities/${entityId}`);
+          if (response.ok) {
+            const data = await response.json();
+            setDeepLinkedEntity(data);
+          }
+        } catch (error) {
+          console.error("Failed to fetch deep-linked entity:", error);
+        } finally {
+          setIsFetchingDeepLink(false);
+        }
+      };
+      fetchDeepLink();
+    }
+  }, [entityId, localEntity, deepLinkedEntity, isFetchingDeepLink]);
+
+  useEffect(() => {
+    if (!entityId && deepLinkedEntity) {
+      setDeepLinkedEntity(null);
+    }
+  }, [entityId, deepLinkedEntity]);
+
+  const selectedEntity = localEntity || deepLinkedEntity;
 
   useEffect(() => {
     if (activeModal === 'create-requirement') {
@@ -211,12 +241,11 @@ return (
                 onClick={() => router.push(`?entityId=${entity.id}`)}
                 onRetry={() => handleRetryProcessing(entity.id)}
                 onDelete={() => handleDeleteEntity(entity.id)}
-                displayName={getNuancedEntityName(entity, blueprints)}
               />
             )}
           />
         ) : (
-          <EmptyState icon={Briefcase} title={`No ${requirementLabelPlural} yet`} subtitle={`Create a ${requirementLabelSingular.toLowerCase()} to get started`} />
+          <EmptyState icon={Scale} title={`No ${requirementLabelPlural} yet`} subtitle={`Create a ${requirementLabelSingular.toLowerCase()} to get started`} />
         )}
       </div>
 

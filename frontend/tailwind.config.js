@@ -52,8 +52,8 @@ module.exports = {
           sage: '#8FA98F',
           'sage-light': '#B5C9B4',
           sand: '#D4C5A9',
-          forest: '#1A2F24',
-          'forest-light': '#2D4A3A',
+          forest: '#2D4A3A',
+          'forest-light': '#3D634E',
         },
         card: {
           DEFAULT: '#FFFFFF',

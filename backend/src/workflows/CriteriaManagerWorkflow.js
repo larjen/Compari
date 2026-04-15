@@ -28,7 +28,6 @@ const DynamicSchemaBuilder = require('../utils/DynamicSchemaBuilder');
 const MatchingEngine = require('../utils/MatchingEngine');
 const AiValidator = require('../utils/AiValidator');
 const { cosineSimilarity } = require('../utils/VectorMath');
-const { ENTITY_STATUS } = require('../config/constants');
 const path = require('path');
 
 class CriteriaManagerWorkflow {
@@ -275,7 +274,7 @@ class CriteriaManagerWorkflow {
 
             try {
 
-                entityService.updateProcessingStep(entityId, `Extracting Criteria from ${dim.display_name}`);
+                entityService.updateProcessingStep(entityId, `Extracting Criteria from ${dim.displayName}`);
 
                 const messages = PromptBuilder.buildDynamicExtractionMessages(text, singleDimArray, entityRole);
                 const extractionSchema = DynamicSchemaBuilder.buildExtractionSchema(singleDimArray, entityRole);
@@ -321,11 +320,9 @@ class CriteriaManagerWorkflow {
         }
 
         const criteriaByDimension = {};
-        let totalCriteriaCount = 0;
         for (const dim of activeDimensions) {
             const criteria = dimensions[dim.name] || [];
             criteriaByDimension[dim.name] = criteria;
-            totalCriteriaCount += criteria.length;
         }
 
         try {

@@ -16,13 +16,13 @@ interface EditButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  * @description Universal call-to-action button for editing existing instances.
  * @responsibility Enforces visual and linguistic consistency (always uses the Pencil icon and "Edit [Entity]" format) across the application.
  */
-export function EditButton({ entityName, variant = 'secondary', size = 'sm', className, ...props }: EditButtonProps) {
+export function EditButton({ entityName, variant = 'secondary', size = 'md', className, ...props }: EditButtonProps) {
   const formattedEntity = entityName.charAt(0).toUpperCase() + entityName.slice(1);
   
   return (
     <Button variant={variant} size={size} className={className} {...props}>
       <Pencil className="w-4 h-4 mr-2 shrink-0" />
-      <span className="pr-1">Edit {formattedEntity}</span>
+      <span className="pr-1 truncate">Edit {formattedEntity}</span>
     </Button>
   );
 }

@@ -28,7 +28,7 @@ const logService = require('../services/LogService');
  * @returns {void}
  */
 function registerProcessListeners() {
-    process.on('unhandledRejection', (reason, promise) => {
+    process.on('unhandledRejection', (reason, _promise) => {
         const errorObj = reason instanceof Error ? reason : new Error(String(reason));
         logService.logTerminal('ERROR', 'ERROR', 'Process', 'Unhandled Promise Rejection', errorObj);
         logService.logErrorFile('Process', 'Unhandled Promise Rejection', errorObj);

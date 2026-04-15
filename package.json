@@ -6,7 +6,8 @@
         "install:all": "npm install --legacy-peer-deps && cd backend && npm install --legacy-peer-deps && cd ../frontend && npm install --legacy-peer-deps",
         "dev": "concurrently -n \"API,WEB\" -c \"cyan.bold,magenta.bold\" --kill-others \"cd backend && npm run dev\" \"cd frontend && npm run dev\"",
         "dev:wipe": "concurrently -n \"API,WEB\" -c \"cyan.bold,magenta.bold\" --kill-others \"cd backend && npm run dev:wipe\" \"cd frontend && npm run dev\"",
-        "build": "cd frontend && npm run build",
+        "lint:backend": "cd backend && npm run lint",
+        "build": "npm run lint:backend && cd frontend && npm run build",
         "start": "concurrently -n \"API,WEB\" -c \"blue.bold,green.bold\" --kill-others \"cd backend && npm start\" \"cd frontend && npm start\""
     },
     "devDependencies": {

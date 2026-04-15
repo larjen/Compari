@@ -19,7 +19,6 @@
  * - ❌ MUST NOT contain business logic or path generation.
  */
 
-const fs = require('fs');
 const pdf = require('pdf-parse');
 const logService = require('./LogService');
 

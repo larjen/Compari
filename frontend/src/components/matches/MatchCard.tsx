@@ -14,12 +14,12 @@
  * - ❌ MUST NOT calculate lifecycle states - delegated to BaseCard via useTaskLifecycle.
  * - Layout shell is delegated to BaseCard component.
  */
-import { User, Briefcase, Download } from 'lucide-react';
+import { Scale, Weight } from 'lucide-react';
 import { EntityMatch } from '@/lib/types';
-import { getNuancedEntityName, parseMatchEntities, formatPercentage } from '@/lib/utils';
+import { parseMatchEntities, formatPercentage, getEntityDisplayNames } from '@/lib/utils';
 import { useBlueprints } from '@/hooks/useBlueprints';
 import { useToast } from '@/hooks/useToast';
-import { Button } from '@/components/ui/Button';
+import { DownloadButton } from '@/components/ui';
 import { BaseCard } from '../shared/BaseCard';
 
 interface MatchCardProps {
@@ -40,13 +40,14 @@ export function MatchCard({ match, onClick, onDelete, onRetry }: MatchCardProps)
   const { blueprints } = useBlueprints();
   const { addToast } = useToast();
 
+  const activeBlueprint = blueprints.find(b => b.is_active) || blueprints[0] || null;
+  const reqLabel = activeBlueprint?.requirementLabelPlural || 'Requirement';
+  const offLabel = activeBlueprint?.offeringLabelPlural || 'Offering';
+
   const { reqEntity, offEntity } = parseMatchEntities(match);
 
-  const reqDisplayName = getNuancedEntityName(reqEntity, blueprints);
-  const offDisplayName = getNuancedEntityName(offEntity, blueprints);
-
-  const reqPrimaryName = reqDisplayName.split(' - ')[0] || reqDisplayName;
-  const offPrimaryName = offDisplayName.split(' - ')[0] || offDisplayName;
+  const { primary: reqPrimaryName } = getEntityDisplayNames(reqEntity, blueprints);
+  const { primary: offPrimaryName } = getEntityDisplayNames(offEntity, blueprints);
 
   const isCompleted = match.status === 'completed';
 
@@ -69,7 +70,7 @@ export function MatchCard({ match, onClick, onDelete, onRetry }: MatchCardProps)
       let filename = `Compari_Match_Report_${match.id}.pdf`;
       if (contentDisposition && contentDisposition.includes('filename=')) {
         const matches = /filename="([^"]+)"/.exec(contentDisposition);
-        if (matches != null && matches) { 
+        if (matches != null && matches) {
           filename = matches[1];
         }
       }
@@ -100,15 +101,13 @@ export function MatchCard({ match, onClick, onDelete, onRetry }: MatchCardProps)
       onRetry={onRetry}
       customActions={
         isCompleted ? (
-          <Button
+          <DownloadButton
+            itemName="PDF"
             variant="ghost"
             size="sm"
             onClick={handleDownloadPdf}
             className="text-accent-forest/70 hover:bg-accent-sand/20 hover:text-accent-forest"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Download PDF
-          </Button>
+          />
         ) : null
       }
     >
@@ -122,12 +121,11 @@ export function MatchCard({ match, onClick, onDelete, onRetry }: MatchCardProps)
 
       <div className="flex flex-col items-center gap-2 w-full mt-1 mb-2">
         <div className="flex items-center justify-center gap-1.5 text-sm text-accent-forest/60 w-full min-w-0">
-          <User className="w-3.5 h-3.5 flex-shrink-0" />
+          <Scale className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="font-medium text-accent-forest truncate whitespace-nowrap">{reqPrimaryName}</span>
         </div>
-
         <div className="flex items-center justify-center gap-1.5 text-sm text-accent-forest/60 w-full min-w-0">
-          <Briefcase className="w-3.5 h-3.5 flex-shrink-0" />
+          <Weight className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="truncate whitespace-nowrap">{offPrimaryName}</span>
         </div>
       </div>

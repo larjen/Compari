@@ -14,9 +14,10 @@
  * - ❌ MUST NOT calculate lifecycle states - delegated to BaseCard via useTaskLifecycle.
  * - Layout shell is delegated to BaseCard component.
  */
-import { Building2, User } from 'lucide-react';
+import { Scale, Weight } from 'lucide-react';
 import { Entity } from '@/lib/types';
-import { cn, formatPercentage } from '@/lib/utils';
+import { cn, formatPercentage, getEntityDisplayNames } from '@/lib/utils';
+import { useBlueprints } from '@/hooks/useBlueprints';
 import { BaseCard } from '../shared/BaseCard';
 
 interface EntityCardProps {
@@ -34,8 +35,6 @@ interface EntityCardProps {
   onDelete?: () => Promise<void>;
   /** Callback for canceling a processing task. */
   onCancel?: (e: React.MouseEvent) => void;
-  /** Nuanced display name derived from blueprint metadata */
-  displayName?: string;
 }
 
 export function EntityCard({
@@ -45,16 +44,13 @@ export function EntityCard({
   processingStartedAt,
   onRetry,
   onDelete,
-  onCancel,
-  displayName
+  onCancel
 }: EntityCardProps) {
+  const { blueprints } = useBlueprints();
   const startTime = processingStartedAt || (entity.metadata?.processingStartedAt as string) || (entity as any).updated_at;
   const isRequirement = entity.type === 'requirement';
 
-  const displayString = displayName || (entity.metadata?.nice_name as string | undefined) || entity.name || '';
-  const nameParts = displayString.split(' - ');
-  const primaryName = nameParts[0];
-  const secondaryName = nameParts.length > 1 ? nameParts.slice(1).join(' - ') : null;
+  const { primary: primaryName, secondary: secondaryName } = getEntityDisplayNames(entity, blueprints);
 
   return (
     <BaseCard
@@ -86,12 +82,12 @@ export function EntityCard({
       <div className="flex items-center justify-center gap-1.5 text-sm text-accent-forest/60">
         {isRequirement ? (
           <>
-            <Building2 className="w-3.5 h-3.5" />
+            <Scale className="w-3.5 h-3.5" />
             <span className="truncate">{entityLabel || 'Requirement'}</span>
           </>
         ) : (
           <>
-            <User className="w-3.5 h-3.5" />
+            <Weight className="w-3.5 h-3.5" />
             <span className="truncate">{entityLabel || 'Offering'}</span>
           </>
         )}

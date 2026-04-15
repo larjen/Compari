@@ -58,6 +58,21 @@ class CriteriaController {
     });
 
     /**
+     * GET /api/criteria/:id
+     * Retrieves a single criterion by ID for deep-linking.
+     */
+    static getById = asyncHandler(async (req, res) => {
+        const id = parseInt(req.params.id);
+        const criterion = criteriaService.getCriterionByIdForApi(id);
+        
+        if (!criterion) {
+            return res.status(404).json({ error: 'Criterion not found' });
+        }
+        
+        res.json(criterion);
+    });
+
+    /**
      * GET /api/criteria/:id/associations
      * Retrieves all job listings and users associated with a specific criterion.
      */

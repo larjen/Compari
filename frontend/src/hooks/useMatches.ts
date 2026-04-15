@@ -19,24 +19,16 @@ import { matchApi, MatchQueryParams, MatchQueryResponse } from '@/lib/api/matchA
 import { useSafeFetch } from './useSafeFetch';
 import { useSSE } from './useSSE';
 
-/**
- * Custom hook for managing matches with query parameter support.
- * @responsibility - Fetches matches with pagination, search, and status filtering.
- *   Handles real-time updates via SSE, and uses useSafeFetch for HTTP state management.
- * @boundary_rules
- *   - MUST NOT contain UI components.
- *   - MUST NOT directly access database.
- *   - Uses matchApi for all data operations.
- *   - Accepts MatchQueryParams and returns matches with pagination metadata.
- * @param {MatchQueryParams} params - Query parameters (page, limit, search, status).
- * @returns {Object} - { matches, loading, error, refetch, addMatch, deleteMatch, handleMatchUpdate, totalPages }
- */
-export function useMatches({ page, limit, search, status }: MatchQueryParams = {}) {
+export interface UseMatchesOptions extends MatchQueryParams {
+  immediate?: boolean;
+}
+
+export function useMatches({ page, limit, search, status, immediate = true }: UseMatchesOptions = {}) {
   const fetchMatches = useCallback(async () => {
     return matchApi.getMatches({ page, limit, search, status });
   }, [page, limit, search, status]);
 
-  const { data, loading, error, execute: refetch } = useSafeFetch<MatchQueryResponse>(fetchMatches, true);
+  const { data, loading, error, execute: refetch } = useSafeFetch<MatchQueryResponse>(fetchMatches, immediate);
 
   const matches = data?.matches ?? [];
   const totalPages = data?.meta?.totalPages ?? 0;

@@ -192,7 +192,7 @@ export function AnimatedDataGrid<T extends { id?: number | string }, TGroup exte
                 </motion.div>
                 <div className="flex flex-wrap gap-3">
                   {groupItems.map((item, index) => (
-                    <motion.div key={item.id ?? index} variants={masterItem}>
+                    <motion.div key={item.id ?? index} variants={masterItem} className="min-w-0 max-w-full">
                       {renderGroupItem!(item, index)}
                     </motion.div>
                   ))}
@@ -203,7 +203,7 @@ export function AnimatedDataGrid<T extends { id?: number | string }, TGroup exte
         ) : (
           // Flat mode: render items directly
           items?.map((item, index) => (
-            <motion.div key={item.id ?? index} variants={masterItem}>
+            <motion.div key={item.id ?? index} variants={masterItem} className="min-w-0 max-w-full">
               {renderItem!(item, index)}
             </motion.div>
           ))

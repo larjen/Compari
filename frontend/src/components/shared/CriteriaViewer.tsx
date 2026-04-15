@@ -1,20 +1,68 @@
 'use client';
 
-import { motion } from 'framer-motion';
-import { Loader2, ListChecks, Tag, Layers } from 'lucide-react';
+import { useMemo } from 'react';
+import { Loader2, ListChecks } from 'lucide-react';
 import { Criterion } from '@/lib/types';
-import { cn, getDimensionLabel } from '@/lib/utils';
+import { getDimensionLabel } from '@/lib/utils';
 import { CriterionPill } from '@/components/shared/CriterionPill';
 import { useDimensions } from '@/hooks/useDimensions';
+import { AnimatedDataGrid } from '@/components/shared/AnimatedDataGrid';
 
 interface CriteriaViewerProps {
   criteria: Criterion[];
-  isLoading: boolean;
+  isLoading?: boolean;
   emptyMessage?: string;
+  page?: number;
+  search?: string;
+  status?: string;
+  gridKeyPrefix?: string;
 }
 
-export function CriteriaViewer({ criteria, isLoading, emptyMessage = 'No criteria found.' }: CriteriaViewerProps) {
+/**
+ * @component CriteriaViewer
+ * @description A shared, animated grid for rendering criteria grouped by dimension.
+ * @responsibility Consolidates grouping and animation logic so criteria look identical whether viewed on a full page or inside an entity modal.
+ */
+export function CriteriaViewer({ 
+  criteria, 
+  isLoading = false, 
+  emptyMessage = 'No criteria found.',
+  page = 1,
+  search = '',
+  status = 'all',
+  gridKeyPrefix = 'criteria-viewer'
+}: CriteriaViewerProps) {
   const { dimensions } = useDimensions();
+
+  // Group and sort criteria exactly as the master page does
+  const { displayGroups, sortedDimensions } = useMemo(() => {
+    const groups = criteria.reduce((acc, criterion) => {
+      const dim = criterion.dimension || 'uncategorized';
+      if (!acc[dim]) acc[dim] = [];
+      acc[dim].push(criterion);
+      return acc;
+    }, {} as Record<string, Criterion[]>);
+
+    const sortedDims = Object.keys(groups).sort((a, b) => {
+      if (a === 'uncategorized') return 1;
+      if (b === 'uncategorized') return -1;
+
+      const dimA = dimensions?.find(d => d.name === a || String(d.id) === a);
+      const dimB = dimensions?.find(d => d.name === b || String(d.id) === b);
+
+      const idA = dimA?.id ?? null;
+      const idB = dimB?.id ?? null;
+
+      if (idA !== null && idB !== null) {
+        if (idA !== idB) return idA - idB;
+      } else if (idA !== null) return -1;
+      else if (idB !== null) return 1;
+
+      return a.localeCompare(b);
+    });
+
+    return { displayGroups: groups, sortedDimensions: sortedDims };
+  }, [criteria, dimensions]);
 
   if (isLoading) {
     return (
@@ -34,54 +82,33 @@ export function CriteriaViewer({ criteria, isLoading, emptyMessage = 'No criteri
     );
   }
 
-  // Group criteria by dimension
-  const groupedByDimension = criteria.reduce<Record<string, Criterion[]>>((acc, criterion) => {
-    const dimension = criterion.dimension || 'uncategorized';
-    if (!acc[dimension]) {
-      acc[dimension] = [];
-    }
-    acc[dimension].push(criterion);
-    return acc;
-  }, {});
-
-  // Sort dimensions by a specific order
-  const dimensionOrder = ['core_competencies', 'experience', 'soft_skills', 'domain_knowledge', 'cultural_fit', 'uncategorized'];
-  const sortedDimensions = Object.keys(groupedByDimension).sort((a, b) => {
-    const indexA = dimensionOrder.indexOf(a);
-    const indexB = dimensionOrder.indexOf(b);
-    if (indexA === -1 && indexB === -1) return 0;
-    if (indexA === -1) return 1;
-    if (indexB === -1) return -1;
-    return indexA - indexB;
-  });
-
   return (
-    <div className="space-y-4">
-      {sortedDimensions.map((dimension, index) => {
-        const dimensionCriteria = groupedByDimension[dimension];
-        const label = getDimensionLabel(dimension);
-
-        return (
-          <div key={dimension}>
-            <h4 className={cn('text-l font-serif font-semibold uppercase tracking-wide mb-4 flex items-center gap-1', 'text-accent-forest')}>
-              <Layers className="w-3 h-3" />
-              {label}
-            </h4>
-            <div className="flex flex-wrap gap-2">
-              {dimensionCriteria.map((criterion) => {
-                return (
-                  <CriterionPill
-                    key={criterion.id}
-                    id={criterion.id}
-                    label={criterion.displayName}
-                    dimensionId={criterion.dimensionId ?? 0}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+    <AnimatedDataGrid
+      loading={isLoading}
+      page={page}
+      search={search}
+      status={status}
+      gridKeyPrefix={gridKeyPrefix}
+      groups={displayGroups}
+      sortedGroups={sortedDimensions}
+      renderGroupHeader={(dimension, itemCount) => (
+        <h2 className="text-xl font-serif font-semibold border-b border-border-light pb-2 text-accent-forest">
+          {getDimensionLabel(dimension as string)}
+          <span className="ml-2 text-sm font-sans font-normal text-accent-forest/50">
+            ({itemCount})
+          </span>
+        </h2>
+      )}
+      renderGroupItem={(criterion) => (
+        <CriterionPill
+          id={criterion.id}
+          label={criterion.displayName}
+          dimensionId={criterion.dimensionId ?? 0}
+        />
+      )}
+      className="space-y-10"
+      staggerDelay={0.008}
+      exitDuration={0.05}
+    />
   );
 }

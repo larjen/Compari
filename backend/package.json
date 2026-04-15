@@ -6,7 +6,8 @@
     "scripts": {
         "dev": "NODE_ENV=development DEBUG_MODE=true nodemon server.js",
         "dev:wipe": "NODE_ENV=development DEBUG_MODE=true nodemon server.js --wipe",
-        "start": "DOTENV_MUTE=1 node server.js"
+        "start": "DOTENV_MUTE=1 node server.js",
+        "lint": "eslint src/ server.js"
     },
     "dependencies": {
         "all": "^0.0.0",
@@ -22,6 +23,8 @@
     "devDependencies": {
         "@types/express": "^5.0.6",
         "@types/node": "^25.6.0",
+        "eslint": "^8.57.1",
+        "eslint-plugin-node": "^11.1.0",
         "nodemon": "^3.1.14"
     }
 }

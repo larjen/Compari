@@ -145,6 +145,7 @@ export function Navbar({ isLoading }: NavbarProps) {
               <CreateButton 
                 entityName={currentRoute.entityName} 
                 onClick={handleCreateClick} 
+                size="sm"
               />
             )}
 

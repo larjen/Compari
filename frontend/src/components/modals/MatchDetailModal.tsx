@@ -1,19 +1,18 @@
 'use client';
 
-import { useState } from 'react';
-import { DeleteAction, EditButton } from '@/components/ui';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { DeleteAction, EditButton, DownloadButton } from '@/components/ui';
 import { EntityMatch } from '@/lib/types';
-import { formatDate, cn, getNuancedEntityName, parseMatchEntities, formatPercentage } from '@/lib/utils';
+import { formatDate, cn, getEntityDisplayNames, parseMatchEntities, formatPercentage } from '@/lib/utils';
 import { useBlueprints } from '@/hooks/useBlueprints';
 import { useMatchFiles, useMatchReport } from '@/hooks/useMatchData';
 import { useToast } from '@/hooks/useToast';
 import { matchApi } from '@/lib/api/matchApi';
-import { User, Briefcase, Clock, AlertCircle, CheckCircle, FileText, Files, Info, Download } from 'lucide-react';
+import { Scale, Weight, Clock, AlertCircle, CheckCircle, FileText, Files, Info } from 'lucide-react';
 import { FileViewer } from '@/components/shared/FileViewer';
 import { FilesTabContent } from '@/components/shared/FilesTabContent';
 import { EntityDetailLayout } from '@/components/shared/EntityDetailLayout';
 import { MatchReportViewer } from '@/components/matches/MatchReportViewer';
-import { Button } from '@/components/ui/Button';
 
 interface MatchDetailModalProps {
   match: EntityMatch | null;
@@ -32,7 +31,16 @@ const tabs = [
 ];
 
 export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: MatchDetailModalProps) {
-  const [activeTab, setActiveTab] = useState<TabId>('info');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeTab = (searchParams.get('tab') as TabId) || 'info';
+
+  const handleTabChange = (id: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', id);
+    router.push(pathname + '?' + params.toString(), { scroll: false });
+  };
   const { blueprints } = useBlueprints();
 
   const { files, loading: loadingFiles } = useMatchFiles(match?.id);
@@ -94,19 +102,18 @@ export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: Mat
   };
 
   const { reqEntity, offEntity } = parseMatchEntities(match);
-
-  const sourceName = getNuancedEntityName(reqEntity, blueprints);
-  const targetName = getNuancedEntityName(offEntity, blueprints);
+  const { primary: reqName } = getEntityDisplayNames(reqEntity, blueprints);
+  const { primary: offName } = getEntityDisplayNames(offEntity, blueprints);
 
   const customTitle = (
     <div className="flex flex-col gap-1.5 pt-1 w-full overflow-hidden">
       <div className="flex items-start gap-2 min-w-0">
         <span className="text-xs uppercase tracking-wider font-bold text-accent-forest/50 w-24 shrink-0 mt-1.5">{reqLabel}</span>
-        <span className="text-xl font-serif font-semibold text-accent-forest leading-tight truncate whitespace-nowrap">{sourceName}</span>
+        <span className="text-xl font-serif font-semibold text-accent-forest leading-tight truncate whitespace-nowrap">{reqName}</span>
       </div>
       <div className="flex items-start gap-2 min-w-0">
         <span className="text-xs uppercase tracking-wider font-bold text-accent-forest/50 w-24 shrink-0 mt-1">{offLabel}</span>
-        <span className="text-lg font-medium text-accent-forest/80 leading-tight truncate whitespace-nowrap">{targetName}</span>
+        <span className="text-lg font-medium text-accent-forest/80 leading-tight truncate whitespace-nowrap">{offName}</span>
       </div>
     </div>
   );
@@ -117,20 +124,18 @@ export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: Mat
       subtitle={undefined}
       tabs={tabs}
       activeTab={activeTab}
-      onTabChange={(id) => setActiveTab(id as TabId)}
+      onTabChange={handleTabChange}
       layoutIdPrefix="matchDetail"
       open={open}
       onClose={onClose}
       footerActions={
         <div className="flex items-center gap-3">
-          <Button 
+          <DownloadButton 
+            itemName="PDF"
             onClick={handleDownloadPdf} 
             variant="secondary" 
             className="bg-white border-accent-sand/30 hover:bg-accent-sand/10 shadow-sm"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Download PDF
-          </Button>
+          />
           {onEdit && <EditButton entityName="Match" onClick={onEdit} />}
           <DeleteAction onDelete={handleDelete} />
         </div>

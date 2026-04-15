@@ -3,12 +3,12 @@
 import { useState, useEffect } from 'react';
 import { Entity, Criterion } from '@/lib/types';
 import { criteriaApi } from '@/lib/api/criteriaApi';
-import { Loader2, Building2, User, ListTree, ExternalLink, Merge, History } from 'lucide-react';
+import { Loader2, Scale, Weight, ListTree, Merge, History } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { getNuancedEntityName } from '@/lib/utils';
+import { getEntityDisplayNames } from '@/lib/utils';
 import { useBlueprints } from '@/hooks/useBlueprints';
 import { EntityDetailLayout } from '@/components/shared/EntityDetailLayout';
-import { DeleteAction, EditButton } from '@/components/ui';
+import { DeleteAction, EditButton, ViewButton } from '@/components/ui';
 import { MergeTab } from '@/components/criteria/MergeTab';
 
 const tabs = [
@@ -86,26 +86,36 @@ export function CriterionDetailModal({
     }
   }, [open, criterion?.id, activeTab]);
 
-  const renderEntityCard = (entity: Entity, onClick?: (entity: Entity) => void) => {
-    const displayString = getNuancedEntityName(entity, blueprints) || entity.name || '';
-    const [primary, ...rest] = displayString.split(' - ');
-    const secondary = rest.join(' - ');
+  const renderEntityCard = (entity: Entity, index: number, onClick?: (entity: Entity) => void) => {
+    const { primary: primaryName, secondary: secondaryName } = getEntityDisplayNames(entity, blueprints);
+
+    // Determine the dynamic entity label from its blueprint
+    const entityBlueprint = blueprints.find(bp => bp.id === entity.blueprint_id);
+    const dynamicEntityLabel = entity.type === 'requirement' 
+      ? entityBlueprint?.requirementLabelSingular 
+      : entityBlueprint?.offeringLabelSingular;
 
     return (
       <motion.div
         key={entity.id}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        onClick={() => onClick?.(entity)}
-        className="flex items-center p-3 bg-white border border-border-light rounded-xl cursor-pointer hover:border-accent-sage hover:shadow-sm transition-all group"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: index * 0.05 }}
+        className="flex items-center p-4 bg-white border border-border-light rounded-xl"
       >
-        <div className="flex-1 min-w-0 transition-colors group-hover:text-accent-forest-light text-accent-forest">
-          <h4 className="font-semibold text-sm line-clamp-1">{primary}</h4>
-          {secondary && (
-            <p className="text-[11px] font-medium opacity-75 line-clamp-1 mt-0.5">{secondary}</p>
+        <div className="flex-1 min-w-0 text-accent-forest">
+          <h3 className="font-semibold text-base line-clamp-1">{primaryName}</h3>
+          {secondaryName && (
+            <p className="text-sm font-medium opacity-75 line-clamp-1 mt-0.5">{secondaryName}</p>
           )}
         </div>
-        <ExternalLink className="w-3.5 h-3.5 ml-2 text-accent-forest/20 group-hover:text-accent-forest transition-colors" />
+        <div className="flex items-center gap-4 ml-4 shrink-0">
+          <ViewButton
+            entityName={dynamicEntityLabel || (entity.type === 'requirement' ? 'Requirement' : 'Offering')}
+            size="sm"
+            onClick={() => onClick?.(entity)}
+          />
+        </div>
       </motion.div>
     );
   };
@@ -141,36 +151,38 @@ export function CriterionDetailModal({
       ) : (
         <div className="h-full">
           {activeTab === 'associations' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-3">
-                <h3 className="text-xs font-bold text-accent-forest/50 uppercase tracking-widest flex items-center gap-2 mb-4">
-                  <Building2 className="w-3 h-3" />
-                  {sourceLabel}
-                  <span className="font-normal">({sources.length})</span>
-                </h3>
-                <div className="space-y-2">
-                  {sources.length > 0 ? (
-                    sources.map((entity) => renderEntityCard(entity, onSourceClick))
-                  ) : (
-                    <p className="text-xs text-accent-forest/40 italic">No associations found</p>
-                  )}
+            <div className="flex flex-col gap-8">
+              {sources.length === 0 && targets.length === 0 && (
+                <div className="flex items-center justify-center py-8">
+                  <p className="text-sm text-accent-forest/40 italic">No associations found for this criterion.</p>
                 </div>
-              </div>
+              )}
 
-              <div className="space-y-3">
-                <h3 className="text-xs font-bold text-accent-forest/50 uppercase tracking-widest flex items-center gap-2 mb-4">
-                  <User className="w-3 h-3" />
-                  {targetLabel}
-                  <span className="font-normal">({targets.length})</span>
-                </h3>
-                <div className="space-y-2">
-                  {targets.length > 0 ? (
-                    targets.map((entity) => renderEntityCard(entity, onTargetClick))
-                  ) : (
-                    <p className="text-xs text-accent-forest/40 italic">No associations found</p>
-                  )}
+              {sources.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-bold text-accent-forest/80 uppercase tracking-wider flex items-center gap-2 mb-4">
+                    <Scale className="w-4 h-4" />
+                    {sourceLabel}
+                    <span className="font-normal text-accent-forest/50">({sources.length})</span>
+                  </h3>
+                  <div className="space-y-2">
+                    {sources.map((entity, idx) => renderEntityCard(entity, idx, onSourceClick))}
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {targets.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-bold text-accent-forest/80 uppercase tracking-wider flex items-center gap-2 mb-4">
+                    <Weight className="w-4 h-4" />
+                    {targetLabel}
+                    <span className="font-normal text-accent-forest/50">({targets.length})</span>
+                  </h3>
+                  <div className="space-y-2">
+                    {targets.map((entity, idx) => renderEntityCard(entity, idx, onTargetClick))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {activeTab === 'merge' && criterion && (

@@ -171,34 +171,6 @@ export function getDynamicDimensionIndex(dimensions: Dimension[], dimensionName:
 }
 
 /**
- * Generates a nuanced display name for an entity based on its blueprint.
- * Uses the top 2 required metadata fields defined in the blueprint.
- * Falls back to the entity.name if no fields are found or metadata is missing.
- * 
- * @param entity - The entity object
- * @param blueprints - Array of blueprints to search for matching blueprint
- */
-export function getNuancedEntityName(entity: Partial<Entity>, blueprints: Blueprint[]): string {
-  const blueprint = blueprints.find(b => b.id === entity.blueprint_id);
-  if (!blueprint || !blueprint.fields || blueprint.fields.length === 0) {
-    return entity.name || '';
-  }
-
-  const requiredFields = blueprint.fields
-    .filter((f) => f.is_required && f.entity_role === entity.type)
-    .slice(0, 2);
-
-  if (requiredFields.length === 0) return entity.name || '';
-
-  const parts = requiredFields.map((f) => {
-    const val = entity.metadata?.[f.field_name];
-    return val && val !== 'Unknown' && val !== 'Please wait...' ? String(val) : null;
-  }).filter(Boolean);
-
-  return parts.length > 0 ? parts.join(' - ') : (entity.name || '');
-}
-
-/**
  * Parses a flat EntityMatch object to extract requirement and offering entity objects.
  * 
  * @description
@@ -207,7 +179,7 @@ export function getNuancedEntityName(entity: Partial<Entity>, blueprints: Bluepr
  * across multiple UI components (MatchCard, MatchDetailModal, etc.). This function:
  * - Extracts name, type, metadata, and blueprint_id for both requirement and offering entities
  * - Safely parses requirement_metadata and offering_metadata, handling both string (JSON) and object formats
- * - Returns structured entity objects compatible with getNuancedEntityName and other utilities
+ * - Returns structured entity objects compatible with getEntityDisplayNames and other utilities
  * 
  * @param match - The flat EntityMatch object from the API
  * @returns Object containing { reqEntity, offEntity } with properly typed entity structures
@@ -219,7 +191,7 @@ export function getNuancedEntityName(entity: Partial<Entity>, blueprints: Bluepr
  * 
  * @example
  * const { reqEntity, offEntity } = parseMatchEntities(match);
- * const displayName = getNuancedEntityName(reqEntity, blueprints);
+ * const { full: displayName } = getEntityDisplayNames(reqEntity, blueprints);
  */
 /**
  * Formats a float value into a rounded percentage string.
@@ -258,6 +230,70 @@ export function parseMatchEntities(match: EntityMatch): { reqEntity: Partial<Ent
   };
 
   return { reqEntity, offEntity };
+}
+
+/**
+ * Centralized utility for resolving entity display names.
+ * Safely extracts primary and secondary names directly from required metadata fields
+ * to prevent string-splitting bugs (e.g., when a job title naturally contains a hyphen).
+ * 
+ * @param entity - The entity object
+ * @param blueprints - Optional array of blueprints for nuanced naming
+ * @param overrideName - Optional explicit name override
+ * @returns Object containing the primary name, secondary name (if any), and the full name string
+ */
+export function getEntityDisplayNames(
+  entity: Partial<Entity>, 
+  blueprints?: Blueprint[], 
+  overrideName?: string
+): { primary: string; secondary: string | null; full: string } {
+  
+  // 1. If explicit override, split it (legacy fallback for pre-formatted strings)
+  if (overrideName) {
+    const parts = overrideName.split(' - ');
+    return { 
+      primary: parts[0], 
+      secondary: parts.length > 1 ? parts.slice(1).join(' - ') : null, 
+      full: overrideName 
+    };
+  }
+
+  // 2. Direct Metadata Resolution: Prevents the "Hyphen Bug"
+  if (blueprints && blueprints.length > 0 && entity.blueprint_id && entity.metadata) {
+    const blueprint = blueprints.find(b => b.id === entity.blueprint_id);
+    
+    if (blueprint && blueprint.fields) {
+      const requiredFields = blueprint.fields
+        .filter((f) => f.is_required && f.entity_role === entity.type)
+        .slice(0, 2);
+
+      if (requiredFields.length > 0) {
+        const field1Name = requiredFields[0].field_name;
+        const field2Name = requiredFields.length > 1 ? requiredFields[1].field_name : null;
+
+        const val1 = (entity.metadata as Record<string, any>)[field1Name];
+        const val2 = field2Name ? (entity.metadata as Record<string, any>)[field2Name] : null;
+
+        const primary = (val1 && val1 !== 'Unknown' && val1 !== 'Please wait...') ? String(val1) : null;
+        const secondary = (val2 && val2 !== 'Unknown' && val2 !== 'Please wait...') ? String(val2) : null;
+
+        if (primary) {
+          const full = secondary ? `${primary} - ${secondary}` : primary;
+          return { primary, secondary, full };
+        }
+      }
+    }
+  }
+
+  // 3. Fallback to nice_name or base entity name, using legacy split
+  const fallbackFull = ((entity.metadata as Record<string, any>)?.nice_name as string) || entity.name || 'Unnamed Entity';
+  const parts = fallbackFull.split(' - ');
+  
+  return {
+    primary: parts[0],
+    secondary: parts.length > 1 ? parts.slice(1).join(' - ') : null,
+    full: fallbackFull
+  };
 }
 
 

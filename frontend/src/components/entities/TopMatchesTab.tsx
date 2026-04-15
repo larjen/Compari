@@ -1,11 +1,11 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Loader2, Trophy, FileText, CheckCircle } from 'lucide-react';
+import { Loader2, Trophy, CheckCircle } from 'lucide-react';
 import { Entity } from '@/lib/types';
-import { getNuancedEntityName, formatPercentage } from '@/lib/utils';
+import { formatPercentage, getEntityDisplayNames } from '@/lib/utils';
 import { useBlueprints } from '@/hooks/useBlueprints';
-import { Button, ViewButton } from '@/components/ui';
+import { Button, ViewButton, CreateButton } from '@/components/ui';
 import { useState, useEffect } from 'react';
 
 /**
@@ -32,12 +32,10 @@ function CreateReportAction({
     setLocalStatus(existingMatchStatus);
   }, [existingMatchStatus]);
 
-  const handleConfirm = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleConfirm = async () => {
     setIsProcessing(true);
     try {
       await onCreate();
-      // Optimistic UI update: immediately show pending state without waiting for next poll
       setLocalStatus('pending');
     } finally {
       setIsProcessing(false);
@@ -62,9 +60,12 @@ function CreateReportAction({
   if (showConfirm) {
     return (
       <div className="flex items-center gap-2">
-        <Button size="sm" variant="primary" onClick={handleConfirm} disabled={isProcessing}>
-          {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm'}
-        </Button>
+        <CreateButton 
+          entityName="Match Report" 
+          size="sm" 
+          onClick={handleConfirm} 
+          isCreating={isProcessing} 
+        />
         <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); setShowConfirm(false); }} disabled={isProcessing}>
           Cancel
         </Button>
@@ -73,9 +74,11 @@ function CreateReportAction({
   }
 
   return (
-    <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); setShowConfirm(true); }}>
-      <FileText className="w-4 h-4 mr-2" /> Create Matchreport
-    </Button>
+    <CreateButton 
+      entityName="Match Report" 
+      size="sm" 
+      onClick={(e) => { e.stopPropagation(); setShowConfirm(true); }} 
+    />
   );
 }
 
@@ -97,6 +100,10 @@ interface TopMatchesTabProps {
    * Callback to navigate to view a completed match report.
    */
   onViewMatchReport: (matchId: number) => void;
+  /**
+   * Callback to navigate to view the opposing matched entity.
+   */
+  onViewEntity: (entityId: number, entityType: string) => void;
 }
 
 export function TopMatchesTab({ 
@@ -108,7 +115,8 @@ export function TopMatchesTab({
   isComplete,
   onCloseModal, 
   onCreateMatchReport,
-  onViewMatchReport
+  onViewMatchReport,
+  onViewEntity
 }: TopMatchesTabProps) {
   const { blueprints } = useBlueprints();
 
@@ -156,11 +164,13 @@ export function TopMatchesTab({
         </div>
       )}
 {topMatches.map((item, idx) => {
-        // Extract and split the nuanced metadata name
-        const displayString = getNuancedEntityName(item.entity, blueprints) || item.entity.name || '';
-        const nameParts = displayString.split(' - ');
-        const primaryName = nameParts[0];
-        const secondaryName = nameParts.length > 1 ? nameParts.slice(1).join(' - ') : null;
+        const { primary: primaryName, secondary: secondaryName } = getEntityDisplayNames(item.entity, blueprints);
+
+        // Determine the dynamic entity label from its blueprint
+        const entityBlueprint = blueprints.find(bp => bp.id === item.entity.blueprint_id);
+        const dynamicEntityLabel = item.entity.type === 'requirement' 
+          ? entityBlueprint?.requirementLabelSingular 
+          : entityBlueprint?.offeringLabelSingular;
 
         return (
           <motion.div
@@ -168,13 +178,13 @@ export function TopMatchesTab({
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.05 }}
             key={item.entity.id}
-            className="flex items-center p-4 bg-white border border-border-light rounded-xl hover:border-accent-sage hover:shadow-sm transition-all group"
+            className="flex items-center p-4 bg-white border border-border-light rounded-xl"
           >
             <div className="flex items-center justify-center w-16 mr-4 shrink-0">
               <span className="font-bold text-accent-forest text-lg leading-none">{formatPercentage(item.score)}</span>
             </div>
             
-            <div className="flex-1 min-w-0 transition-colors group-hover:text-accent-forest-light text-accent-forest">
+            <div className="flex-1 min-w-0 text-accent-forest">
               <h3 className="font-semibold text-base line-clamp-1">
                 {primaryName}
               </h3>
@@ -186,6 +196,14 @@ export function TopMatchesTab({
             </div>
 
             <div className="flex items-center gap-4 ml-4">
+              <ViewButton
+                entityName={dynamicEntityLabel || (item.entity.type === 'requirement' ? 'Requirement' : 'Offering')}
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onViewEntity(item.entity.id, item.entity.type);
+                }}
+              />
               <CreateReportAction 
                 onCreate={() => onCreateMatchReport(item.entity.id)} 
                 existingMatchId={item.existingMatchId}

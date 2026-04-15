@@ -15,7 +15,6 @@
 const db = require('./Database');
 const BaseRepository = require('./BaseRepository');
 const Entity = require('../models/Entity');
-const { ENTITY_STATUS } = require('../config/constants');
 
 /**
  * @class EntityRepo

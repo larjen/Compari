@@ -7,6 +7,8 @@ import { useToast } from '@/hooks/useToast';
 import { Target, Loader2 } from 'lucide-react';
 import { EmptyState } from '@/components/shared/PageStates';
 import { Button } from '@/components/ui/Button';
+import { CreateButton } from '@/components/ui/CreateButton';
+import { SaveButton } from '@/components/ui/SaveButton';
 import { EditButton } from '@/components/ui/EditButton';
 import { DeleteAction } from '@/components/ui/DeleteAction';
 
@@ -173,7 +175,7 @@ export function DimensionsTab({ isCreating, setIsCreating }: { isCreating: boole
           </div>
           <div className="flex justify-end gap-3 pt-4 border-t border-themed-border">
             <Button variant="ghost" onClick={() => setIsCreating(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleCreate}>Create Dimension</Button>
+            <CreateButton entityName="Dimension" size="md" onClick={handleCreate} />
           </div>
         </div>
       )}
@@ -262,7 +264,7 @@ export function DimensionsTab({ isCreating, setIsCreating }: { isCreating: boole
                     <div className="flex justify-end items-center gap-3 pt-4 border-t border-themed-border">
                       <DeleteAction onDelete={() => handleDelete(dim.id)} buttonText="Delete Dimension" />
                       <Button variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
-                      <Button variant="primary" onClick={() => handleUpdate(dim.id)}>Save Changes</Button>
+                      <SaveButton size="md" onClick={() => handleUpdate(dim.id)} saveText="Save Changes" />
                     </div>
                   </div>
                 ) : (

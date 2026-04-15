@@ -35,7 +35,7 @@ export function SaveButton({
       ) : (
         <Save className="w-4 h-4 mr-2 shrink-0" />
       )}
-      <span className="pr-1">{saveText}</span>
+      <span className="pr-1 truncate">{saveText}</span>
     </Button>
   );
 }

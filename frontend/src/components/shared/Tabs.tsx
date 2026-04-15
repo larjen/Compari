@@ -61,7 +61,7 @@ interface TabsProps {
  */
 export function Tabs({ tabs, activeTab, onChange, layoutIdPrefix }: TabsProps) {
   return (
-    <div className="flex border-b border-border-light">
+    <div className="flex">
       {tabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = activeTab === tab.id;

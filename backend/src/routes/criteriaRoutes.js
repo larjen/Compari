@@ -17,6 +17,7 @@ const router = express.Router();
 const CriteriaController = require('../controllers/CriteriaController');
 
 router.get('/', CriteriaController.getAll);
+router.get('/:id', CriteriaController.getById);
 
 router.get('/:id/associations', CriteriaController.getAssociations);
 

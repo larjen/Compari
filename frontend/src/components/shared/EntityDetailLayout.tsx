@@ -21,7 +21,7 @@
  * - This eliminates duplicate layout code across the three domain modals (Job, User, Match).
  */
 import { ReactNode } from 'react';
-import { Dialog, ModalFooter } from '@/components/ui';
+import { Dialog } from '@/components/ui';
 import { Tabs } from '@/components/shared/Tabs';
 
 interface Tab {
@@ -59,7 +59,7 @@ interface EntityDetailLayoutProps {
  * Provides consistent:
  * - Modal dimensions (max-w-4xl)
  * - Tab navigation at top
- * - Scrollable content area (h-[600px])
+ * - Scrollable content area
  * - Optional footer actions
  */
 export function EntityDetailLayout({
@@ -80,24 +80,25 @@ export function EntityDetailLayout({
       onClose={onClose}
       title={title}
       subtitle={subtitle}
-      className="max-w-4xl"
-    >
-      <div className="space-y-4">
+      className="md:max-w-4xl"
+      topContent={
         <Tabs
           tabs={tabs}
           activeTab={activeTab}
           onChange={onTabChange}
           layoutIdPrefix={layoutIdPrefix}
         />
-        
-        <div className="h-[600px] overflow-y-auto overflow-x-hidden px-6 mt-4 pb-4">
-          {children}
-        </div>
-
-        {/* Footer pane is now permanently visible to ensure layout stability */}
-        <ModalFooter align="end">
-          {footerActions}
-        </ModalFooter>
+      }
+      bottomContent={
+        footerActions ? (
+          <div className="flex items-center justify-end gap-3 w-full">
+            {footerActions}
+          </div>
+        ) : undefined
+      }
+    >
+      <div className="pb-4">
+        {children}
       </div>
     </Dialog>
   );

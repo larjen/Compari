@@ -21,12 +21,30 @@ const Entity = require('../models/Entity');
  * @description Repository for criteria and entity-criteria relationship CRUD operations.
  */
 class CriteriaRepo extends BaseRepository {
+
     /**
      * Creates a new CriteriaRepo instance.
      * @constructor
      */
     constructor() {
         super('criteria');
+    }
+    /**
+     * Retrieves a criterion by its ID for deep-linking.
+     * @param {number} id - The criterion ID.
+     * @returns {Object|null} Criterion object with all fields.
+     */
+    getCriterionByIdForApi(id) {
+        const stmt = db.prepare('SELECT * FROM criteria WHERE id = ?');
+        const row = stmt.get(id);
+        if (!row) return null;
+        return {
+            id: row.id,
+            normalizedName: row.normalized_name,
+            displayName: row.display_name,
+            dimension: row.dimension,
+            embedding: JSON.parse(row.embedding)
+        };
     }
     /**
      * Inserts a new criterion with its vector embedding and dimension.

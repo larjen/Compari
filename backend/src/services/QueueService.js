@@ -261,7 +261,7 @@ class QueueService {
                 if (payload[payloadKey] === targetId) {
                     this.currentAbortController.abort();
                 }
-            } catch (e) {}
+            } catch (_e) { /* ignored intentionally */ }
         }
     }
 

@@ -22,8 +22,7 @@
  * - Is it a major workflow milestone that needs historical tracking (non-production)? -> Use logTerminal() + logSystemFile().
  */
 
-const { LOG_LEVELS, LOGS_DIR } = require('../config/constants');
-const path = require('path');
+const { LOGS_DIR } = require('../config/constants');
 const fs = require('fs');
 
 class LogService {

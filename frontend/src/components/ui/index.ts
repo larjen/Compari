@@ -9,3 +9,4 @@ export { DeleteAction } from './DeleteAction';
 export { FormActions } from './FormActions';
 export { CreateButton } from './CreateButton';
 export { SaveButton } from './SaveButton';
+export { DownloadButton } from './DownloadButton';

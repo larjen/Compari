@@ -2,6 +2,8 @@
 
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { CreateButton } from '@/components/ui/CreateButton';
+import { SaveButton } from '@/components/ui/SaveButton';
 import { EditButton } from '@/components/ui/EditButton';
 import { DeleteAction } from '@/components/ui/DeleteAction';
 import { AiModel } from '@/lib/types';
@@ -77,9 +79,7 @@ export function AiModelList({
           <ModelEditor data={formData} setData={setFormData} />
           <div className="flex justify-end gap-3 pt-4 border-t border-themed-border">
             <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-            <Button variant="primary" onClick={onSave} disabled={isSaving || !formData.name || !formData.model_identifier}>
-              {isSaving ? 'Creating...' : 'Create Model'}
-            </Button>
+            <CreateButton entityName="Model" size="md" onClick={onSave} isCreating={isSaving} disabled={!formData.name || !formData.model_identifier} />
           </div>
         </div>
       )}
@@ -117,9 +117,7 @@ export function AiModelList({
                         <DeleteAction onDelete={() => onDelete(model)} buttonText="Delete Model" />
                       )}
                       <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-                      <Button variant="primary" onClick={onSave} disabled={isSaving}>
-                        {isSaving ? 'Saving...' : 'Save Changes'}
-                      </Button>
+                      <SaveButton size="md" onClick={onSave} isSaving={isSaving} saveText="Save Changes" />
                     </div>
                   </div>
                 ) : (

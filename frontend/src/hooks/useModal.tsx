@@ -13,12 +13,8 @@ export type ModalType = 'create-requirement' | 'create-offering' | 'create-match
 interface ModalContextType {
   /** The currently active modal type */
   activeModal: ModalType;
-  /** The ID of the view/modal that initiated the current modal (for return navigation) */
-  originatingViewID: string | null;
-  /** Sets the originating view ID for return pointer navigation */
-  setOriginatingViewID: (id: string | null) => void;
   /** Opens a specific modal type */
-  openModal: (modal: ModalType, originatingViewID?: string) => void;
+  openModal: (modal: ModalType) => void;
   /** Closes any active modal */
   closeModal: () => void;
 }
@@ -28,16 +24,13 @@ interface ModalContextType {
  */
 const defaultContext: ModalContextType = {
   activeModal: null,
-  originatingViewID: null,
-  setOriginatingViewID: () => {},
   openModal: () => {},
   closeModal: () => {},
 };
 
 /**
  * Modal context for global create intent management.
- * 
- * This context provides a way for the Navbar to trigger create actions
+ * * This context provides a way for the Navbar to trigger create actions
  * that are handled by individual pages. It follows the Separation of
  * Concerns principle by keeping navigation separate from modal logic.
  */
@@ -45,27 +38,21 @@ const ModalContext = createContext<ModalContextType>(defaultContext);
 
 /**
  * Modal provider component that wraps the application.
- * 
- * @param children - Child components that will have access to the modal context
+ * * @param children - Child components that will have access to the modal context
  */
 export function ModalProvider({ children }: { children: ReactNode }) {
   const [activeModal, setActiveModal] = useState<ModalType>(null);
-  const [originatingViewID, setOriginatingViewID] = useState<string | null>(null);
 
-  const openModal = useCallback((modal: ModalType, originatingViewID?: string) => {
+  const openModal = useCallback((modal: ModalType) => {
     setActiveModal(modal);
-    if (originatingViewID) {
-      setOriginatingViewID(originatingViewID);
-    }
   }, []);
 
   const closeModal = useCallback(() => {
     setActiveModal(null);
-    setOriginatingViewID(null);
   }, []);
 
   return (
-    <ModalContext.Provider value={{ activeModal, originatingViewID, setOriginatingViewID, openModal, closeModal }}>
+    <ModalContext.Provider value={{ activeModal, openModal, closeModal }}>
       {children}
     </ModalContext.Provider>
   );
@@ -73,8 +60,7 @@ export function ModalProvider({ children }: { children: ReactNode }) {
 
 /**
  * Hook to access modal context values.
- * 
- * @returns The modal context object containing activeModal, openModal, and closeModal
+ * * @returns The modal context object containing activeModal, openModal, and closeModal
  * @throws Error if used outside of ModalProvider
  */
 export function useModal() {

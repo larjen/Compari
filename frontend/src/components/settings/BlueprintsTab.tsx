@@ -4,9 +4,11 @@ import { useBlueprints } from '@/hooks/useBlueprints';
 import { useDimensions } from '@/hooks/useDimensions';
 import { useToast } from '@/hooks/useToast';
 import { useBlueprintForm } from '@/hooks/useBlueprintForm';
-import { Layout, Loader2, Plus, Trash2, Check, FileText } from 'lucide-react';
+import { Layout, Loader2, Plus, Trash2, Check, Scale, Weight } from 'lucide-react';
 import { EmptyState } from '@/components/shared/PageStates';
 import { Button } from '@/components/ui/Button';
+import { CreateButton } from '@/components/ui/CreateButton';
+import { SaveButton } from '@/components/ui/SaveButton';
 import { EditButton } from '@/components/ui/EditButton';
 import { DeleteAction } from '@/components/ui/DeleteAction';
 import { Dimension } from '@/lib/types';
@@ -122,7 +124,7 @@ export function BlueprintsTab({ isCreating, setIsCreating }: { isCreating: boole
           />
           <div className="flex justify-end gap-3 pt-4 border-t border-themed-border">
             <Button variant="ghost" onClick={() => setIsCreating(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleCreate}>Create Blueprint</Button>
+            <CreateButton entityName="Blueprint" size="md" onClick={handleCreate} />
           </div>
         </div>
       )}
@@ -174,7 +176,7 @@ export function BlueprintsTab({ isCreating, setIsCreating }: { isCreating: boole
                     <div className="flex justify-end items-center gap-3 pt-4 border-t border-themed-border">
                       <DeleteAction onDelete={() => handleDelete(bp.id)} buttonText="Delete Blueprint" />
                       <Button variant="ghost" onClick={cancelEditing}>Cancel</Button>
-                      <Button variant="primary" onClick={() => handleUpdate(bp.id)}>Save Changes</Button>
+                      <SaveButton size="md" onClick={() => handleUpdate(bp.id)} saveText="Save Changes" />
                     </div>
                   </div>
                 ) : (
@@ -198,7 +200,7 @@ export function BlueprintsTab({ isCreating, setIsCreating }: { isCreating: boole
                     <div className="grid grid-cols-2 gap-6">
                       <div className="bg-themed-inner border border-themed-input-border rounded-lg p-4">
                         <div className="flex items-center gap-2 mb-3">
-                          <FileText className="w-4 h-4 text-themed-fg-muted" />
+                          <Scale className="w-4 h-4 text-themed-fg-muted" />
                           <span className="text-sm font-medium text-themed-fg-muted">Requirement Fields</span>
                         </div>
                         {requirementFields.length > 0 ? (
@@ -218,7 +220,7 @@ export function BlueprintsTab({ isCreating, setIsCreating }: { isCreating: boole
 
                       <div className="bg-themed-inner border border-themed-input-border rounded-lg p-4">
                         <div className="flex items-center gap-2 mb-3">
-                          <FileText className="w-4 h-4 text-themed-fg-muted" />
+                          <Weight className="w-4 h-4 text-themed-fg-muted" />
                           <span className="text-sm font-medium text-themed-fg-muted">Offering Fields</span>
                         </div>
                         {offeringFields.length > 0 ? (

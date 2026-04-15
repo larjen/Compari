@@ -1,74 +1,21 @@
 'use client';
 
-/**
- * Props for the DetailItem component.
- */
+import { ReactNode, ElementType } from 'react';
+
 interface DetailItemProps {
-  /**
-   * Lucide icon component to display in the left container.
-   */
-  icon: React.ElementType;
-  /**
-   * Label text displayed above the value (typically uppercase).
-   */
+  /** Optional Lucide icon component to display in the left container. */
+  icon?: ElementType;
   label: string;
-  /**
-   * Simple value to display. Use this for read-only text display.
-   * Mutually exclusive with children - use whichever fits your use case.
-   */
-  value?: React.ReactNode;
-  /**
-   * Complex children (e.g., input fields, edit controls).
-   * Use this when you need inline editing or complex layouts.
-   * Mutually exclusive with value.
-   */
-  children?: React.ReactNode;
-  /**
-   * Background color class for the icon container.
-   * @default "bg-accent-sage/10"
-   */
+  value?: ReactNode;
+  children?: ReactNode;
   iconBgColor?: string;
-  /**
-   * Optional tooltip text to display on hover.
-   */
   tooltip?: string;
 }
 
 /**
- * A reusable information display component.
- * 
- * Displays an icon with a label and value/children in a consistent layout.
- * The component follows the pattern of having an icon container on the left,
- * with label and value displayed next to it. Supports both simple text display
- * and complex children for inline editing scenarios.
- * 
- * @param props - Component props
- * @returns React component with icon, label, and value/children
- * 
- * @example
- * // Simple read-only display
- * <DetailItem
- *   icon={Calendar}
- *   label="Posted Date"
- *   value="January 15, 2024"
- * />
- * 
- * @example
- * // Complex children for inline editing
- * <DetailItem icon={Link} label="Job URL">
- *   <div className="flex items-center gap-2">
- *     <input type="text" value={url} onChange={...} />
- *     <button onClick={save}>Save</button>
- *   </div>
- * </DetailItem>
- * 
- * @socexplanation
- * - Separation of Concerns: This component is purely presentational.
- *   It handles layout only - the parent manages all edit state and logic.
- * - Reusable Pattern: Used in both JobListingDetailModal and UserDetailModal
- *   for displaying dates, URLs, and other metadata.
- * - Supports两种 modes: Simple value display for read-only data,
- *   or children for complex edit states (inline inputs, buttons, etc.).
+ * @component DetailItem
+ * @description A reusable information display component.
+ * @responsibility Displays a label and value/children in a consistent layout. Icons are optional.
  */
 export function DetailItem({
   icon: Icon,
@@ -80,9 +27,11 @@ export function DetailItem({
 }: DetailItemProps) {
   return (
     <div className="flex items-start gap-3 p-3 bg-background rounded-lg">
-      <div className={`p-2 rounded-lg ${iconBgColor}`}>
-        <Icon className="w-4 h-4 text-accent-forest" />
-      </div>
+      {Icon && (
+        <div className={`p-2 rounded-lg ${iconBgColor} shrink-0`}>
+          <Icon className="w-4 h-4 text-accent-forest" />
+        </div>
+      )}
       <div className="flex-1 min-w-0">
         <p className="text-xs uppercase tracking-wide text-accent-forest/50 truncate" title={tooltip || label}>
           {label}

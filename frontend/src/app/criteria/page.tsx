@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, Suspense } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useCriteria } from '@/hooks/useCriteria';
@@ -8,15 +8,13 @@ import { useEntities } from '@/hooks/useEntities';
 import { useModal } from '@/hooks/useModal';
 import { useDimensions } from '@/hooks/useDimensions';
 import { useFilterState } from '@/hooks/useFilterState';
-import { Loader2, Target } from 'lucide-react';
+import { Loader2, ListChecks } from 'lucide-react';
 import { EmptyState, ContentLoader } from '@/components/shared/PageStates';
-import { CriterionPill } from '@/components/shared/CriterionPill';
 import { Criterion } from '@/lib/types';
-import { getDimensionLabel, cn } from '@/lib/utils';
 import { CriterionDetailModal, EntityDetailModal } from '@/components/modals';
 import { Pagination } from '@/components/shared/Pagination';
 import { FilterBar } from '@/components/shared/FilterBar';
-import { AnimatedDataGrid } from '@/components/shared/AnimatedDataGrid';
+import { CriteriaViewer } from '@/components/shared/CriteriaViewer';
 
 /**
  * Global variants for the criteria results list.
@@ -44,7 +42,7 @@ function CriteriaPageContent() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { originatingViewID, closeModal } = useModal();
+  const { closeModal } = useModal();
 
   const { search, setSearch, debouncedSearch, status: selectedDimension, setStatus: setSelectedDimension, page, setPage } = useFilterState('all');
   
@@ -67,6 +65,12 @@ function CriteriaPageContent() {
   });
 
   const [isReady, setIsReady] = useState(false);
+  const [deepLinkedCriterion, setDeepLinkedCriterion] = useState<Criterion | null>(null);
+  const [isFetchingDeepLink, setIsFetchingDeepLink] = useState(false);
+
+  const criterionIdParam = searchParams.get('criterionId');
+  const sourceIdParam = searchParams.get('sourceId');
+  const targetIdParam = searchParams.get('targetId');
 
   useEffect(() => {
     if (!loading) {
@@ -74,68 +78,8 @@ function CriteriaPageContent() {
     }
   }, [loading]);
 
-  const { entities: allEntities, loading: entitiesLoading, refetch: refetchEntities } = useEntities({ immediate: true });
+  const { entities: allEntities, loading: entitiesLoading, refetch: refetchEntities } = useEntities({ immediate: !!(sourceIdParam || targetIdParam) });
   const { dimensions } = useDimensions();
-
-  const criterionIdParam = searchParams.get('criterionId');
-  const sourceIdParam = searchParams.get('sourceId');
-  const targetIdParam = searchParams.get('targetId');
-
-  // =============================================================================
-  // CLIENT-SIDE GROUPING BLOCK
-  // =============================================================================
-  // Only groups criteria by dimension. Sorting is done server-side.
-  // The server returns criteria sorted by dimension (alphabetically, nulls last),
-  // then by displayName (alphabetically). This ensures dimension headers persist across pages.
-  
-  /**
-   * Groups and sorts criteria by dimension database ID.
-   * @description 
-   * - Groups criteria by their dimension property.
-   * - Sorts groups based on the numeric database ID.
-   * - Gracefully handles missing dimension data and 'uncategorized' fallbacks.
-   */
-  const { displayGroups, sortedDimensions } = useMemo(() => {
-    // Group criteria
-    const groups = criteria.reduce((acc, criterion) => {
-      const dim = criterion.dimension || 'uncategorized';
-      if (!acc[dim]) acc[dim] = [];
-      acc[dim].push(criterion);
-      return acc;
-    }, {} as Record<string, Criterion[]>);
-
-    // Sort dimension names based on their database IDs
-    const sortedDims = Object.keys(groups).sort((a, b) => {
-      // 1. Force 'uncategorized' to the very bottom
-      if (a === 'uncategorized') return 1;
-      if (b === 'uncategorized') return -1;
-
-      // 2. Identify numeric IDs
-      // Check if 'a' is already a stringified ID or find the ID in the dimensions list
-      const dimA = dimensions?.find(d => d.name === a || String(d.id) === a);
-      const dimB = dimensions?.find(d => d.name === b || String(d.id) === b);
-
-      const idA = dimA?.id ?? null;
-      const idB = dimB?.id ?? null;
-
-      // 3. Numerical Comparison (Handle nulls/missing data)
-      if (idA !== null && idB !== null) {
-        if (idA !== idB) return idA - idB;
-      } else if (idA !== null) {
-        return -1; // Found ID comes before missing ID
-      } else if (idB !== null) {
-        return 1;
-      }
-
-      // 4. Final Fallback: Stable alphabetical sort by the name
-      return a.localeCompare(b);
-    });
-
-    return {
-      displayGroups: groups,
-      sortedDimensions: sortedDims
-    };
-  }, [criteria, dimensions]);
 
   // =============================================================================
   // CONDITIONAL RENDERING BLOCK
@@ -168,9 +112,37 @@ function CriteriaPageContent() {
   // RENDER LOGIC BLOCK
   // =============================================================================
 
-  const selectedCriterion = criterionIdParam
-    ? criteria.find(c => c.id === Number(criterionIdParam)) || null
-    : null;
+  // Deep-link fallback: fetch criterion directly if not in local array
+  const criterionId = criterionIdParam ? parseInt(criterionIdParam, 10) : null;
+  const localCriterion = criterionId ? criteria.find((c: any) => c.id === criterionId) : null;
+
+  useEffect(() => {
+    if (criterionId && !localCriterion && !deepLinkedCriterion && !isFetchingDeepLink) {
+      const fetchDeepLink = async () => {
+        setIsFetchingDeepLink(true);
+        try {
+          const response = await fetch(`/api/criteria/${criterionId}`);
+          if (response.ok) {
+            const data = await response.json();
+            setDeepLinkedCriterion(data);
+          }
+        } catch (error) {
+          console.error("Failed to fetch deep-linked criterion:", error);
+        } finally {
+          setIsFetchingDeepLink(false);
+        }
+      };
+      fetchDeepLink();
+    }
+  }, [criterionId, localCriterion, deepLinkedCriterion, isFetchingDeepLink]);
+
+  useEffect(() => {
+    if (!criterionId && deepLinkedCriterion) {
+      setDeepLinkedCriterion(null);
+    }
+  }, [criterionId, deepLinkedCriterion]);
+
+  const selectedCriterion = localCriterion || deepLinkedCriterion;
 
   const inspectedSource = sourceIdParam
     ? allEntities.find(e => e.id === Number(sourceIdParam)) || null
@@ -208,36 +180,17 @@ function CriteriaPageContent() {
         {loading && criteria.length === 0 ? (
           <ContentLoader text="Loading criteria..." />
         ) : criteria.length > 0 ? (
-          <AnimatedDataGrid
-            loading={loading}
+          <CriteriaViewer
+            criteria={criteria}
+            isLoading={loading}
             page={page}
             search={debouncedSearch}
             status={selectedDimension}
             gridKeyPrefix="criteria-grid"
-            groups={displayGroups}
-            sortedGroups={sortedDimensions}
-            renderGroupHeader={(dimension, itemCount) => (
-              <h2 className="text-xl font-serif font-semibold border-b border-border-light pb-2 text-accent-forest">
-                {getDimensionLabel(dimension)}
-                <span className="ml-2 text-sm font-sans font-normal text-accent-forest/50">
-                  ({itemCount})
-                </span>
-              </h2>
-            )}
-            renderGroupItem={(criterion) => (
-              <CriterionPill
-                id={criterion.id}
-                label={criterion.displayName}
-                dimensionId={criterion.dimensionId ?? 0}
-              />
-            )}
-            className="space-y-10"
-            staggerDelay={0.008}
-            exitDuration={0.05}
           />
         ) : (
           <EmptyState
-            icon={Target}
+            icon={ListChecks}
             title={search ? "No matching criteria" : "No criteria yet"}
             subtitle={search ? "Try a different search term" : "Criteria will be extracted from entities automatically"}
           />
@@ -247,17 +200,15 @@ function CriteriaPageContent() {
         criterion={selectedCriterion}
         open={!!selectedCriterion}
         onClose={() => {
-          const path = originatingViewID || '/criteria';
           closeModal();
-          router.push(path);
+          router.push('/criteria');
         }}
         onDelete={deleteCriterion}
-        onSourceClick={(entity) => router.push(`?sourceId=${entity.id}&criterionId=${selectedCriterion?.id}`)}
-        onTargetClick={(entity) => router.push(`?targetId=${entity.id}&criterionId=${selectedCriterion?.id}`)}
+        onSourceClick={(entity) => router.push(`/?entityId=${entity.id}`)}
+        onTargetClick={(entity) => router.push(`/offerings?entityId=${entity.id}`)}
         onMerged={() => {
-          const path = originatingViewID || '/criteria';
           closeModal();
-          router.push(path);
+          router.push('/criteria');
         }}
       />
       <EntityDetailModal

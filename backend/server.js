@@ -134,8 +134,6 @@ registerTaskListeners();
 const queueService = require('./src/services/QueueService');
 queueService.start();
 
-const entityService = require('./src/services/EntityService');
-
 app.listen(PORT, '0.0.0.0', () => {
     const startupTime = Math.round(performance.now() - startTime);
 

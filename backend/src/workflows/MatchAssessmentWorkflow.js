@@ -22,7 +22,6 @@
  */
 const FileService = require('../services/FileService');
 const logService = require('../services/LogService');
-const eventService = require('../services/EventService');
 const criteriaManagerWorkflow = require('../workflows/CriteriaManagerWorkflow');
 const matchRepo = require('../repositories/MatchRepo');
 const matchService = require('../services/MatchService');

@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Dialog, Button } from '@/components/ui';
+import { Dialog, Button, CreateButton } from '@/components/ui';
 import { useBlueprints } from '@/hooks/useBlueprints';
 import { EntityCombobox } from '@/components/shared/EntityCombobox';
-import { Loader2, Briefcase, User } from 'lucide-react';
+import { Scale, Weight } from 'lucide-react';
 
 interface CreateMatchModalProps {
   open: boolean;
@@ -56,7 +56,7 @@ export function CreateMatchModal({ open, onClose, onCreateMatch }: CreateMatchMo
         <div className="space-y-4">
           <div className="space-y-2">
             <label className="block text-sm font-medium text-accent-forest">
-              <Briefcase className="w-4 h-4 inline-block mr-2" />
+              <Scale className="w-4 h-4 inline-block mr-2" />
               {requirementLabel}
             </label>
             <EntityCombobox
@@ -71,7 +71,7 @@ export function CreateMatchModal({ open, onClose, onCreateMatch }: CreateMatchMo
 
           <div className="space-y-2">
             <label className="block text-sm font-medium text-accent-forest">
-              <User className="w-4 h-4 inline-block mr-2" />
+              <Weight className="w-4 h-4 inline-block mr-2" />
               {offeringLabel}
             </label>
             <EntityCombobox
@@ -89,19 +89,13 @@ export function CreateMatchModal({ open, onClose, onCreateMatch }: CreateMatchMo
           <Button type="button" variant="ghost" onClick={handleClose} disabled={isCreating}>
             Cancel
           </Button>
-          <Button
+          <CreateButton
+            entityName="Match"
+            size="md"
             onClick={handleCreate}
-            disabled={isCreating || !selectedSourceId || !selectedTargetId}
-          >
-            {isCreating ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Creating...
-              </>
-            ) : (
-              'Create Match'
-            )}
-          </Button>
+            isCreating={isCreating}
+            disabled={!selectedSourceId || !selectedTargetId}
+          />
         </div>
       </div>
     </Dialog>

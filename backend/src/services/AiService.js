@@ -202,7 +202,7 @@ class AiService {
             config = this._getChatModelConfig();
         }
 
-        const { client, model } = this._getClient(config);
+        const { client } = this._getClient(config);
 
         try {
             await client.models.list();
@@ -328,7 +328,7 @@ class AiService {
      * @param {AbortSignal} [signal] - Optional signal to abort the AI generation.
      * @returns {Promise<number[]>} Array of floating point numbers representing the embedding.
      */
-    async generateEmbedding(text, overrideConfig, embeddingModel, signal) {
+    async generateEmbedding(text, overrideConfig, embeddingModel, _signal) {
         let config = overrideConfig;
 
         if (!config) {

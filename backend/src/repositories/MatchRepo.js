@@ -13,7 +13,6 @@
 
 const db = require('./Database');
 const BaseRepository = require('./BaseRepository');
-const Entity = require('../models/Entity');
 
 /**
  * @class MatchRepo

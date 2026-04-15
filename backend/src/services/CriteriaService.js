@@ -129,6 +129,17 @@ class CriteriaService {
     getMergeHistory(id) {
         return criteriaRepo.getMergeHistory(id);
     }
+
+    /**
+     * Retrieves a single criterion by ID for deep-linking.
+     * Delegates to CriteriaRepo to maintain strict data-access boundaries.
+     * @method getCriterionByIdForApi
+     * @param {number} id - The unique identifier of the criterion.
+     * @returns {Object|null} The criterion object or null if not found.
+     */
+    getCriterionByIdForApi(id) {
+        return criteriaRepo.getCriterionByIdForApi(id);
+    }
 }
 
 module.exports = new CriteriaService();

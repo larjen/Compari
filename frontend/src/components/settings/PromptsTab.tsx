@@ -5,6 +5,7 @@ import { MessageSquareText, Loader2 } from 'lucide-react';
 import { Prompt } from '@/lib/types';
 import { promptApi } from '@/lib/api/promptApi';
 import { Button } from '@/components/ui/Button';
+import { SaveButton } from '@/components/ui/SaveButton';
 import { EditButton } from '@/components/ui/EditButton';
 
 export function PromptsTab() {
@@ -89,9 +90,7 @@ export function PromptsTab() {
                 <Button variant="ghost" onClick={cancelEditing} disabled={saving}>
                   Cancel
                 </Button>
-                <Button variant="primary" onClick={() => handleSave(prompt.id)} disabled={saving}>
-                  Save Changes
-                </Button>
+                <SaveButton size="md" onClick={() => handleSave(prompt.id)} isSaving={saving} saveText="Save Changes" />
               </div>
             </div>
           ) : (

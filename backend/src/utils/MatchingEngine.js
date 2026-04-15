@@ -715,7 +715,6 @@ function buildRawComparison(requirement, offering, activeDimensions, matchSettin
 function calculateWeightedMatchScore(matchReport, minimumFloor = 0.50, perfectScore = 0.85, targetDimension = null) {
     let totalPossibleWeightedPoints = 0;
     let achievedWeightedPoints = 0;
-    let totalRequirements = 0;
 
     if (!matchReport) {
         return { score: 0, calculationDetails: null };
@@ -745,9 +744,7 @@ function calculateWeightedMatchScore(matchReport, minimumFloor = 0.50, perfectSc
             continue;
         }
 
-        const dimRequirements = matches.length;
-        totalRequirements += dimRequirements;
-        totalPossibleWeightedPoints += (dimRequirements * weight);
+        totalPossibleWeightedPoints += (matches.length * weight);
 
         for (const match of matches) {
             let score = match.similarityScore !== undefined

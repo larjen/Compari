@@ -2,7 +2,7 @@
 
 import { Entity, Blueprint } from '@/lib/types';
 import { formatDate } from '@/lib/utils';
-import { FileText, Calendar, Info, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { DetailItem } from '@/components/shared/DetailItem';
 import { MetadataEditor } from './MetadataEditor';
 
@@ -41,18 +41,18 @@ export function EntityInfoTab({ entity, blueprint, onSaveMetadata }: EntityInfoT
         </div>
       )}
 
-      <DetailItem icon={Info} label="Type">
+      <DetailItem label="Type">
         <p className="text-sm font-medium text-accent-forest capitalize">{entity.type}</p>
       </DetailItem>
 
-      <DetailItem icon={Calendar} label="Created">
+      <DetailItem label="Created">
         <p className="text-sm font-medium text-accent-forest">
           {entity.created_at ? formatDate(entity.created_at) : '—'}
         </p>
       </DetailItem>
 
       {entity.description && (
-        <DetailItem icon={FileText} label="Description">
+        <DetailItem label="Description">
           <p className="text-sm text-accent-forest/80">{entity.description}</p>
         </DetailItem>
       )}

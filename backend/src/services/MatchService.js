@@ -23,7 +23,6 @@ const matchRepo = require('../repositories/MatchRepo');
 const entityRepo = require('../repositories/EntityRepo');
 const criteriaRepo = require('../repositories/CriteriaRepo');
 const dimensionRepo = require('../repositories/DimensionRepo');
-const criteriaManagerWorkflow = require('../workflows/CriteriaManagerWorkflow');
 const MatchingEngine = require('../utils/MatchingEngine');
 const FileService = require('./FileService');
 const logService = require('./LogService');
