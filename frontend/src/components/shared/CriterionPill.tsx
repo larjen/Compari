@@ -36,7 +36,7 @@ export function CriterionPill({ id, label, dimensionId, className }: CriterionPi
         router.push(`/criteria?criterionId=${id}`);
       }}
       className={cn(
-        'px-4 py-2 print:px-2.5 print:py-1 rounded-full text-sm print:text-[9px] font-medium border text-left transition-all shadow-sm print:shadow-none',
+        'px-4 py-2 text-sm rounded-full font-medium border text-left transition-all shadow-sm print:shadow-none',
         'hover:shadow-md cursor-pointer whitespace-nowrap overflow-hidden text-ellipsis max-w-full',
         colors.bg, colors.text, colors.border,
         className

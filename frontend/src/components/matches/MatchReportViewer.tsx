@@ -18,10 +18,9 @@ interface MatchReportViewerProps {
 
 /**
  * Main component for displaying the match report in a flat, dumbed-down manner.
- * Uses the new report structure:
- * - reportInfo for requirement/offering names and matchScores (weights + scores)
- * - allDimensions at root for global pool-wide matches
- * - Dimension keys at root for each dimension's matches
+ * Uses the unified report structure:
+ * - reportInfo for requirement/offering names and overall score
+ * - Dimension keys at root for each dimension's matches + metrics (colocated)
  * No categorization into strong/partialMatch/missing - just the raw flat list.
  *
  * @dry_principles
@@ -37,18 +36,10 @@ export function MatchReportViewer({ reportData, matchId, isPrintMode = false }: 
         );
     }
 
-    const reportInfo = reportData.reportInfo || { requirement: { id: 0, name: '' }, offering: { id: 0, name: '' }, matchScores: {} };
-    const matchScores = reportInfo.matchScores || {};
+    const reportInfo = reportData.reportInfo || { requirement: { id: 0, name: '' }, offering: { id: 0, name: '' } };
 
-    const availableDimensionKeys = Object.keys(reportData).filter(key => 
-        key !== 'reportInfo' && 
-        key !== 'allDimensions' && 
-        !key.startsWith('_') && // Filter out injected metadata keys from Phase 1
-        typeof reportData[key] === 'object' && 
-        reportData[key] !== null
-    );
-
-    const sortedDimensions = availableDimensionKeys;
+    const dimensionsMap = reportData.dimensions || {};
+    const sortedDimensions = Object.keys(dimensionsMap);
 
     return (
         <div className="space-y-4">
@@ -58,137 +49,162 @@ export function MatchReportViewer({ reportData, matchId, isPrintMode = false }: 
                 animate={isPrintMode ? false : { opacity: 1, y: 0 }}
                 className={`space-y-8 pb-8 ${isPrintMode ? 'bg-white text-black print:p-0 print:m-0 w-full max-w-none' : ''}`}
             >
-            {/* MATCH REPORT HEADER */}
-            <div className="text-center pb-2 mb-6">
-                <h2 className="text-2xl font-black text-accent-forest mb-2 uppercase tracking-tight">
-                    Match Assessment Report
-                </h2>
-                <h3 className="text-lg font-semibold text-accent-forest/90">
-                    {reportInfo.requirement.name}
-                </h3>
-                <h3 className="text-lg font-medium text-accent-forest/70 mt-1">
-                    {reportInfo.offering.name}
-                </h3>
-            </div>
-
-            {/* DIMENSION SCORES SECTION */}
-            <section id="section-dimension-scores" className="pb-0 mb-8 print:mb-4">
-                <div className="border-b border-accent-sand/30 pb-3 mb-4">
-                    <h3 className="text-xl font-bold text-accent-forest uppercase tracking-wide">
-                        Dimension Scores
+                {/* MATCH REPORT HEADER */}
+                <div className="text-center pb-2 mb-6">
+                    <h2 className="text-2xl font-black text-accent-forest mb-2 uppercase tracking-tight">
+                        Match Assessment Report
+                    </h2>
+                    <h3 className="text-lg font-semibold text-accent-forest/90">
+                        {reportInfo.requirement.name}
+                    </h3>
+                    <h3 className="text-lg font-medium text-accent-forest/70 mt-1">
+                        {reportInfo.offering.name}
                     </h3>
                 </div>
 
-                <div className="space-y-0">
-                    {/* Global Score Row */}
-                    {matchScores.allDimensions && (
-                        <ScoreSummaryRow 
-                            title="Global Match Score" 
-                            metrics={matchScores.allDimensions} 
-                            barColorClass="text-accent-forest" 
-                            onClick={() => document.getElementById('section-global')?.scrollIntoView({ behavior: 'smooth' })}
-                        />
-                    )}
-
-                    {/* Individual Dimension Score Rows */}
-                    {sortedDimensions.map((dimKey) => {
-                        const dimMetrics = matchScores[dimKey];
-                        if (!dimMetrics) return null;
-                        
-                        const dimId = (reportData as any)._metadata?.dimension_ids?.[dimKey] || 0;
-                        const dimensionColors = getDimensionColors(dimId);
-                        const barColor = dimensionColors?.text || 'text-accent-forest';
-
-                        return (
-                            <ScoreSummaryRow 
-                                key={`summary-${dimKey}`}
-                                title={dimKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                                metrics={dimMetrics}
-                                barColorClass={barColor}
-                                onClick={() => document.getElementById(`section-${dimKey}`)?.scrollIntoView({ behavior: 'smooth' })}
-                            />
-                        );
-                    })}
-                </div>
-            </section>
-
-            {sortedDimensions.length === 0 && availableDimensionKeys.length === 0 && (
-                <p className="text-sm text-accent-forest/40 italic py-4">No match data available</p>
-            )}
-
-            {/* EXECUTIVE SUMMARY SECTION */}
-            {(reportData as any)?._ai_summary_executive && (
-                <section id="section-executive-summary" className="space-y-2 pt-0 mb-8">
-                    <div className="border-b border-accent-sand/30 pb-3 mb-2">
+                {/* DIMENSION SCORES SECTION */}
+                <section id="section-dimension-scores" className="pb-0 mb-8 print:mb-4">
+                    <div className="border-b border-accent-sand/30 pb-3 mb-4">
                         <h3 className="text-xl font-bold text-accent-forest uppercase tracking-wide">
-                            Executive Summary
+                            Dimension Scores
                         </h3>
                     </div>
-                    <SummaryBox content={(reportData as any)?._ai_summary_executive} />
-                </section>
-            )}
 
-            {/* GLOBAL REQUIREMENTS SECTION */}
-            {reportData.allDimensions && (reportData.allDimensions.perfectMatch?.length > 0 || reportData.allDimensions.partialMatch?.length > 0 || reportData.allDimensions.missedMatch?.length > 0) && (
-                <section id="section-global" className="space-y-2 pt-2 mb-12 print:break-before-page">
+                    <div className="space-y-0">
+                        {/* Global Score Row */}
+                        {reportInfo.metrics?.score !== undefined && (
+                            <ScoreSummaryRow
+                                title="Global Match Score"
+                                metrics={reportInfo.metrics}
+                                barColorClass="text-accent-forest"
+                                hideMetrics={true}
+                            />
+                        )}
+
+                        {/* Individual Dimension Score Rows */}
+                        {sortedDimensions.map((dimKey) => {
+                            const categoryData = dimensionsMap[dimKey];
+                            const dimMetrics = categoryData?.metrics;
+                            if (!dimMetrics) return null;
+
+                            const dimId = categoryData.id || 0;
+                            const dimensionName = categoryData.displayName || dimKey;
+                            const dimensionColors = getDimensionColors(dimId);
+                            const barColor = dimensionColors?.text || 'text-accent-forest';
+
+                            return (
+                                <ScoreSummaryRow
+                                    key={`summary-${dimKey}`}
+                                    title={dimensionName}
+                                    metrics={dimMetrics}
+                                    barColorClass={barColor}
+                                    onClick={() => document.getElementById(`section-${dimKey}`)?.scrollIntoView({ behavior: 'smooth' })}
+                                />
+                            );
+                        })}
+                    </div>
+                </section>
+
+                {sortedDimensions.length === 0 && (
+                    <p className="text-sm text-accent-forest/40 italic py-4">No match data available</p>
+                )}
+
+                {/* EXECUTIVE SUMMARY SECTION */}
+                {reportInfo.ai_summary_executive && (
+                    <section id="section-executive-summary" className="space-y-2 pt-0 mb-8">
+                        <div className="border-b border-accent-sand/30 pb-3 mb-2">
+                            <h3 className="text-xl font-bold text-accent-forest uppercase tracking-wide">
+                                Executive Summary
+                            </h3>
+                        </div>
+
+                        <SummaryBox content={reportInfo.ai_summary_executive} />
+
+                    </section>
+                )}
+
+                {/* INDIVIDUAL DIMENSIONS LOOP */}
+                {sortedDimensions.map((dimKey) => {
+                    const categoryData = dimensionsMap[dimKey];
+                    if (!categoryData) return null;
+
+                    const dimMatchScore = categoryData.metrics;
+                    const currentDimId = categoryData.id || 0;
+                    const dimensionName = categoryData.displayName || dimKey;
+
+                    return (
+                        <section key={dimKey} id={`section-${dimKey}`} className="space-y-2 pt-6 mb-12 print:break-before-page">
+                            <div className="flex items-center justify-between border-b border-accent-sand/30 pb-3 mb-2">
+                                <h3 className="text-xl font-bold text-accent-forest uppercase tracking-wide">
+                                    {dimensionName}
+                                </h3>
+                                {dimMatchScore && (
+                                    <span className="text-sm font-medium text-accent-forest/70">
+                                        Weight: {formatPercentage(dimMatchScore.weights)}
+                                        {dimMatchScore.score !== null && dimMatchScore.score !== undefined && (
+                                            <> | Score: {formatPercentage(dimMatchScore.score)}</>
+                                        )}
+                                    </span>
+                                )}
+                            </div>
+
+                            {categoryData.ai_summary && (
+                                <SummaryBox
+                                    content={categoryData.ai_summary}
+                                />
+                            )}
+
+                            <MatchCategorySection items={categoryData.perfectMatch} title="Perfect Matches" dimensionId={currentDimId} matchType="perfect" />
+                            <MatchCategorySection items={categoryData.partialMatch} title="Partial Matches" dimensionId={currentDimId} matchType="partial" />
+                            <MatchCategorySection items={categoryData.missedMatch} title="Missed Matches" dimensionId={currentDimId} matchType="missed" />
+                        </section>
+                    );
+                })}
+
+                {/* Fallback: No additional dimensions needed */}
+
+                {/* CALCULATIONS APPENDIX SECTION */}
+                {/*
+                 * @separation_of_concerns
+                 * Presentation Layer: Moved all mathematical formulas to an appendix at the end of the report.
+                 * This keeps the main reading flow clean while preserving full transparency of the scoring engine.
+                 */}
+                <section id="section-calculations-appendix" className="space-y-2 pt-6 mb-12 print:break-before-page">
                     <div className="flex items-center justify-between border-b border-accent-sand/30 pb-3 mb-2">
                         <h3 className="text-xl font-bold text-accent-forest uppercase tracking-wide">
-                            Global Requirements
+                            Calculations
                         </h3>
-                        {matchScores.allDimensions && (
-                            <span className="text-sm font-medium text-accent-forest/70">
-                                Weight: {formatPercentage(matchScores.allDimensions.weights)}
-                                {matchScores.allDimensions.score !== null && matchScores.allDimensions.score !== undefined && (
-                                    <> | Score: {formatPercentage(matchScores.allDimensions.score)}</>
-                                )}
-                            </span>
-                        )}
                     </div>
-                    
-                    <MatchCategorySection items={reportData.allDimensions.perfectMatch} title="Perfect Matches" dimensionId={0} matchType="perfect" />
-                    <MatchCategorySection items={reportData.allDimensions.partialMatch} title="Partial Matches" dimensionId={0} matchType="partial" />
-                    <MatchCategorySection items={reportData.allDimensions.missedMatch} title="Missed Matches" dimensionId={0} matchType="missed" />
-                </section>
-            )}
 
-            {/* INDIVIDUAL DIMENSIONS LOOP */}
-            {sortedDimensions.map((dimKey) => {
-                const categoryData = reportData[dimKey] as CategorizedMatches | undefined;
-                const dimMatchScore = matchScores[dimKey];
-                const currentDimId = (reportData as any)._metadata?.dimension_ids?.[dimKey] || 0;
-                const currentDimColors = getDimensionColors(currentDimId);
-                
-                if (!categoryData) return null;
-
-                return (
-                    <section key={dimKey} id={`section-${dimKey}`} className="space-y-2 pt-6 mb-12 print:break-before-page">
-                        <div className="flex items-center justify-between border-b border-accent-sand/30 pb-3 mb-2">
-                            <h3 className="text-xl font-bold text-accent-forest uppercase tracking-wide">
-                                {dimKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                            </h3>
-                            {dimMatchScore && (
-                                <span className="text-sm font-medium text-accent-forest/70">
-                                    Weight: {formatPercentage(dimMatchScore.weights)}
-                                    {dimMatchScore.score !== null && dimMatchScore.score !== undefined && (
-                                        <> | Score: {formatPercentage(dimMatchScore.score)}</>
-                                    )}
-                                </span>
-                            )}
+                    {reportInfo.metrics?.formula && (
+                        <div className="bg-accent-sand/10 border border-accent-sand/30 rounded-xl p-4 mb-6 print:break-inside-avoid">
+                            <h4 className="text-sm font-bold text-accent-forest uppercase tracking-wider mb-3 border-b border-accent-sand/20 pb-2">
+                                Global Score Calculation
+                            </h4>
+                            <SummaryBox content={reportInfo.metrics.formula} smaller={true} />
                         </div>
-                        
-                        <SummaryBox 
-                            content={(reportData as any)?._ai_summaries_dimensional?.[dimKey]} 
-                        />
-                        
-                        <MatchCategorySection items={categoryData.perfectMatch} title="Perfect Matches" dimensionId={currentDimId} matchType="perfect" />
-                        <MatchCategorySection items={categoryData.partialMatch} title="Partial Matches" dimensionId={currentDimId} matchType="partial" />
-                        <MatchCategorySection items={categoryData.missedMatch} title="Missed Matches" dimensionId={currentDimId} matchType="missed" />
-                    </section>
-                );
-            })}
+                    )}
 
-            {/* Fallback: No additional dimensions needed */}
-        </motion.div>
+                    {sortedDimensions.map((dimKey) => {
+                        const categoryData = dimensionsMap[dimKey];
+                        if (!categoryData) return null;
+
+                        const dimMatchScore = categoryData.metrics;
+                        const dimensionName = categoryData.displayName || dimKey;
+
+                        if (!dimMatchScore?.formula) return null;
+
+                        return (
+                            <div key={`calc-${dimKey}`} className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6 shadow-sm print:break-inside-avoid">
+                                <h4 className="font-bold text-gray-900 mb-3 border-b border-gray-300 pb-2 text-sm uppercase tracking-wider">
+                                    {dimensionName} Score Calculation
+                                </h4>
+                                <SummaryBox content={dimMatchScore.formula} smaller={true} />
+                            </div>
+                        );
+                    })}
+                </section>
+            </motion.div>
         </div>
     );
 }

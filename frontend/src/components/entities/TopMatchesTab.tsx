@@ -1,11 +1,11 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Loader2, Trophy, FileText, CheckCircle, Eye } from 'lucide-react';
+import { Loader2, Trophy, FileText, CheckCircle } from 'lucide-react';
 import { Entity } from '@/lib/types';
 import { getNuancedEntityName, formatPercentage } from '@/lib/utils';
 import { useBlueprints } from '@/hooks/useBlueprints';
-import { Button } from '@/components/ui/Button';
+import { Button, ViewButton } from '@/components/ui';
 import { useState, useEffect } from 'react';
 
 /**
@@ -55,9 +55,7 @@ function CreateReportAction({
 
   if (localStatus === 'completed' && existingMatchId) {
     return (
-      <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); onView(existingMatchId); }}>
-        <Eye className="w-4 h-4 mr-2" /> View Matchreport
-      </Button>
+      <ViewButton entityName="Match Report" size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); onView(existingMatchId); }} />
     );
   }
 
@@ -172,8 +170,7 @@ export function TopMatchesTab({
             key={item.entity.id}
             className="flex items-center p-4 bg-white border border-border-light rounded-xl hover:border-accent-sage hover:shadow-sm transition-all group"
           >
-            <div className="flex flex-col items-center justify-center w-16 h-16 bg-accent-sage/10 rounded-xl border border-accent-sage/20 mr-4 shrink-0">
-              <span className="text-[10px] text-accent-forest/60 uppercase font-bold tracking-wider mb-0.5">Match</span>
+            <div className="flex items-center justify-center w-16 mr-4 shrink-0">
               <span className="font-bold text-accent-forest text-lg leading-none">{formatPercentage(item.score)}</span>
             </div>
             

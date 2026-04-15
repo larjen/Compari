@@ -7,15 +7,28 @@
  * - Handles layout, positioning, and visual shell (border, shadows, hover states).
  * - Manages status indicator rendering and action buttons (Cancel, Retry, Delete).
  * - Enforces Separation of Concerns: layout and state representation only.
+ * - Uses useTaskLifecycle hook to derive boolean states from status string.
  * @boundary_rules
  * - ❌ MUST NOT contain domain-specific data mapping (delegated to consuming components).
  * - ❌ MUST NOT contain API logic.
- * - ❌ MUST NOT handle business rules (status calculations done by parent).
+ * - ❌ MUST NOT calculate lifecycle states manually - uses useTaskLifecycle hook.
+ * @example
+ * <BaseCard
+ *   id={entity.id}
+ *   status={entity.status}
+ *   startTime={processingStartedAt || entity.updated_at}
+ *   errorMessage={entity.error}
+ *   taskName="extraction"
+ *   onClick={handleClick}
+ * >
+ *   {/* Domain content *//*}
+ * </BaseCard>
  */
 
 import { RefreshCw } from 'lucide-react';
 import { Button, DeleteAction } from '@/components/ui';
 import { StatusIndicator } from './StatusIndicator';
+import { useTaskLifecycle } from '@/hooks/useTaskLifecycle';
 import { cn } from '@/lib/utils';
 
 /**
@@ -25,20 +38,14 @@ import { cn } from '@/lib/utils';
 interface BaseCardProps {
   /** Unique identifier displayed in the left sidebar */
   id: number;
-  /** Whether the task is pending in the queue */
-  isPending: boolean;
-  /** Whether the task is currently being processed */
-  isProcessing: boolean;
-  /** Whether the task has encountered an error */
-  hasError: boolean;
-  /** Whether the task has completed successfully */
-  isCompleted: boolean;
+  /** Current status string from backend (pending, processing, completed, failed) */
+  status: string | null | undefined;
+  /** Start time for elapsed time calculation (typically when processing started) */
+  startTime?: string | null | undefined;
   /** Name of the task/operation being performed (e.g., 'extraction', 'assessment') */
   taskName: string;
-  /** Formatted elapsed time string (e.g., '2m 30s') - derived from useElapsedTime hook */
-  elapsedTime: string | undefined;
   /** Error message to display when hasError is true */
-  errorMessage: string | undefined;
+  errorMessage?: string | undefined;
   /** Current processing step name (optional, for detailed status) */
   processingStep?: string | undefined;
   /** Callback when the card is clicked */
@@ -63,17 +70,17 @@ interface BaseCardProps {
  * - Actions bar (Cancel, Retry, Delete) docked to bottom
  * - Children rendered between StatusIndicator and Actions Bar
  *
+ * Uses useTaskLifecycle hook to derive boolean states from status prop,
+ * enabling any future entity type to plug into the UI processing cycle effortlessly.
+ *
  * @param props - BaseCardProps
  * @returns JSX.Element
  */
 export function BaseCard({
   id,
-  isPending,
-  isProcessing,
-  hasError,
-  isCompleted,
+  status,
+  startTime,
   taskName,
-  elapsedTime,
   errorMessage,
   processingStep,
   onClick,
@@ -83,6 +90,12 @@ export function BaseCard({
   children,
   customActions
 }: BaseCardProps) {
+  const { isPending, isProcessing, hasError, isCompleted, elapsedTime } = useTaskLifecycle(
+    status,
+    startTime,
+    errorMessage
+  );
+
   const isBusy = isPending || isProcessing;
 
   const handleClick = (e: React.MouseEvent) => {
@@ -122,13 +135,11 @@ export function BaseCard({
          */}
         <div className="h-6 flex-shrink-0 w-full">
           <StatusIndicator
-            isPending={isPending}
-            isProcessing={isProcessing}
-            hasError={hasError}
+            status={status}
             taskName={taskName}
-            elapsedTime={elapsedTime}
-            processingStep={processingStep}
+            startTime={startTime}
             errorMessage={errorMessage}
+            processingStep={processingStep}
           />
         </div>
 

@@ -11,14 +11,13 @@
  * @boundary_rules
  * - ❌ MUST NOT contain API logic (delegated to hooks).
  * - ❌ MUST NOT handle business rules beyond data mapping.
+ * - ❌ MUST NOT calculate lifecycle states - delegated to BaseCard via useTaskLifecycle.
  * - Layout shell is delegated to BaseCard component.
  */
 import { Building2, User } from 'lucide-react';
 import { Entity } from '@/lib/types';
 import { cn, formatPercentage } from '@/lib/utils';
-import { useElapsedTime } from '@/hooks/useElapsedTime';
 import { BaseCard } from '../shared/BaseCard';
-import { ENTITY_STATUS } from '@/lib/constants';
 
 interface EntityCardProps {
   /** The entity to display */
@@ -49,16 +48,7 @@ export function EntityCard({
   onCancel,
   displayName
 }: EntityCardProps) {
-  const currentStatus = entity.status;
-
-  const isPending = currentStatus === ENTITY_STATUS.PENDING;
-  const isProcessing = currentStatus === ENTITY_STATUS.PROCESSING;
-  const hasError = currentStatus === ENTITY_STATUS.FAILED || currentStatus === 'error' || !!entity.error;
-  const isCompleted = currentStatus === ENTITY_STATUS.COMPLETED;
-
-  const startTime = processingStartedAt || (entity as any).updated_at;
-  const elapsedTime = useElapsedTime(isProcessing ? startTime : undefined);
-
+  const startTime = processingStartedAt || (entity.metadata?.processingStartedAt as string) || (entity as any).updated_at;
   const isRequirement = entity.type === 'requirement';
 
   const displayString = displayName || (entity.metadata?.nice_name as string | undefined) || entity.name || '';
@@ -69,12 +59,9 @@ export function EntityCard({
   return (
     <BaseCard
       id={entity.id}
-      isPending={isPending}
-      isProcessing={isProcessing}
-      hasError={hasError}
-      isCompleted={isCompleted}
+      status={entity.status}
+      startTime={startTime}
       taskName={isRequirement ? "extraction" : "processing"}
-      elapsedTime={elapsedTime}
       errorMessage={entity.error || undefined}
       processingStep={entity.metadata?.processingStep as string | undefined}
       onClick={onClick}
@@ -84,7 +71,7 @@ export function EntityCard({
     >
       <div className={cn(
         "mb-2 flex flex-col items-center transition-colors group-hover:text-accent-forest-light",
-        hasError ? "text-red-700" : "text-accent-forest"
+        (entity.status === 'failed' || entity.status === 'error' || entity.error) ? "text-red-700" : "text-accent-forest"
       )}>
         <h3 className="font-semibold text-base line-clamp-1">
           {primaryName}

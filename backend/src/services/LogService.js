@@ -33,9 +33,15 @@ class LogService {
             INFO: '\x1b[34mℹ\x1b[0m',
             WARNING: '\x1b[33m⚠\x1b[0m',
             ERROR: '\x1b[31m✖\x1b[0m',
-            LIGHTNING: '\x1b[36m⚡\x1b[0m',
+            LIGHTNING: '\x1b[36m✧\x1b[0m',
             NONE: ' '
         };
+    }
+
+    formatDuration(ms) {
+        const minutes = Math.floor(ms / 60000);
+        const seconds = Math.floor((ms % 60000) / 1000);
+        return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
     }
 
     _stripAnsi(str) {

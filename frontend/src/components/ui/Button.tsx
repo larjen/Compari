@@ -20,8 +20,8 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     
     const variants = {
       primary: 'bg-accent-forest text-white hover:bg-accent-forest-light focus:ring-accent-sage',
-      secondary: 'bg-accent-sand/30 text-accent-forest border border-accent-sand/50 hover:bg-accent-sand/50 focus:ring-accent-sage',
-      ghost: 'text-accent-forest/70 hover:text-accent-forest hover:bg-accent-sand/20 focus:ring-accent-sage',
+      secondary: 'bg-accent-sand/30 text-themed-fg-main border border-accent-sand/50 hover:bg-accent-sand/50 focus:ring-accent-sage',
+      ghost: 'text-themed-fg-muted hover:text-themed-fg-main hover:bg-accent-sand/20 focus:ring-accent-sage',
       danger: 'bg-red-500 text-white hover:bg-red-600 focus:ring-red-400',
     };
 

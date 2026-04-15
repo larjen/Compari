@@ -2,7 +2,6 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
 
 import { CreateMatchModal } from '@/components/modals/CreateMatchModal';
 import { MatchDetailModal } from '@/components/modals/MatchDetailModal';
@@ -15,43 +14,20 @@ import { useToast } from '@/hooks/useToast';
 import { useModal } from '@/hooks/useModal';
 import { useSSE } from '@/hooks/useSSE';
 import { Loader2, FileSearch } from 'lucide-react';
-import { EmptyState } from '@/components/shared/PageStates';
+import { EmptyState, ContentLoader } from '@/components/shared/PageStates';
+import { AnimatedDataGrid } from '@/components/shared/AnimatedDataGrid';
 import { EntityMatch } from '@/lib/types';
-
-const ITEMS_PER_PAGE = 12;
+import { ITEMS_PER_PAGE } from '@/lib/ui-configs';
+import { matchApi } from '@/lib/api/matchApi';
+import { ENTITY_STATUS } from '@/lib/constants';
 
 const STATUS_OPTIONS = [
-  { value: 'all', label: 'All Statuses' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'error', label: 'Error' },
+  { value: 'all', label: 'All' },
+  { value: ENTITY_STATUS.PENDING, label: 'Queued' },
+  { value: ENTITY_STATUS.PROCESSING, label: 'Processing' },
+  { value: ENTITY_STATUS.COMPLETED, label: 'Completed' },
+  { value: ENTITY_STATUS.FAILED, label: 'Failed' }
 ];
-
-const masterContainer = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.03,
-      when: "beforeChildren"
-    }
-  },
-  exit: {
-    opacity: 0,
-    transition: { duration: 0.2 }
-  }
-};
-
-const masterItem = {
-  hidden: { opacity: 0 },
-  visible: { 
-    opacity: 1, 
-    transition: { 
-      duration: 0.45,
-      ease: "easeOut" as const
-    } 
-  }
-};
 
 function MatchesPageContent() {
   const router = useRouter();
@@ -60,17 +36,24 @@ function MatchesPageContent() {
 
   const { addToast } = useToast();
   const { activeModal, closeModal } = useModal();
-  
+
   const { search, setSearch, debouncedSearch, status, setStatus, page, setPage } = useFilterState('all');
 
-  const { matches, loading, addMatch, deleteMatch, handleMatchUpdate, totalPages } = useMatches({
+  const { matches, loading, addMatch, deleteMatch, handleMatchUpdate, totalPages, refetch } = useMatches({
     page,
     limit: ITEMS_PER_PAGE,
     search: debouncedSearch,
     status,
   });
 
+  useEffect(() => {
+    if (!loading) {
+      setIsReady(true);
+    }
+  }, [loading]);
+
   const [createMatchOpen, setCreateMatchOpen] = useState(false);
+  const [isReady, setIsReady] = useState(false);
 
   const selectedMatchData = matchIdParam ? matches.find(m => m.id === Number(matchIdParam)) || null : null;
 
@@ -107,10 +90,21 @@ function MatchesPageContent() {
     }
   };
 
-return (
+  const handleRetryProcessing = async (matchId: number) => {
+    try {
+      await matchApi.retryProcessing(matchId);
+      addToast('success', 'Match assessment queued for retry');
+      refetch();
+    } catch (err) {
+      console.error('Failed to retry:', err);
+      addToast('error', 'Failed to retry match assessment');
+    }
+  };
+
+  return (
     <div className="flex-1 p-6">
       <div className="max-w-7xl mx-auto min-h-full">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
+        <div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 transition-opacity duration-500 ease-in-out ${isReady ? 'opacity-100' : 'opacity-0'}`}>
           <FilterBar
             searchTerm={search}
             onSearchChange={setSearch}
@@ -120,41 +114,35 @@ return (
             filterOptions={STATUS_OPTIONS}
             className="flex-1"
           />
-          
+
           {totalPages > 1 && (
-            <Pagination 
-              currentPage={page} 
-              totalPages={totalPages} 
-              onPageChange={setPage} 
+            <Pagination
+              currentPage={page}
+              totalPages={totalPages}
+              onPageChange={setPage}
             />
           )}
         </div>
 
         {loading && matches.length === 0 ? (
-          <div className="py-20 flex justify-center items-center flex-col gap-4">
-            <Loader2 className="w-8 h-8 animate-spin text-accent-sage" />
-            <p className="text-accent-forest/70 font-medium">Loading...</p>
-          </div>
+          <ContentLoader />
         ) : matches.length > 0 ? (
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={`match-grid-${page}-${debouncedSearch}-${status}`}
-              variants={masterContainer}
-              initial="hidden"
-              animate="visible"
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
-            >
-              {matches.map((match) => (
-                <motion.div key={match.id} variants={masterItem}>
-                  <MatchCard
-                    match={match}
-                    onClick={() => router.push(`?matchId=${match.id}`)}
-                    onDelete={() => handleDeleteMatch(match.id)}
-                  />
-                </motion.div>
-              ))}
-            </motion.div>
-          </AnimatePresence>
+          <AnimatedDataGrid
+            items={matches}
+            loading={loading}
+            page={page}
+            search={debouncedSearch}
+            status={status}
+            gridKeyPrefix="match-grid"
+            renderItem={(match) => (
+              <MatchCard
+                match={match}
+                onClick={() => router.push(`?matchId=${match.id}`)}
+                onDelete={() => handleDeleteMatch(match.id)}
+                onRetry={() => handleRetryProcessing(match.id)}
+              />
+            )}
+          />
         ) : (
           <EmptyState icon={FileSearch} title="No matches found" subtitle="Try adjusting your search or filter criteria" />
         )}
@@ -178,7 +166,7 @@ return (
 
 export default function MatchesPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="w-8 h-8 animate-spin text-accent-sage" /></div>}>
+    <Suspense fallback={<ContentLoader delay={200} />}>
       <MatchesPageContent />
     </Suspense>
   );

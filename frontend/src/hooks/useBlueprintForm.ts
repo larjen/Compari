@@ -1,79 +1,62 @@
-/**
- * @fileoverview Custom hook for managing Blueprint form state with complex nested mutations.
- * @description This hook isolates complex nested form state mutations away from the presentation layer to enforce Separation of Concerns (SoC). It centralizes the logic for managing create/edit form data, editing state, and field/dimension manipulation.
- * @responsibility
- * - Manages form state for both create and edit modes.
- * - Provides mutation functions for fields (add, update, remove).
- * - Handles dimension toggle logic.
- * - Manages editing mode state transitions.
- * @boundary_rules
- * - ❌ MUST NOT contain UI components.
- * - ❌ MUST NOT contain validation logic (validation should be in the presentation layer or a separate utility).
- * - ❌ MUST NOT directly call API functions (API calls should use useBlueprints hook).
- * @example
- * const {
- *   formData, setFormData,
- *   isCreating, setIsCreating,
- *   editingId, setEditingId,
- *   editFormData, setEditFormData,
- *   startEditing, cancelEditing,
- *   addField, updateField, removeField, toggleDimension
- * } = useBlueprintForm();
- */
 'use client';
 
 import { useState } from 'react';
-import { Blueprint } from '@/lib/types';
-import {
-  BlueprintFormData,
-  FieldFormData,
-  initialFormData,
-  initialFieldForm
-} from '@/components/blueprints/BlueprintForm';
+import { BlueprintFormData, FieldFormData } from '@/components/settings/BlueprintsTab';
+
+const initialFormData: BlueprintFormData = {
+  name: '',
+  requirementLabelSingular: '',
+  requirementLabelPlural: '',
+  offeringLabelSingular: '',
+  offeringLabelPlural: '',
+  requirementDocTypeLabel: '',
+  offeringDocTypeLabel: '',
+  description: '',
+  fields: [],
+  dimensionIds: [],
+  isActive: false,
+};
 
 export interface UseBlueprintFormReturn {
   formData: BlueprintFormData;
   setFormData: React.Dispatch<React.SetStateAction<BlueprintFormData>>;
-  isCreating: boolean;
-  setIsCreating: React.Dispatch<React.SetStateAction<boolean>>;
   editingId: number | null;
   setEditingId: React.Dispatch<React.SetStateAction<number | null>>;
   editFormData: BlueprintFormData;
   setEditFormData: React.Dispatch<React.SetStateAction<BlueprintFormData>>;
-  startEditing: (blueprint: Blueprint) => void;
+  startEditing: (bp: any) => void;
   cancelEditing: () => void;
-  addField: (isEdit: boolean) => void;
-  updateField: (index: number, field: FieldFormData, isEdit: boolean) => void;
-  removeField: (index: number, isEdit: boolean) => void;
-  toggleDimension: (dimensionId: number, isEdit: boolean) => void;
+  addField: (isEditing: boolean) => void;
+  updateField: (index: number, field: FieldFormData, isEditing: boolean) => void;
+  removeField: (index: number, isEditing: boolean) => void;
+  toggleDimension: (id: number, isEditing: boolean) => void;
 }
 
-export function useBlueprintForm(): UseBlueprintFormReturn {
+export function useBlueprintForm() {
   const [formData, setFormData] = useState<BlueprintFormData>(initialFormData);
-  const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editFormData, setEditFormData] = useState<BlueprintFormData>(initialFormData);
 
-  const startEditing = (blueprint: Blueprint) => {
-    setEditingId(blueprint.id);
+  const startEditing = (bp: any) => {
+    setEditingId(bp.id);
     setEditFormData({
-      name: blueprint.name,
-      requirementLabelSingular: blueprint.requirementLabelSingular,
-      requirementLabelPlural: blueprint.requirementLabelPlural,
-      offeringLabelSingular: blueprint.offeringLabelSingular,
-      offeringLabelPlural: blueprint.offeringLabelPlural,
-      requirementDocTypeLabel: blueprint.requirementDocTypeLabel || '',
-      offeringDocTypeLabel: blueprint.offeringDocTypeLabel || '',
-      description: blueprint.description || '',
-      fields: blueprint.fields?.map(f => ({
-        fieldName: f.field_name,
-        fieldType: f.field_type as 'string' | 'number' | 'date' | 'boolean',
-        description: f.description,
-        isRequired: f.is_required,
-        entityRole: f.entity_role,
+      name: bp.name || '',
+      requirementLabelSingular: bp.requirementLabelSingular || bp.requirement_label_singular || '',
+      requirementLabelPlural: bp.requirementLabelPlural || bp.requirement_label_plural || '',
+      offeringLabelSingular: bp.offeringLabelSingular || bp.offering_label_singular || '',
+      offeringLabelPlural: bp.offeringLabelPlural || bp.offering_label_plural || '',
+      requirementDocTypeLabel: bp.requirementDocTypeLabel || bp.requirement_doc_type_label || '',
+      offeringDocTypeLabel: bp.offeringDocTypeLabel || bp.offering_doc_type_label || '',
+      description: bp.description || '',
+      fields: bp.fields?.map((f: any) => ({
+        fieldName: f.field_name || f.fieldName,
+        fieldType: f.field_type || f.fieldType,
+        description: f.description || '',
+        isRequired: f.is_required || f.isRequired || false,
+        entityRole: f.entity_role || f.entityRole || 'requirement'
       })) || [],
-      dimensionIds: blueprint.dimensions?.map(d => d.id) || [],
-      isActive: blueprint.is_active,
+      dimensionIds: bp.dimensions?.map((d: any) => d.id) || [],
+      isActive: bp.is_active || bp.isActive || false,
     });
   };
 
@@ -82,55 +65,54 @@ export function useBlueprintForm(): UseBlueprintFormReturn {
     setEditFormData(initialFormData);
   };
 
-  const addField = (isEdit: boolean) => {
-    const data = isEdit ? editFormData : formData;
-    const setData = isEdit ? setEditFormData : setFormData;
-    setData({
-      ...data,
-      fields: [...data.fields, { ...initialFieldForm }],
-    });
+  const addField = (isEditing: boolean) => {
+    const newField: FieldFormData = { fieldName: '', fieldType: 'string', description: '', isRequired: false, entityRole: 'requirement' };
+    if (isEditing) {
+      setEditFormData({ ...editFormData, fields: [...editFormData.fields, newField] });
+    } else {
+      setFormData({ ...formData, fields: [...formData.fields, newField] });
+    }
   };
 
-  const updateField = (index: number, field: FieldFormData, isEdit: boolean) => {
-    const data = isEdit ? editFormData : formData;
-    const setData = isEdit ? setEditFormData : setFormData;
-    const newFields = [...data.fields];
-    newFields[index] = field;
-    setData({ ...data, fields: newFields });
+  const updateField = (index: number, field: FieldFormData, isEditing: boolean) => {
+    if (isEditing) {
+      const newFields = [...editFormData.fields];
+      newFields[index] = field;
+      setEditFormData({ ...editFormData, fields: newFields });
+    } else {
+      const newFields = [...formData.fields];
+      newFields[index] = field;
+      setFormData({ ...formData, fields: newFields });
+    }
   };
 
-  const removeField = (index: number, isEdit: boolean) => {
-    const data = isEdit ? editFormData : formData;
-    const setData = isEdit ? setEditFormData : setFormData;
-    setData({
-      ...data,
-      fields: data.fields.filter((_, i) => i !== index),
-    });
+  const removeField = (index: number, isEditing: boolean) => {
+    if (isEditing) {
+      setEditFormData({ ...editFormData, fields: editFormData.fields.filter((_, i) => i !== index) });
+    } else {
+      setFormData({ ...formData, fields: formData.fields.filter((_, i) => i !== index) });
+    }
   };
 
-  const toggleDimension = (dimensionId: number, isEdit: boolean) => {
-    const data = isEdit ? editFormData : formData;
-    const setData = isEdit ? setEditFormData : setFormData;
-    const newIds = data.dimensionIds.includes(dimensionId)
-      ? data.dimensionIds.filter(id => id !== dimensionId)
-      : [...data.dimensionIds, dimensionId];
-    setData({ ...data, dimensionIds: newIds });
+  const toggleDimension = (id: number, isEditing: boolean) => {
+    if (isEditing) {
+      const newIds = editFormData.dimensionIds.includes(id)
+        ? editFormData.dimensionIds.filter(dId => dId !== id)
+        : [...editFormData.dimensionIds, id];
+      setEditFormData({ ...editFormData, dimensionIds: newIds });
+    } else {
+      const newIds = formData.dimensionIds.includes(id)
+        ? formData.dimensionIds.filter(dId => dId !== id)
+        : [...formData.dimensionIds, id];
+      setFormData({ ...formData, dimensionIds: newIds });
+    }
   };
 
   return {
-    formData,
-    setFormData,
-    isCreating,
-    setIsCreating,
-    editingId,
-    setEditingId,
-    editFormData,
-    setEditFormData,
-    startEditing,
-    cancelEditing,
-    addField,
-    updateField,
-    removeField,
-    toggleDimension,
+    formData, setFormData,
+    editingId, setEditingId,
+    editFormData, setEditFormData,
+    startEditing, cancelEditing,
+    addField, updateField, removeField, toggleDimension
   };
 }

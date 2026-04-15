@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Plus, Settings } from 'lucide-react';
-import { Button } from '@/components/ui';
+import { Settings } from 'lucide-react';
+import { Button, CreateButton } from '@/components/ui';
 import { useModal, ModalType } from '@/hooks/useModal';
 import { useBlueprints } from '@/hooks/useBlueprints';
 import { Logo } from '@/components/ui/Logo';
@@ -19,8 +19,8 @@ interface NavRoute {
   href: string;
   /** The modal type to open when creating a new item */
   modalType: ModalType;
-  /** The label for the create button */
-  createLabel: string;
+  /** The entity name for the create button */
+  entityName: string;
 }
 
 /**
@@ -74,10 +74,10 @@ export function Navbar({ isLoading }: NavbarProps) {
    * Blueprints and Dimensions are moved to Settings modal.
    */
   const NAV_ROUTES: NavRoute[] = [
-    { label: requirementLabelPlural, href: '/', modalType: 'create-requirement', createLabel: `Create ${requirementLabelSingular}` },
-    { label: offeringLabelPlural, href: '/offerings', modalType: 'create-offering', createLabel: `Create ${offeringLabelSingular}` },
-    { label: 'Matches', href: '/matches', modalType: 'create-match', createLabel: 'Create match' },
-    { label: 'Criteria', href: '/criteria', modalType: null, createLabel: 'Create criterion' },
+    { label: requirementLabelPlural, href: '/', modalType: 'create-requirement', entityName: requirementLabelSingular },
+    { label: offeringLabelPlural, href: '/offerings', modalType: 'create-offering', entityName: offeringLabelSingular },
+    { label: 'Matches', href: '/matches', modalType: 'create-match', entityName: 'Match' },
+    { label: 'Criteria', href: '/criteria', modalType: null, entityName: 'Criterion' },
   ];
 
   const currentRoute = NAV_ROUTES.find((route) => {
@@ -142,10 +142,10 @@ export function Navbar({ isLoading }: NavbarProps) {
             )}
 
             {shouldShowCreateButton && (
-              <Button variant="primary" size="sm" onClick={handleCreateClick}>
-                <Plus className="w-4 h-4 mr-2" />
-                <span className="pr-1">{currentRoute.createLabel}</span>
-              </Button>
+              <CreateButton 
+                entityName={currentRoute.entityName} 
+                onClick={handleCreateClick} 
+              />
             )}
 
             <Button variant="ghost" size="sm" onClick={() => openModal('settings')}>

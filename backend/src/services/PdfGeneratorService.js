@@ -13,7 +13,14 @@ class PdfGeneratorService {
 
         const frontendUrl = `http://localhost:3001/print/match/${matchId}`;
 
-        await page.goto(frontendUrl, { waitUntil: 'networkidle0', timeout: 30000 });
+        // Use networkidle2 to ignore Next.js HMR websockets in dev mode
+        await page.goto(frontendUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        
+        // Explicitly wait for the React component to mount and render the data
+        await page.waitForSelector('#match-report-content', { visible: true, timeout: 60000 });
+        
+        // Add a brief artificial delay to ensure fonts and final layout shifts settle
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         // 1. Resolve path to the frontend public directory and read the SVG
         const logoPath = path.join(__dirname, '../../../frontend/public/compari.svg');

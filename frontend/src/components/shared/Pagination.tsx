@@ -12,7 +12,7 @@ export function Pagination({ currentPage, totalPages, onPageChange }: Pagination
 
   return (
     <div className="flex items-center gap-4 shrink-0">
-      <div className="text-sm text-accent-forest/50 whitespace-nowrap">
+      <div className="text-sm text-accent-forest/50 whitespace-nowrap tabular-nums min-w-[100px] text-center">
         Page {currentPage} of {totalPages}
       </div>
       <div className="flex gap-2">

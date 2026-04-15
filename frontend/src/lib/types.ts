@@ -38,9 +38,8 @@ export interface EntityMatch {
   match_score: number | null;
   report_path: string | null;
   folder_path: string | null;
-  queue_status: 'pending' | 'processing' | 'completed' | 'error' | null;
+  status?: 'pending' | 'processing' | 'completed' | 'failed' | null;
   error: string | null;
-  status?: string;
   created_at: string | null;
   updated_at?: string | null;
   requirement_name?: string;
@@ -65,6 +64,34 @@ export interface Settings {
    * @description This setting is stored as a string ('true'/'false') to match backend storage format.
    */
   log_ai_interactions?: string;
+  /**
+   * Controls whether the AI should verify criteria synonyms before merging them.
+   * When set to 'true', AI double-checks if similar criteria are true synonyms before merging.
+   * When 'false', merges are based solely on vector similarity.
+   */
+  ai_verify_merges?: string;
+  /**
+   * Model ID assigned to general chat tasks (entity extraction, summarization).
+   */
+  model_routing_general?: string;
+  /**
+   * Model ID assigned to fast verification tasks (synonym checking).
+   */
+  model_routing_verification?: string;
+/**
+    * Model ID assigned to embedding tasks (vectorization).
+    */
+  model_routing_embedding?: string;
+/**
+     * Model ID assigned to metadata extraction tasks (simple field extraction).
+     */
+  model_routing_metadata?: string;
+  /**
+   * Controls whether AI requests are executed concurrently or sequentially.
+   * Enable for cloud AI providers (e.g., OpenAI) for faster extraction.
+   * Disable for local models (e.g., Ollama) to prevent queue thrashing.
+   */
+  allow_concurrent_ai?: string;
 }
 
 export interface Toast {
@@ -126,9 +153,8 @@ export interface SSEMatchUpdate {
   requirement_id: number;
   offering_id: number;
   match_score: number | null;
-  queue_status: 'pending' | 'processing' | 'completed' | 'error' | null;
+  status?: 'pending' | 'processing' | 'completed' | 'failed' | null;
   error: string | null;
-  status?: string;
   created_at: string;
   updated_at: string;
   requirement_name?: string;
@@ -219,4 +245,13 @@ export interface Blueprint {
   updated_at: string;
   fields?: BlueprintField[];
   dimensions?: Dimension[];
+}
+
+export interface Prompt {
+  id: number;
+  system_name: string;
+  title: string;
+  description: string;
+  prompt: string;
+  updated_at: string;
 }

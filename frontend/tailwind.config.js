@@ -69,6 +69,20 @@ module.exports = {
           sent: '#6B8E7D',
           finished: '#1A2F24',
         },
+        themed: {
+          bg: 'var(--theme-bg)',
+          border: 'var(--theme-border)',
+          fg: {
+            main: 'var(--theme-fg-main)',
+            muted: 'var(--theme-fg-muted)',
+          },
+          input: {
+            bg: 'var(--theme-input-bg)',
+            border: 'var(--theme-input-border)',
+            placeholder: 'var(--theme-input-placeholder)',
+          },
+          inner: 'var(--theme-inner-box)',
+        },
       },
       fontFamily: {
         serif: ['Playfair Display', 'Merriweather', 'Georgia', 'serif'],

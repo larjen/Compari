@@ -103,7 +103,7 @@ class CriteriaManagerWorkflow {
                 dim.displayName.replace(/ /g, '_'),
                 dim.displayName.replace(/ /g, '')
             ];
-            
+
             let extractedArray = [];
             for (const key of possibleKeys) {
                 if (parsed[key] !== undefined) {
@@ -242,20 +242,20 @@ class CriteriaManagerWorkflow {
         }
 
         const entity = entityRepo.getEntityById(entityId);
-        
+
         if (!entity) {
             logService.logTerminal('WARN', 'WARNING', 'CriteriaManagerWorkflow', `Entity #${entityId} not found for extraction`);
             return;
         }
 
         const entityRole = entity.type || 'offering';
-        
+
         let activeDimensions = [];
-        
+
         if (entity && entity.blueprintId) {
             activeDimensions = blueprintRepo.getBlueprintDimensions(entity.blueprintId);
         }
-        
+
         if (activeDimensions.length === 0) {
             logService.logTerminal('WARN', 'WARNING', 'CriteriaManagerWorkflow', 'No blueprint dimensions found, falling back to global active dimensions.');
             activeDimensions = dimensionRepo.getActiveDimensions();
@@ -266,27 +266,28 @@ class CriteriaManagerWorkflow {
             return;
         }
 
-        entityService.updateProcessingStep(entityId, 'Extracting Dimensions (Chunked)');
-
         // Accumulator for the chunked results
         const combinedDimensions = {};
-        
+
         // Create an array of concurrent extraction tasks, one for each dimension
-        const extractionTasks = activeDimensions.map(async (dim) => {
+        const extractionTasks = activeDimensions.map((dim) => async () => {
             const singleDimArray = [dim];
-            
+
             try {
+
+                entityService.updateProcessingStep(entityId, `Extracting Criteria from ${dim.display_name}`);
+
                 const messages = PromptBuilder.buildDynamicExtractionMessages(text, singleDimArray, entityRole);
                 const extractionSchema = DynamicSchemaBuilder.buildExtractionSchema(singleDimArray, entityRole);
 
-                const response = await AiService.generateChatResponse(
+                const { content } = await AiService.generateChatResponse(
                     messages,
-                    { format: extractionSchema, logFolderPath: entity.folderPath },
+                    { format: extractionSchema, logFolderPath: entity.folderPath, logAction: `Extracted dimension '${dim.display_name}' for Entity #${entityId}.` },
                     undefined, undefined, signal
                 );
 
-                const parsed = this._parseDimensionResponse(response, singleDimArray);
-                
+                const parsed = this._parseDimensionResponse(content, singleDimArray);
+
                 // Merge the parsed dimension into our accumulator
                 if (parsed.dimensions && parsed.dimensions[dim.name]) {
                     combinedDimensions[dim.name] = parsed.dimensions[dim.name];
@@ -300,8 +301,15 @@ class CriteriaManagerWorkflow {
             }
         });
 
-        // Execute all chunked requests concurrently
-        await Promise.all(extractionTasks);
+        // Execute all chunked requests based on concurrency setting
+        const allowConcurrent = SettingsManager.get('allow_concurrent_ai') === 'true';
+        if (allowConcurrent) {
+            await Promise.all(extractionTasks.map(t => t()));
+        } else {
+            for (const task of extractionTasks) {
+                await task();
+            }
+        }
 
         const dimensions = combinedDimensions;
 
@@ -383,10 +391,27 @@ class CriteriaManagerWorkflow {
                     if (score >= threshold) {
                         const existingTitle = linked.displayName;
                         const newTitle = newCriterionFull.displayName;
+
+                        // --- LLM VERIFICATION GATE ---
+                        // Check if AI verification is enabled - if not, trust the vector match
+                        const isAiVerificationEnabled = SettingsManager.get('ai_verify_merges') === 'true';
+
+                        let isSynonym = true;
+
+                        if (isAiVerificationEnabled) {
+                            const result = await AiValidator.areCriteriaSynonyms(newTitle, existingTitle);
+                            isSynonym = result.isSynonym;
+                        }
+
+                        if (!isSynonym) {
+                            logService.logTerminal('INFO', 'INFO', 'CriteriaManager', `Merge rejected by AI Gate: "${newTitle}" !== "${existingTitle}" (Vector Likeness: ${Math.round(score * 100)}%)`);
+                            continue;
+                        }
+
                         await criteriaService.mergeCriteria(linked.id, newCriterionFull.id);
                         // State Management: Track merged criterion to prevent duplicate merge attempts in same batch
                         deletedCriteriaIds.add(newCriterionFull.id);
-                        logService.logTerminal('INFO', 'CHECKMARK', 'CriteriaManagerWorkflow', `Auto-merged ${newTitle} into ${existingTitle} (Likeness: ${Math.round(score * 100)}%)`);
+                        logService.logTerminal('INFO', 'CHECKMARK', 'CriteriaManager', `Auto-merged ${newTitle} into ${existingTitle} (Likeness: ${Math.round(score * 100)}%)`);
                         break;
                     }
                 } catch (e) {
@@ -506,10 +531,10 @@ class CriteriaManagerWorkflow {
      * - Calculating dimensional sub-scores in the Domain layer ensures the frontend remains purely
      *   responsible for presentation, receiving fully computed metrics ready for display.
      * 
-     * @new_structure
-     * - Extracts the overall score from the rawComparison report (no recalculation).
-     * - reportInfo.matchScores contains allDimensions and per-dimension weights/scores.
-     * - Root level contains allDimensions array and flattened dimension arrays.
+* @new_structure
+      * - Extracts the overall score from the rawComparison report (no recalculation).
+      * - Dimension objects at root contain metrics with weights/scores.
+      * - Root level contains flattened dimension arrays with perfectMatch/partialMatch/missedMatch.
      */
     calculateCriteriaMatch(requirementEntityId, offeringEntityId) {
         const requirementEntity = entityRepo.getEntityById(requirementEntityId);
@@ -526,14 +551,14 @@ class CriteriaManagerWorkflow {
 
         const minFloorSetting = parseFloat(SettingsManager.get('minimum_match_floor')) || 0.50;
         const perfectScoreSetting = parseFloat(SettingsManager.get('perfect_match_score')) || 0.85;
-        
+
         const matchSettings = {
             minimumFloor: minFloorSetting,
             perfectScore: perfectScoreSetting
         };
 
         const standardResult = MatchingEngine.calculate(requirementCriteria, offeringCriteria);
-        
+
         const rawComparison = MatchingEngine.buildRawComparison(
             { id: requirementEntity.id, name: requirementEntity.niceName },
             { id: offeringEntity.id, name: offeringEntity.niceName },
@@ -542,11 +567,11 @@ class CriteriaManagerWorkflow {
             requirementCriteria,
             offeringCriteria
         );
-        
+
         // Extract the pre-calculated overall score from the rawComparison report.
         // This satisfies the DRY principle by preventing redundant vector math recalculations,
         // and resolves structural mismatch issues with calculateWeightedMatchScore.
-        const calculatedScore = rawComparison?.reportInfo?.matchScores?.allDimensions?.score || 0;
+        const calculatedScore = rawComparison?.reportInfo?.metrics?.score || 0;
         const newOverallScore = Number(calculatedScore.toFixed(4));
 
         return {
@@ -596,9 +621,10 @@ class CriteriaManagerWorkflow {
         }
 
         const filePath = path.join(entity.folderPath, fileName);
-        
+
         try {
             entityService.updateEntityStatus(entityId, 'processing');
+            entityService.updateEntityMetadata(entityId, { processingStartedAt: new Date().toISOString() });
 
             const text = await FileService.extractTextFromFile(filePath);
             if (!text || text.trim().length === 0) {
@@ -608,7 +634,7 @@ class CriteriaManagerWorkflow {
             }
 
             await this.extractAndStoreEntityCriteria(entityId, text, signal);
-            
+
             logService.addActivityLog(
                 'Entity',
                 entityId,

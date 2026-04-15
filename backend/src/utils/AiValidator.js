@@ -102,8 +102,45 @@ function isEmptyExtraction(dimensions, activeDimensions) {
     return true;
 }
 
+/**
+ * Uses a fast LLM call to verify if two criteria are functionally identical synonyms.
+ * Acts as a safeguard against false-positive vector embedding matches.
+ * @param {string} criterionA 
+ * @param {string} criterionB 
+ * @returns {Promise<boolean>}
+ */
+async function areCriteriaSynonyms(criterionA, criterionB) {
+    const AiService = require('../services/AiService');
+    const promptRepo = require('../repositories/PromptRepo');
+    
+    const synonymPrompt = promptRepo.getPromptBySystemName('synonym_validator').prompt;
+    
+    const messages = [
+        { 
+            role: 'system', 
+            content: synonymPrompt 
+        },
+        { 
+            role: 'user', 
+            content: `Criterion 1: "${criterionA}"\nCriterion 2: "${criterionB}"` 
+        }
+    ];
+
+    try {
+        const { content } = await AiService.generateChatResponse(messages, { taskType: 'verification', temperature: 0.0, logAction: 'Evaluated synonyms for merge gate.' });
+        return { 
+            isSynonym: content.trim().toUpperCase().includes('YES')
+        };
+    } catch (error) {
+        const logService = require('../services/LogService');
+        logService.logTerminal('WARN', 'WARNING', 'AiValidator', `Synonym verification failed, defaulting to false: ${error.message}`);
+        return { isSynonym: false };
+    }
+}
+
 module.exports = {
     validateInputText,
     isEmptyExtraction,
-    MIN_TEXT_LENGTH
+    MIN_TEXT_LENGTH,
+    areCriteriaSynonyms
 };

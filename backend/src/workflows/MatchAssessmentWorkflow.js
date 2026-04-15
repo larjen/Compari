@@ -31,6 +31,7 @@ const aiReportGenerator = require('../utils/AiReportGenerator');
 const AiService = require('../services/AiService');
 const PromptBuilder = require('../utils/PromptBuilder');
 const DimensionRepo = require('../repositories/DimensionRepo');
+const SettingsManager = require('../config/SettingsManager');
 const path = require('path');
 
 class MatchAssessmentWorkflow {
@@ -70,11 +71,13 @@ class MatchAssessmentWorkflow {
      * - On any error: set queue status to 'error', save error message, log error, emit failure event, re-throw.
      */
     async assessMatch(sourceEntityId, targetEntityId, matchId) {
+        const startTime = Date.now();
+
         if (!matchId) {
             throw new Error("matchId is required for assessment workflow");
         }
 
-        matchRepo.updateMatchQueueStatus(matchId, 'processing');
+        matchService.updateMatchStatus(matchId, 'processing');
 
         const match = matchRepo.getMatchById(matchId);
         if (!match) {
@@ -100,6 +103,9 @@ class MatchAssessmentWorkflow {
             // 2. Prepare AI Prompt Inputs in memory (DO NOT save these to disk)
             const dimensionalAiReports = aiReportGenerator.generateDimensionalAiReports(matchData.rawComparison);
 
+            // 3. MAP PHASE: Pre-warm the AI model before generating dimensional summaries
+            await AiService.warmUpModel('general');
+
             // 3. MAP PHASE: Generate Dimensional AI Summaries Concurrently (In-Memory)
             logService.logTerminal('INFO', 'LIGHTNING', 'MatchAssessmentWorkflow', `Generating dimensional AI summaries for match ${matchId}...`);
             const aiSummaries = { dimensional: {} };
@@ -107,26 +113,35 @@ class MatchAssessmentWorkflow {
 
             // Tasks: Dimensional Summaries
             for (const [dimension, reportData] of Object.entries(dimensionalAiReports)) {
-                dimensionalTasks.push((async () => {
+                dimensionalTasks.push(async () => {
                     const messages = PromptBuilder.buildMatchSummaryMessages(reportData);
-                    aiSummaries.dimensional[dimension] = await AiService.generateChatResponse(messages, { logFolderPath: matchFolderPath });
-                })());
+                    const { content } = await AiService.generateChatResponse(messages, { logFolderPath: matchFolderPath, logAction: `Generated dimensional AI summary for ${dimension}.` });
+                    aiSummaries.dimensional[dimension] = content;
+                });
             }
 
-            await Promise.all(dimensionalTasks);
+            const allowConcurrent = SettingsManager.get('allow_concurrent_ai') === 'true';
+            if (allowConcurrent) {
+                await Promise.all(dimensionalTasks.map(t => t()));
+            } else {
+                for (const task of dimensionalTasks) {
+                    await task();
+                }
+            }
 
-            // 4. REDUCE PHASE: Generate Executive Summary from Dimensional Summaries
+            // 5. REDUCE PHASE: Generate Executive Summary from Dimensional Summaries
             logService.logTerminal('INFO', 'LIGHTNING', 'MatchAssessmentWorkflow', `Synthesizing executive summary for match ${matchId}...`);
             const reqName = sourceEntity.name || 'the requirement';
             const offName = targetEntity.name || 'the offering';
             const executiveMessages = PromptBuilder.buildExecutiveSummaryMessages(aiSummaries.dimensional, reqName, offName);
-            aiSummaries.executive = await AiService.generateChatResponse(executiveMessages, { logFolderPath: matchFolderPath });
+            const { content: executiveContent } = await AiService.generateChatResponse(executiveMessages, { logFolderPath: matchFolderPath, logAction: `Generated executive AI summary.` });
+            aiSummaries.executive = executiveContent;
 
-            // 5. Gather Metadata & Context
+            // 6. Gather Metadata & Context
             const allDimensions = DimensionRepo.getAllDimensions() || [];
             const dimensionDisplayNames = {};
             const dimensionIds = {}; // NEW: Create an ID map
-            
+
             allDimensions.forEach(dim => {
                 dimensionDisplayNames[dim.name] = dim.displayName;
                 dimensionIds[dim.name] = dim.id || dim.dimension_id; // Map name to DB ID
@@ -135,8 +150,8 @@ class MatchAssessmentWorkflow {
             const totalChecked = matchData.rawComparison.summary ? matchData.rawComparison.summary.totalRequirementsChecked : 0;
             const missingRequired = matchData.rawComparison.summary ? matchData.rawComparison.summary.missingRequired : 0;
 
-            // 5. Build the ONE and ONLY output object
-            const singleSourceOfTruthReport = {
+            // 6. Build the ONE and ONLY output object
+            let singleSourceOfTruthReport = {
                 ...matchData.rawComparison,
                 _match_context: {
                     requirement_id: sourceEntityId,
@@ -150,48 +165,103 @@ class MatchAssessmentWorkflow {
                 _metadata: {
                     dimension_display_names: dimensionDisplayNames,
                     dimension_ids: dimensionIds
-                },
-                _ai_summary_executive: aiSummaries.executive,
-                _ai_summaries_dimensional: aiSummaries.dimensional
+                }
             };
 
+            // Inject the Executive Summary into the reportInfo root
+            if (singleSourceOfTruthReport.reportInfo) {
+                singleSourceOfTruthReport.reportInfo.ai_summary_executive = aiSummaries.executive || null;
+            }
+
+            // Inject Dimensional Summaries directly into their respective dimension objects
+            const dimensionalSummaries = aiSummaries.dimensional || {};
+            for (const [dimKey, summaryText] of Object.entries(dimensionalSummaries)) {
+                if (singleSourceOfTruthReport[dimKey]) {
+                    singleSourceOfTruthReport[dimKey].ai_summary = summaryText;
+                }
+            }
+
+            // --- RESTRUCTURE JSON FOR DOMAIN-DRIVEN COHESION ---
+            const finalReport = singleSourceOfTruthReport;
+            const restructuredReport = {
+                _document_meta: {
+                    document_type: "Semantic Match Assessment Report",
+                    purpose: "Evaluates the fit between a specific Requirement (e.g., Job Listing) and an Offering (e.g., Candidate Resume) using vector-based semantic matching.",
+                    generated_at: new Date().toISOString()
+                },
+                reportInfo: finalReport.reportInfo,
+                dimensions: {}
+            };
+
+            const metaIds = finalReport._metadata?.dimension_ids || {};
+            const metaNames = finalReport._metadata?.dimension_display_names || {};
+
+            const reservedKeys = ['reportInfo', '_metadata', '_ai_summary_executive', '_ai_summaries_dimensional', 'allDimensions', '_match_context'];
+
+            for (const [key, value] of Object.entries(finalReport)) {
+                if (!reservedKeys.includes(key) && typeof value === 'object') {
+                    restructuredReport.dimensions[key] = {
+                        ...value,
+                        id: metaIds[key] || 0,
+                        displayName: metaNames[key] || key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+                    };
+                }
+            }
+
+            if (finalReport.allDimensions) {
+                restructuredReport.allDimensions = finalReport.allDimensions;
+            }
+
+            singleSourceOfTruthReport = restructuredReport;
+
             // 6. Write the SINGLE file to disk
-            const reportFileName = 'raw_json_comparison.json';
+            const reportFileName = 'match_report.json';
             const reportPath = path.join(matchFolderPath, reportFileName);
             FileService.writeJsonFile(reportPath, singleSourceOfTruthReport);
-            
+
             // 7. Register Match Report in the Database
             matchService.registerDocumentRecord(matchId, 'Match Report', reportFileName, reportPath);
 
-            // 7b. Register AI Debug Logs if generated
+            // 7b. Register Logs if generated
             const matchFiles = FileService.listFilesInFolder(matchFolderPath);
+            const existingDocs = matchService.getDocumentsForMatch(matchId);
+
             if (matchFiles.includes('ai_interactions.jsonl')) {
-                // Prevent duplicate database entries if this workflow is retried
-                const existingDocs = matchService.getDocumentsForMatch(matchId);
                 const isRegistered = existingDocs.some(doc => doc.file_name === 'ai_interactions.jsonl');
-                
                 if (!isRegistered) {
                     matchService.registerDocumentRecord(
-                        matchId, 
-                        'AI Debug Log', 
-                        'ai_interactions.jsonl', 
+                        matchId,
+                        'AI Debug Log',
+                        'ai_interactions.jsonl',
                         path.join(matchFolderPath, 'ai_interactions.jsonl')
                     );
                 }
             }
 
-            // 8. Update match record state
-            matchRepo.updateMatchScore(matchId, matchData.score);
-            matchRepo.updateReportPath(matchId, reportPath);
-            matchRepo.updateMatchQueueStatus(matchId, 'completed');
-            matchRepo.updateMatchError(matchId, null);
-
-            logService.addActivityLog('Match', matchId, 'INFO', `Match assessment complete. Single JSON report generated. Score: ${matchData.score}%.`, matchFolderPath);
-
-            const updatedMatch = matchRepo.getMatchById(matchId);
-            if (updatedMatch) {
-                eventService.emit('matchUpdate', updatedMatch);
+            if (matchFiles.includes('activity.jsonl')) {
+                const isRegistered = existingDocs.some(doc => doc.file_name === 'activity.jsonl');
+                if (!isRegistered) {
+                    matchService.registerDocumentRecord(
+                        matchId,
+                        'Activity Log',
+                        'activity.jsonl',
+                        path.join(matchFolderPath, 'activity.jsonl')
+                    );
+                }
             }
+
+            // 8. Update match record state
+            matchService.updateMatchScore(matchId, matchData.score);
+            matchService.updateReportPath(matchId, reportPath);
+            matchService.updateMatchError(matchId, null);
+            matchService.updateMatchStatus(matchId, 'completed');
+
+            const durationMs = Date.now() - startTime;
+            const minutes = Math.floor(durationMs / 60000);
+            const seconds = Math.floor((durationMs % 60000) / 1000);
+            const durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+            logService.addActivityLog('Match', matchId, 'INFO', `Match assessment complete. Single JSON report generated. Score: ${matchData.score}%. Processing took ${durationStr}.`, matchFolderPath);
 
             // 9. Generate and save PDF report to disk
             try {
@@ -199,12 +269,12 @@ class MatchAssessmentWorkflow {
                 const PdfGeneratorService = require('../services/PdfGeneratorService');
                 const rawPdfData = await PdfGeneratorService.generateMatchReport(matchId);
                 const pdfBuffer = Buffer.from(rawPdfData);
-                
+
                 const safeReqName = (sourceEntity.name || "Requirement").replace(/[/\\?%*:|"<>]/g, '-');
                 const safeOffName = (targetEntity.name || "Offering").replace(/[/\\?%*:|"<>]/g, '-');
                 const pdfFileName = `Match - ${safeReqName} - ${safeOffName}.pdf`;
                 const pdfPath = path.join(matchFolderPath, pdfFileName);
-                
+
                 const fs = require('fs');
                 fs.writeFileSync(pdfPath, pdfBuffer);
                 matchService.registerDocumentRecord(matchId, 'Match Report PDF', pdfFileName, pdfPath);
@@ -213,15 +283,10 @@ class MatchAssessmentWorkflow {
                 logService.logTerminal('WARN', 'WARNING', 'MatchAssessmentWorkflow', `Failed to generate PDF during assessment: ${pdfError.message}`);
             }
         } catch (error) {
-            matchRepo.updateMatchQueueStatus(matchId, 'error');
-            matchRepo.updateMatchError(matchId, error.message);
+            matchService.updateMatchError(matchId, error.message);
+            matchService.updateMatchStatus(matchId, 'failed');
 
             logService.addActivityLog('Match', matchId, 'ERROR', `Match assessment failed: ${error.message}`, matchFolderPath);
-
-            const updatedMatch = matchRepo.getMatchById(matchId);
-            if (updatedMatch) {
-                eventService.emit('matchUpdate', updatedMatch);
-            }
 
             throw error;
         }

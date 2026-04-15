@@ -27,9 +27,11 @@ const DynamicSchemaBuilder = require('../utils/DynamicSchemaBuilder');
 const MetadataMapper = require('../utils/MetadataMapper');
 const NameGenerator = require('../utils/NameGenerator');
 const AiService = require('../services/AiService');
+const AiValidator = require('../utils/AiValidator');
 const criteriaManagerWorkflow = require('./CriteriaManagerWorkflow');
 const blueprintRepo = require('../repositories/BlueprintRepo');
 const entityRepo = require('../repositories/EntityRepo');
+const SettingsManager = require('../config/SettingsManager');
 const { DOCUMENT_TYPES, QUEUE_TASKS, ENTITY_STATUS } = require('../config/constants');
 const path = require('path');
 
@@ -77,35 +79,25 @@ class DocumentProcessorWorkflow {
         }
 
         // 2. Proceed with normal file setup and database creation
+        // SoC: Use FileService to handle directory creation and file movement
+        const tempFolderPath = FileService.prepareEntityDirectory(entityType, file);
         const fileName = file.filename;
-        
-        const tempFolderName = `processing-${Date.now()}`;
-        
-        // Dynamically route based on entity type
-        const { REQUIREMENTS_DIR, OFFERINGS_DIR } = require('../config/constants');
-        const baseDir = entityType === 'requirement' ? REQUIREMENTS_DIR : OFFERINGS_DIR;
-        const tempFolderPath = path.join(baseDir, tempFolderName);
-        
+
         const metadata = {
             dateAdded: new Date().toISOString(),
             processingFileName: fileName,
             title: 'Processing Document...',
             organization: 'Please wait...'
         };
-        
-        const entityId = entityService.createEntity(entityType, 'Processing Document...', 'Please wait...', tempFolderPath, metadata);
-        
-        entityService.updateEntityStatus(entityId, ENTITY_STATUS.PENDING);
-        
-        FileService.createDirectory(tempFolderPath);
-        
-        const filePath = file.path;
-        FileService.moveFile(filePath, tempFolderPath, fileName);
 
-        queueService.enqueue(QUEUE_TASKS.PROCESS_ENTITY_DOCUMENT, { 
-            entityId, 
-            folderPath: tempFolderPath, 
-            fileName 
+        const entityId = entityService.createEntity(entityType, 'Processing Document...', 'Please wait...', tempFolderPath, metadata);
+
+        entityService.updateEntityStatus(entityId, ENTITY_STATUS.PENDING);
+
+        queueService.enqueue(QUEUE_TASKS.PROCESS_ENTITY_DOCUMENT, {
+            entityId,
+            folderPath: tempFolderPath,
+            fileName
         });
 
         logService.addActivityLog('Entity', entityId, 'INFO', `Document uploaded: ${fileName}. Queued for AI processing.`, tempFolderPath);
@@ -155,6 +147,8 @@ class DocumentProcessorWorkflow {
        * - Sets status to ENTITY_STATUS.COMPLETED upon successful completion.
       */
     async extractAndStoreEntityFromDocument(entityId, folderPath, fileName, signal) {
+        const startTime = Date.now();
+
         // Enforce strict type validation to prevent Node.js path.join core crashes
         if (!folderPath || typeof folderPath !== 'string') {
             throw new Error(`Invalid folderPath provided for entity #${entityId}. Expected string, received ${typeof folderPath}.`);
@@ -166,6 +160,11 @@ class DocumentProcessorWorkflow {
         const filePath = path.join(folderPath, fileName);
         const rawText = await FileService.extractTextFromFile(filePath);
 
+        // Prevent processing empty PDFs - fail fast before consuming AI resources
+        if (!AiValidator.validateInputText(rawText, `Entity #${entityId} PDF extraction`)) {
+            throw new Error('PDF appears to be empty or unreadable. Cannot proceed with extraction.');
+        }
+
         const markdownMessages = PromptBuilder.buildMarkdownExtractionMessages(rawText);
 
         const entity = entityRepo.getEntityById(entityId);
@@ -174,7 +173,7 @@ class DocumentProcessorWorkflow {
         }
 
         const entityRole = entity.type || 'offering';
-        
+
         let blueprintFields = [];
         let blueprintName = 'Entity';
 
@@ -193,27 +192,30 @@ class DocumentProcessorWorkflow {
 
         entityService.updateProcessingStep(entityId, 'Extracting Profile & Metadata');
 
+        await AiService.warmUpModel('general');
+        await AiService.warmUpModel('metadata');
+
         const dynamicMetadata = {};
         const tasks = [];
 
         // 1. Chunked Metadata Extraction (One task per field)
         if (blueprintFields.length > 0) {
-            const metadataTasks = blueprintFields.map(async (field) => {
+            const metadataTasks = blueprintFields.map((field) => async () => {
                 const singleFieldArray = [field];
                 const fieldName = field.fieldName || field.field_name;
-                
+
                 try {
                     const metadataMessages = PromptBuilder.buildEntityMetadataMessages(rawText, blueprintName, singleFieldArray);
                     const metadataSchema = DynamicSchemaBuilder.buildMetadataSchema(singleFieldArray);
 
-                    const responseString = await AiService.generateChatResponse(
+                    const { content: responseString } = await AiService.generateChatResponse(
                         metadataMessages,
-                        { format: metadataSchema, logFolderPath: folderPath },
+                        { format: metadataSchema, logFolderPath: folderPath, taskType: 'metadata', temperature: 0.1, logAction: `Extracted field '${fieldName}' for Entity #${entityId}.` },
                         undefined, undefined, signal
                     );
 
                     const parsed = MetadataMapper.mapAiResponseToBlueprint(responseString, singleFieldArray);
-                    
+
                     if (parsed[fieldName] !== undefined) {
                         dynamicMetadata[fieldName] = parsed[fieldName];
                     }
@@ -222,7 +224,7 @@ class DocumentProcessorWorkflow {
                     if (err.name === 'AbortError' || err.message === 'Task cancelled') {
                         throw err;
                     }
-                    
+
                     logService.logTerminal('ERROR', 'ERROR', 'DocumentProcessorWorkflow', `Failed to extract field '${fieldName}' for Entity #${entityId}: ${err.message}`);
                     logService.logErrorFile('DocumentProcessorWorkflow', `Failed to extract field '${fieldName}' for Entity #${entityId}`, err);
                     dynamicMetadata[fieldName] = field.isRequired ? 'Unknown' : null;
@@ -235,13 +237,14 @@ class DocumentProcessorWorkflow {
         let verbatimPosting = "";
         let criticalAiError = null;
 
-        const verbatimTask = (async () => {
+        const verbatimTask = async () => {
             try {
-                verbatimPosting = await AiService.generateChatResponse(
+                const { content } = await AiService.generateChatResponse(
                     markdownMessages,
-                    { logFolderPath: folderPath },
+                    { logFolderPath: folderPath, logAction: `Extracted verbatim profile for Entity #${entityId}.` },
                     undefined, undefined, signal
                 );
+                verbatimPosting = content;
             } catch (err) {
                 // CRITICAL: Do not swallow abort signals! Re-throw immediately to halt the workflow.
                 if (err.name === 'AbortError' || err.message === 'Task cancelled') {
@@ -253,11 +256,18 @@ class DocumentProcessorWorkflow {
                 verbatimPosting = "Failed to extract profile content.";
                 criticalAiError = err;
             }
-        })();
+        };
         tasks.push(verbatimTask);
 
-        // Execute all chunked metadata requests and markdown formatting concurrently
-        await Promise.all(tasks);
+        // Execute all chunked metadata requests and markdown formatting based on concurrency setting
+        const allowConcurrent = SettingsManager.get('allow_concurrent_ai') === 'true';
+        if (allowConcurrent) {
+            await Promise.all(tasks.map(t => t()));
+        } else {
+            for (const task of tasks) {
+                await task();
+            }
+        }
 
         // Use entity's existing name and description for fallback
         const entityTitle = entity.name || 'Unknown Title';
@@ -271,12 +281,10 @@ class DocumentProcessorWorkflow {
         };
 
         const mdContent = MarkdownGenerator.generateEntityProfile(entityTitle, entityDescription, extractedDetails);
-        
-        // BUGFIX: Pass entityRole instead of entityTitle as the first argument
-        const finalFolderPath = FileService.generateEntityFolderPath(entityRoleForPath, entityTitle);
 
-        FileService.moveDirectory(folderPath, finalFolderPath);
-        
+        // SoC: Use FileService to finalize the entity directory (move from temp to final location)
+        const finalFolderPath = FileService.finalizeEntityDirectory(entityRoleForPath, entityTitle, folderPath);
+
         FileService.saveTextFile(finalFolderPath, 'entity-profile.md', mdContent);
         FileService.saveTextFile(finalFolderPath, 'raw-extraction.txt', rawText);
 
@@ -323,7 +331,12 @@ class DocumentProcessorWorkflow {
             entityService.updateEntityStatus(entityId, ENTITY_STATUS.COMPLETED);
         }
 
-        logService.addActivityLog('Entity', entityId, 'INFO', `AI successfully extracted details for ${entityTitle}.`, finalFolderPath);
+        const durationMs = Date.now() - startTime;
+        const minutes = Math.floor(durationMs / 60000);
+        const seconds = Math.floor((durationMs % 60000) / 1000);
+        const durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+        logService.addActivityLog('Entity', entityId, 'INFO', `AI successfully extracted details for ${entityTitle}. Processing took ${durationStr}.`, finalFolderPath);
 
         eventService.emit('notification', { type: 'success', message: `AI extracted: ${entityTitle}` });
         return entityId;

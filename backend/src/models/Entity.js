@@ -26,7 +26,6 @@ class Entity {
      * @param {Object|null} [data.metadata] - Flexible JSON data (url, deadline, posted_date, email, phone, etc.).
      * @param {string} [data.status] - The unified entity status (must conform to ENTITY_STATUS).
      * @param {string|null} [data.error] - Error message if processing failed.
-     * @param {string|null} [data.processing_file_name] - Name of the file being processed.
      * @param {number|null} [data.blueprintId] - The blueprint ID this entity belongs to.
      * @param {string|null} [data.created_at] - Creation timestamp.
      * @param {string|null} [data.updated_at] - Last update timestamp.
@@ -40,7 +39,6 @@ class Entity {
         this.metadata = data.metadata || null;
         this.status = data.status || 'pending';
         this.error = data.error || null;
-        this.processingFileName = data.processing_file_name || null;
         this.blueprintId = data.blueprintId || null;
         this.createdAt = data.created_at || null;
         this.updatedAt = data.updated_at || null;
@@ -74,7 +72,6 @@ class Entity {
             metadata: parsedMetadata,
             status: row.status,
             error: row.error,
-            processing_file_name: row.processing_file_name,
             blueprintId: row.blueprint_id,
             created_at: row.created_at,
             updated_at: row.updated_at
@@ -106,7 +103,6 @@ class Entity {
             metadata: this.metadata,
             status: this.status,
             error: this.error,
-            processing_file_name: this.processingFileName,
             blueprint_id: this.blueprintId,
             created_at: this.createdAt,
             updated_at: this.updatedAt

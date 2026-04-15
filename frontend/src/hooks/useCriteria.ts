@@ -63,13 +63,13 @@ export interface UseCriteriaReturn {
  * @example
  * const { criteria, totalPages, loading, error } = useCriteria({
  *   page: 1,
- *   limit: 300,
+ *   limit: 200,
  *   search: 'react',
  *   dimension: 'core_competencies'
  * });
  */
 export function useCriteria(params: UseCriteriaParams = {}): UseCriteriaReturn {
-  const { page = 1, limit = 300, search, dimension, immediate = true } = params;
+  const { page = 1, limit = 200, search, dimension, immediate = true } = params;
 
   const fetchCriteria = useCallback(async () => {
     return criteriaApi.getAllCriteria({ page, limit, search, dimension });

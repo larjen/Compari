@@ -56,7 +56,7 @@ function evaluateCriteriaPair(reqVector, offVector) {
     if (!reqVector || !offVector || !Array.isArray(reqVector) || !Array.isArray(offVector)) {
         return 0;
     }
-    
+
     if (reqVector.length === 0 || offVector.length === 0) {
         return 0;
     }
@@ -109,7 +109,7 @@ function calculateFastMatchScore(requirementCriteria, offeringCriteria, activeDi
     );
 
     // 4. Extract and return the exact overall score that the report calculated
-    return rawComparison?.reportInfo?.matchScores?.allDimensions?.score || 0;
+    return rawComparison?.reportInfo?.metrics?.score || 0;
 }
 
 /**
@@ -227,7 +227,7 @@ function calculate(requirementCriteria, offeringCriteria) {
 
         if (bestMatch && bestSimilarity >= PARTIAL_MATCH_THRESHOLD) {
             reqDimResult.matched.push(bestMatch);
-            
+
             if (bestSimilarity >= STRONG_MATCH_THRESHOLD) {
                 reqDimResult.matchedStrong.push(bestMatch);
                 reqDimResult.metrics.requiredMet++;
@@ -239,7 +239,7 @@ function calculate(requirementCriteria, offeringCriteria) {
                 globalMetrics.partial++;
                 globalMetrics.achievedPoints += 0.5;
             }
-            
+
             if (bestOfferingId) {
                 consumedIds.add(bestOfferingId);
             }
@@ -260,14 +260,14 @@ function calculate(requirementCriteria, offeringCriteria) {
         const dimResult = dimensionsResult[dim];
         const reqCount = dimResult.metrics.requiredTotal;
         const metCount = dimResult.metrics.requiredMet;
-        
+
         if (reqCount > 0) {
             dimResult.score = Number((metCount / reqCount).toFixed(4));
         }
     }
 
-    const score = globalMetrics.total > 0 
-        ? Number((globalMetrics.achievedPoints / globalMetrics.total).toFixed(4)) 
+    const score = globalMetrics.total > 0
+        ? Number((globalMetrics.achievedPoints / globalMetrics.total).toFixed(4))
         : 0;
 
     return {
@@ -323,13 +323,8 @@ function groupMatches(matchesArray, minFloor, perfScore) {
 }
 
 /**
- * SoC: Raw comparison builder for JSON export purposes.
- * This function is separate from the scoring engine - it produces a simplified
- * structure focusing only on closest similarities (dimensional and global),
- * excluding missed/bonus skills for backward compatibility with existing features.
- *
  * Builds a raw comparison object with requirement and offering entities nested in reportInfo.
- * Contains dimension-specific matches grouped at root level and allDimensions for global pool-wide matches.
+ * Contains dimension-specific matches grouped at root level with metrics colocated for LLM readability.
  * Dimensions are sorted descending by similarityScore, and the order matches the activeDimensions array order.
  * Scores are calculated internally using the overloaded calculateWeightedMatchScore function.
  *
@@ -339,26 +334,20 @@ function groupMatches(matchesArray, minFloor, perfScore) {
  * @param {Object} [matchSettings] - Settings object containing minimumFloor and perfectScore thresholds. If omitted, defaults to 0.50 and 0.85 respectively.
  * @param {Array<Object>} requirementCriteria - Array of requirement criterion objects.
  * @param {Array<Object>} offeringCriteria - Array of offering criterion objects.
- * @returns {Object} Object containing reportInfo (with matchScores), allDimensions, and grouped dimension matches at root level.
+ * @returns {Object} Object containing unified dimension objects with metrics + matches at root level.
  *
  * @return_structure
  * {
  *   reportInfo: {
- *     matchScores: {
- *       allDimensions: { score: number, weights: number, matches: number, partialMatches: number, missedMatches: number },
- *       [dimKey]: { score: number, weights: number, matches: number, partialMatches: number, missedMatches: number }
- *     },
  *     offering: { id: number, name: string },
  *     requirement: { id: number, name: string },
+ *     overall_score: number,
+ *     overall_score_formula: string,
  *     similarityForPerfectMatch: number,
  *     similarityForPartialMatch: number
  *   },
- *   allDimensions: {
- *     perfectMatch: [{ reqCriteria: string, reqId: number, offCriteria: string|null, offId: number|null, similarityScore: number, dimensionId: number }],
- *     partialMatch: [{ reqCriteria: string, reqId: number, offCriteria: string|null, offId: number|null, similarityScore: number, dimensionId: number }],
- *     missedMatch: [{ reqCriteria: string, reqId: number, offCriteria: string|null, offId: number|null, similarityScore: number, dimensionId: number }]
- *   },
  *   [dimKey]: {
+ *     metrics: { score: number, weights: number, matches: number, partialMatches: number, missedMatches: number, calculationDetails: {...} },
  *     perfectMatch: [{ reqCriteria: string, reqId: number, offCriteria: string|null, offId: number|null, similarityScore: number, dimensionId: number }],
  *     partialMatch: [{ reqCriteria: string, reqId: number, offCriteria: string|null, offId: number|null, similarityScore: number, dimensionId: number }],
  *     missedMatch: [{ reqCriteria: string, reqId: number, offCriteria: string|null, offId: number|null, similarityScore: number, dimensionId: number }]
@@ -367,6 +356,7 @@ function groupMatches(matchesArray, minFloor, perfScore) {
  *
  * @notes
  * - similarityScore is a float between 0.0 and 1.0, rounded to two decimal places.
+ * - Metrics are now colocated with matches inside each dimension object for better LLM readability.
  * - activeDimensions is iterated in exact order to maintain settings page ordering.
  * - allDimensions and each dimension array are sorted descending by similarityScore within each group.
  * - The root level contains reportInfo first, then allDimensions, then each dimension key.
@@ -384,9 +374,12 @@ function buildRawComparison(requirement, offering, activeDimensions, matchSettin
     const perfScore = matchSettings?.perfectScore ?? 0.85;
 
     const dimensionWeights = {};
+    const dimensionDisplayNames = {};
+
     if (activeDimensions && Array.isArray(activeDimensions)) {
         for (const dim of activeDimensions) {
             dimensionWeights[dim.name] = dim.weight || 1.0;
+            dimensionDisplayNames[dim.name] = dim.displayName || dim.name;
         }
     }
 
@@ -398,22 +391,22 @@ function buildRawComparison(requirement, offering, activeDimensions, matchSettin
                 dimensionalMatches[dim.name] = [];
             }
         }
-        const finalReport = {
+        const emptyReport = {
             reportInfo: {
-                matchScores: {
-                    allDimensions: { score: 0, weights: 1, matches: 0, partialMatches: 0, missedMatches: 0 }
-                },
                 offering: { id: offering.id, name: offering.name },
                 requirement: { id: requirement.id, name: requirement.name },
-                similarityForPerfectMatch: perfScore,
-                similarityForPartialMatch: minFloor
-            },
-            allDimensions: { perfectMatch: [], partialMatch: [], missedMatch: [] }
+                metrics: {
+                    score: 0,
+                    formula: 'No criteria to match - returning 0%',
+                    similarityForPerfectMatch: perfScore,
+                    similarityForPartialMatch: minFloor
+                }
+            }
         };
         for (const dim of Object.keys(dimensionWeights)) {
-            finalReport[dim] = { perfectMatch: [], partialMatch: [], missedMatch: [] };
+            emptyReport[dim] = { metrics: { score: 0, weights: dimensionWeights[dim], matches: 0, partialMatches: 0, missedMatches: 0 }, perfectMatch: [], partialMatch: [], missedMatch: [] };
         }
-        return finalReport;
+        return emptyReport;
     }
 
     const reqDimensionsSet = new Set(requirementCriteria.map(c => c.dimension || 'uncategorized'));
@@ -559,147 +552,138 @@ function buildRawComparison(requirement, offering, activeDimensions, matchSettin
         }
     }
 
-    const allDimensionsMatches = [];
-
-    for (const req of requirementCriteria) {
-        let bestMatch = null;
-        let bestSimilarity = -1;
-
-        if (!req.embedding || !Array.isArray(req.embedding) || req.embedding.length === 0) {
-            allDimensionsMatches.push({
-                reqCriteria: req.displayName || req.normalizedName,
-                reqId: req.id,
-                offCriteria: null,
-                offId: null,
-                similarityScore: 0,
-                dimension: req.dimension || 'uncategorized',
-                dimensionId: req.dimensionId || req.dimension_id || 0
-            });
-            continue;
-        }
-
-        for (const off of offeringCriteria) {
-            if (!off.embedding || !Array.isArray(off.embedding) || off.embedding.length === 0) {
-                continue;
-            }
-
-            try {
-                const similarity = cosineSimilarity(req.embedding, off.embedding);
-                if (similarity > bestSimilarity) {
-                    bestSimilarity = similarity;
-                    bestMatch = {
-                        reqCriteria: req.displayName || req.normalizedName,
-                        reqId: req.id,
-                        offCriteria: off.displayName || off.normalizedName,
-                        offId: off.id,
-                        similarityScore: Number(Math.max(0, similarity).toFixed(2)),
-                        dimension: req.dimension || 'uncategorized',
-                        dimensionId: req.dimensionId || req.dimension_id || 0
-                    };
-                }
-            } catch (err) {
-                logService.logTerminal('WARN', 'WARNING', 'MatchingEngine', `Vector similarity calculation failed: ${err.message}`);
-            }
-        }
-
-        if (bestMatch) {
-            allDimensionsMatches.push(bestMatch);
-        } else {
-            allDimensionsMatches.push({
-                reqCriteria: req.displayName || req.normalizedName,
-                reqId: req.id,
-                offCriteria: null,
-                offId: null,
-                similarityScore: 0,
-                dimension: req.dimension || 'uncategorized',
-                dimensionId: req.dimensionId || req.dimension_id || 0
-            });
-        }
-    }
-
-    allDimensionsMatches.sort((a, b) => b.similarityScore - a.similarityScore);
+    // --- NEW WEIGHTED SCORING & FORMULA INJECTION ---
 
     // Construct a mock report structure so calculateWeightedMatchScore can parse it correctly
-    const tempReport = {
-        reportInfo: {
-            matchScores: {}
-        }
-    };
-
-    // 1. Inject the weights into the mock reportInfo
+    // This is temporary for calculation purposes - the final output uses the unified structure
+    const tempReport = {};
     for (const dimKey of Object.keys(dimensionWeights || {})) {
-        tempReport.reportInfo.matchScores[dimKey] = { weights: dimensionWeights[dimKey] };
-    }
-
-    // 2. Flatten the dimension arrays into the root level of the mock report
-    for (const [dimKey, matches] of Object.entries(dimensionalMatches)) {
-        tempReport[dimKey] = matches;
-    }
-
-    // Helper to count perfect, partial, and missed matches
-    const countMatches = (matchesArray) => {
-        let matches = 0;
-        let partialMatches = 0;
-        let missedMatches = 0;
-        if (!matchesArray) return { matches, partialMatches, missedMatches };
-
-        for (const match of matchesArray) {
-            const score = match.similarityScore || 0;
-            const hasOffCriteria = match.offCriteria !== null && match.offCriteria !== undefined;
-            
-            if (score >= perfScore) {
-                matches++;
-            } else if (score >= minFloor && hasOffCriteria) {
-                partialMatches++;
-            } else {
-                missedMatches++;
-            }
-        }
-        return { matches, partialMatches, missedMatches };
-    };
-
-    // Count and assign for all dimensions
-    const allDimsCounts = countMatches(allDimensionsMatches);
-    const calculatedOverallScore = calculateWeightedMatchScore(tempReport, minFloor, perfScore, null);
-
-    const matchScores = {
-        allDimensions: {
-            score: calculatedOverallScore,
-            weights: 1,
-            matches: allDimsCounts.matches,
-            partialMatches: allDimsCounts.partialMatches,
-            missedMatches: allDimsCounts.missedMatches
-        }
-    };
-
-    // Count and assign for each specific dimension
-    for (const dimKey of Object.keys(dimensionWeights || {})) {
-        const dimCounts = countMatches(dimensionalMatches[dimKey]);
-        const dimScore = calculateWeightedMatchScore(tempReport, minFloor, perfScore, dimKey);
-
-        matchScores[dimKey] = {
-            score: dimScore,
-            weights: dimensionWeights[dimKey],
-            matches: dimCounts.matches,
-            partialMatches: dimCounts.partialMatches,
-            missedMatches: dimCounts.missedMatches
+        tempReport[dimKey] = {
+            metrics: { weights: dimensionWeights[dimKey] },
+            perfectMatch: dimensionalMatches[dimKey] || []
         };
     }
 
+    const matchScores = {};
+    const formulaNumerator = [];
+    const formulaDenominator = [];
+    let totalPossiblePoints = 0;
+    let totalAchievedPoints = 0;
+
+    // 1. Calculate scores and build the dynamic formula string
+    for (const dimKey of Object.keys(dimensionWeights || {})) {
+        const matches = dimensionalMatches[dimKey] || [];
+        const weight = dimensionWeights[dimKey] || 1.0;
+        const totalReqs = matches.length;
+
+        let dimPoints = 0;
+        let perfectCount = 0;
+        let partialCount = 0;
+        let missedCount = 0;
+        const matchPoints = []; // Track points for the formula
+
+        for (const match of matches) {
+            const score = match.similarityScore !== undefined ? match.similarityScore : 0;
+            const hasOff = match.offCriteria !== null && match.offCriteria !== undefined;
+
+            const scaledPoints = calculateScaledPoints(score, minFloor, perfScore);
+            dimPoints += scaledPoints;
+
+            // Construct the explicit math string for this match
+            // Format: (Similarity - Floor) / (Perfect - Floor) = Result
+            const matchMath = `(${score.toFixed(2)} - ${minFloor.toFixed(2)}) / (${perfScore.toFixed(2)} - ${minFloor.toFixed(2)}) = ${scaledPoints.toFixed(2)}`;
+            matchPoints.push(matchMath);
+
+            if (score >= perfScore) perfectCount++;
+            else if (score >= minFloor && hasOff) partialCount++;
+            else missedCount++;
+        }
+
+        const dimScoreObj = calculateWeightedMatchScore(tempReport, minFloor, perfScore, dimKey);
+
+        let dimFormula = `No criteria to match.`;
+        if (totalReqs > 0) {
+            // Explain the sliding scale logic for this dimension
+            const floorPct = Math.round(minFloor * 100);
+            const perfPct = Math.round(perfScore * 100);
+
+            // Calculate explicit decimal and percentage for the final output
+            const dimResultDecimal = dimPoints / totalReqs;
+            const dimResultPct = Math.round(dimResultDecimal * 100);
+
+            // JSDoc Note for AI: 
+            // We use '  \n' (two trailing spaces + newline) to force a Markdown hard line break (<br>) 
+            // instead of a new paragraph (<p>). Do not remove the trailing spaces.
+            dimFormula = `
+**Scoring Rules (Sliding Scale):** Below ${floorPct}% similarity = 0, Proportional credit between ${floorPct}% and ${perfPct}%, at or above ${perfPct}% similarity = 1  \n
+**Points per match (${totalReqs} total):** ${matchPoints.join(' + ')}  \n
+**Result:** ${Number(dimPoints.toFixed(2))} / ${totalReqs} = ${dimResultDecimal.toFixed(2)} = ${dimResultPct}%
+`.trim();
+        }
+
+        matchScores[dimKey] = {
+            score: dimScoreObj.score,
+            formula: dimFormula, // Replacing calculationDetails
+            weights: weight,
+            matches: perfectCount,
+            partialMatches: partialCount,
+            missedMatches: missedCount
+        };
+
+        if (totalReqs > 0) {
+            const dimAchieved = dimPoints * weight;
+            const dimPossible = totalReqs * weight;
+            totalAchievedPoints += dimAchieved;
+            totalPossiblePoints += dimPossible;
+
+            // Push actual live numbers to the formula breakdown
+            const niceName = dimensionDisplayNames[dimKey] || dimKey;
+
+            formulaNumerator.push(`(${niceName}) ${Number(dimPoints.toFixed(2))} × ${weight}`);
+            formulaDenominator.push(`(${niceName}) ${totalReqs} × ${weight}`);
+        }
+    }
+
+    const calculatedOverallScore = totalPossiblePoints > 0 ? Number((totalAchievedPoints / totalPossiblePoints).toFixed(4)) : 0;
+    const overallPct = Math.round(calculatedOverallScore * 100);
+
+    // 2. Inject the live formula explanation
+    // JSDoc Note for AI: 
+    // We use '  \n' (two trailing spaces + newline) to force a Markdown hard line break (<br>).
+    const overall_score_formula = `
+**Formula:** Sum(Dimension Points × Weight) / Sum(Total Requirements × Weight)  \n
+**Numerator:** ${formulaNumerator.join(' + ')}  \n
+**Denominator:** ${formulaDenominator.join(' + ')}  \n
+**Result:** ${Number(totalAchievedPoints.toFixed(2))} / ${Number(totalPossiblePoints.toFixed(2))} = ${calculatedOverallScore.toFixed(2)} = ${overallPct}%  \n
+`.trim();
+
+    // 3. Build the final report
     const finalReport = {
         reportInfo: {
-            matchScores: matchScores,
             offering: { id: offering.id, name: offering.name },
             requirement: { id: requirement.id, name: requirement.name },
-            similarityForPerfectMatch: perfScore,
-            similarityForPartialMatch: minFloor
-        },
-        allDimensions: groupMatches(allDimensionsMatches, minFloor, perfScore)
+            metrics: {
+                score: calculatedOverallScore,
+                formula: overall_score_formula,
+                similarityForPerfectMatch: perfScore,
+                similarityForPartialMatch: minFloor
+            }
+        }
     };
 
+    // 4. Inject Unified Dimension Objects (Metrics + Matches colocated for LLM readability)
     for (const dim of Object.keys(dimensionWeights || {})) {
         if (dimensionalMatches[dim]) {
-            finalReport[dim] = groupMatches(dimensionalMatches[dim], minFloor, perfScore);
+            // Group the matches
+            const grouped = groupMatches(dimensionalMatches[dim], minFloor, perfScore);
+
+            // Attach the pre-calculated metrics directly to the dimension
+            finalReport[dim] = {
+                metrics: matchScores[dim],
+                perfectMatch: grouped.perfectMatch,
+                partialMatch: grouped.partialMatch,
+                missedMatch: grouped.missedMatch
+            };
         }
     }
 
@@ -710,14 +694,14 @@ function buildRawComparison(requirement, offering, activeDimensions, matchSettin
  * Calculates a weighted overall match percentage from a raw JSON match report.
  * Uses a sliding scale to award partial credit for conceptual matches.
  * 
- * This function reads weights from reportInfo.matchScores and iterates over dimension keys
- * present at the root level of the matchReport (excluding reportInfo and allDimensions).
+ * This function reads weights from the unified dimension objects (metrics property)
+ * and iterates over dimension keys present at the root level of the matchReport.
  * 
  * When targetDimension is provided, this function calculates the score for only that specific dimension,
  * enabling targeted dimensional scoring while keeping logic DRY. When targetDimension is null,
  * it calculates the overall score across all dimensions.
  *
- * @param {Object} matchReport - The parsed raw_json_comparison.json object with new structure.
+ * @param {Object} matchReport - The parsed match_report.json object with new unified structure.
  * @param {number} [minimumFloor=0.50] - Minimum similarity threshold (as float, e.g., 0.50 for 50%). Below this score earns zero points.
  * @param {number} [perfectScore=0.85] - Perfect similarity threshold (as float, e.g., 0.85 for 85%). At or above this score earns full points.
  * @param {string|null} [targetDimension=null] - Optional dimension key to calculate score for. If a dimension name is provided (e.g., "skills", "experience"), it calculates the score only for that specific dimension. If null, it calculates the overall score across all dimensions.
@@ -725,18 +709,18 @@ function buildRawComparison(requirement, offering, activeDimensions, matchSettin
  *
  * @dry_principles
  * - Uses single function overload to handle both overall and targeted dimensional scoring.
- * - Reads weights dynamically from reportInfo.matchScores, avoiding duplicate weight definitions.
+ * - Reads weights dynamically from dimension metrics, avoiding duplicate weight definitions.
  * - Iterates over dimension keys at root level without hardcoding specific dimension names.
  */
 function calculateWeightedMatchScore(matchReport, minimumFloor = 0.50, perfectScore = 0.85, targetDimension = null) {
     let totalPossibleWeightedPoints = 0;
     let achievedWeightedPoints = 0;
+    let totalRequirements = 0;
 
     if (!matchReport) {
-        return 0;
+        return { score: 0, calculationDetails: null };
     }
 
-    const matchScores = matchReport.reportInfo && matchReport.reportInfo.matchScores ? matchReport.reportInfo.matchScores : {};
     const dimensionKeysToSkip = ['reportInfo', 'allDimensions'];
 
     const dimensionMatches = {};
@@ -744,8 +728,8 @@ function calculateWeightedMatchScore(matchReport, minimumFloor = 0.50, perfectSc
         if (dimensionKeysToSkip.includes(key)) {
             continue;
         }
-        if (Array.isArray(value)) {
-            dimensionMatches[key] = value;
+        if (value && typeof value === 'object' && (value.perfectMatch || value.partialMatch || value.missedMatch)) {
+            dimensionMatches[key] = value.perfectMatch || [];
         }
     }
 
@@ -754,19 +738,20 @@ function calculateWeightedMatchScore(matchReport, minimumFloor = 0.50, perfectSc
             continue;
         }
 
-        const weightInfo = matchScores[dimension];
-        const weight = weightInfo && weightInfo.weights !== undefined ? weightInfo.weights : 1.0;
-        
+        const dimData = matchReport[dimension];
+        const weight = dimData?.metrics?.weights !== undefined ? dimData.metrics.weights : 1.0;
+
         if (!matches || !Array.isArray(matches)) {
             continue;
         }
 
-        const totalRequirements = matches.length;
-        totalPossibleWeightedPoints += (totalRequirements * weight);
+        const dimRequirements = matches.length;
+        totalRequirements += dimRequirements;
+        totalPossibleWeightedPoints += (dimRequirements * weight);
 
         for (const match of matches) {
-            let score = match.similarityScore !== undefined 
-                ? match.similarityScore 
+            let score = match.similarityScore !== undefined
+                ? match.similarityScore
                 : (match.similarityPercentage / 100) || 0;
 
             const scaledPoints = calculateScaledPoints(score, minimumFloor, perfectScore);
@@ -774,9 +759,14 @@ function calculateWeightedMatchScore(matchReport, minimumFloor = 0.50, perfectSc
         }
     }
 
-    if (totalPossibleWeightedPoints === 0) return 0;
-    const finalPercentage = (achievedWeightedPoints / totalPossibleWeightedPoints);
-    return Number(finalPercentage.toFixed(4)); 
+    if (totalPossibleWeightedPoints === 0) {
+        return { score: 0, calculationDetails: null };
+    }
+
+    const finalPercentage = achievedWeightedPoints / totalPossibleWeightedPoints;
+    const finalPercentageRounded = Number(finalPercentage.toFixed(4));
+
+    return { score: finalPercentageRounded };
 }
 
 module.exports = { calculate, buildRawComparison, calculateWeightedMatchScore, evaluateCriteriaPair, calculateFastMatchScore, calculateScaledPoints };

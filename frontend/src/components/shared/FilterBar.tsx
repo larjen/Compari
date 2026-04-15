@@ -42,7 +42,7 @@ export function FilterBar({
         <div className="flex items-center gap-2 shrink-0">
           <Filter className="w-4 h-4 text-accent-forest/60" />
           <select
-            className="w-full md:w-auto bg-white border border-border-light rounded-lg px-4 py-2.5 text-sm text-accent-forest placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-sage/30 focus:border-accent-sage transition-all duration-200 cursor-pointer"
+            className="w-full md:w-auto bg-themed-input-bg border border-themed-input-border rounded-lg px-4 py-2.5 text-sm text-themed-fg-main focus:outline-none focus:ring-2 focus:ring-accent-sage/30 focus:border-accent-sage transition-all duration-200 cursor-pointer"
             value={filterValue}
             onChange={(e) => onFilterChange(e.target.value)}
           >

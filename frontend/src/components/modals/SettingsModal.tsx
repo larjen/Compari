@@ -13,17 +13,18 @@
  * @import_note Import paths use exact PascalCase ('@/components/ui/Button') to resolve Webpack module casing conflicts.
  */
 import { useState, useEffect } from 'react';
-import { Plus } from 'lucide-react';
 import { Settings, AiModel } from '@/lib/types';
 import { settingsApi } from '@/lib/api/settingsApi';
 import { aiModelApi } from '@/lib/api/aiModelApi';
 import { EntityDetailLayout } from '@/components/shared/EntityDetailLayout';
-import { Loader2, MessageSquare, Database, Settings as SettingsIcon, FileText, Layout, Target } from 'lucide-react';
+import { Loader2, MessageSquare, Database, Settings as SettingsIcon, FileText, Layout, Target, MessageSquareText, GitBranch, Zap } from 'lucide-react';
 import { DimensionsTab } from '@/components/settings/DimensionsTab';
 import { BlueprintsTab } from '@/components/settings/BlueprintsTab';
-import { AiModelForm, ModelFormData, initialFormData } from '@/components/settings/AiModelForm';
-import { AiModelList } from '@/components/settings/AiModelList';
+import { PromptsTab } from '@/components/settings/PromptsTab';
+import { AiModelList, ModelFormData, initialFormData } from '@/components/settings/AiModelList';
+import { ModelRoutingTab } from '@/components/settings/ModelRoutingTab';
 import { Button } from '@/components/ui/Button';
+import { CreateButton } from '@/components/ui/CreateButton';
 
 
 /**
@@ -37,12 +38,12 @@ import { Button } from '@/components/ui/Button';
  */
 function SettingsCard({ icon: Icon, title, description, children }: { icon: React.ElementType; title: string; description: string; children: React.ReactNode }) {
   return (
-    <div className="bg-accent-sage/5 p-4 rounded-lg space-y-3">
-      <div className="flex items-center gap-2">
-        <Icon className="w-4 h-4 text-accent-sage" />
-        <h3 className="font-semibold text-foreground">{title}</h3>
+    <div className="bg-themed-inner border border-themed-border rounded-xl p-6 space-y-4">
+      <div className="flex items-center gap-3">
+        <Icon className="w-5 h-5 text-accent-sage" />
+        <h3 className="text-lg font-bold text-themed-fg-main">{title}</h3>
       </div>
-      <p className="text-accent-forest/60 text-xs">{description}</p>
+      <p className="text-sm text-themed-fg-muted">{description}</p>
       {children}
     </div>
   );
@@ -51,17 +52,18 @@ function SettingsCard({ icon: Icon, title, description, children }: { icon: Reac
 /**
  * Tab identifiers for the Settings modal.
  */
-type TabId = 'general-settings' | 'chat-models' | 'embedding-models' | 'blueprints' | 'dimensions';
+type TabId = 'general-settings' | 'chat-models' | 'embedding-models' | 'task-routing' | 'blueprints' | 'dimensions' | 'prompts';
 
 /**
  * Tab configuration for the Settings modal.
  */
 const tabs = [
   { id: 'general-settings', label: 'General', icon: SettingsIcon },
-  { id: 'chat-models', label: 'Chat Models', icon: MessageSquare },
-  { id: 'embedding-models', label: 'Embed Models', icon: Database },
+  { id: 'chat-models', label: 'Model Registry', icon: Database },
+  { id: 'task-routing', label: 'Task Routing', icon: GitBranch },
   { id: 'blueprints', label: 'Blueprints', icon: Layout },
   { id: 'dimensions', label: 'Dimensions', icon: Target },
+  { id: 'prompts', label: 'Prompts', icon: MessageSquareText },
 ];
 
 
@@ -96,6 +98,8 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
   const [minFloorInput, setMinFloorInput] = useState<string>('50');
   const [perfectScoreInput, setPerfectScoreInput] = useState<string>('85');
   const [logAiInteractions, setLogAiInteractions] = useState<boolean>(false);
+  const [aiVerifyMerges, setAiVerifyMerges] = useState<boolean>(true);
+  const [allowConcurrentAi, setAllowConcurrentAi] = useState<boolean>(false);
   const [models, setModels] = useState<AiModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -134,6 +138,12 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
       }
       if (data.log_ai_interactions) {
         setLogAiInteractions(data.log_ai_interactions === 'true');
+      }
+      if (data.ai_verify_merges) {
+        setAiVerifyMerges(data.ai_verify_merges === 'true');
+      }
+      if (data.allow_concurrent_ai) {
+        setAllowConcurrentAi(data.allow_concurrent_ai === 'true');
       }
     } catch (err) {
       console.error('Failed to load settings:', err);
@@ -188,6 +198,32 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
       onSuccess('Logging settings updated successfully');
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Failed to save logging setting');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAutoSaveVerifyMerges = async (newValue: boolean) => {
+    setSaving(true);
+    try {
+      await settingsApi.updateSetting('ai_verify_merges', newValue.toString());
+      await loadSettings();
+      onSuccess('AI merge verification setting updated successfully');
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Failed to save merge verification setting');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAutoSaveConcurrentAi = async (newValue: boolean) => {
+    setSaving(true);
+    try {
+      await settingsApi.updateSetting('allow_concurrent_ai', newValue.toString());
+      await loadSettings();
+      onSuccess('Concurrency setting updated successfully');
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Failed to save concurrency setting');
     } finally {
       setSaving(false);
     }
@@ -335,10 +371,10 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
                   onChange={(e) => setThresholdInput(e.target.value)}
                   onMouseUp={(e) => handleAutoSaveThreshold((e.target as HTMLInputElement).value)}
                   onKeyUp={(e) => handleAutoSaveThreshold((e.target as HTMLInputElement).value)}
-                  className="w-full h-2 bg-accent-forest/20 rounded-lg appearance-none cursor-pointer accent-accent-sage"
+                  className="w-full h-2 bg-themed-input-border rounded-lg appearance-none cursor-pointer accent-accent-sage"
                 />
               </div>
-              <span className="text-sm font-medium text-accent-sage min-w-[50px] text-right">
+              <span className="font-mono text-sm text-themed-fg-main min-w-[50px] text-right">
                 {thresholdInput}%
               </span>
             </div>
@@ -360,10 +396,10 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
                   onChange={(e) => setMinFloorInput(e.target.value)}
                   onMouseUp={(e) => handleAutoSaveSlider('minimum_match_floor', (e.target as HTMLInputElement).value, 'Minimum floor updated')}
                   onKeyUp={(e) => handleAutoSaveSlider('minimum_match_floor', (e.target as HTMLInputElement).value, 'Minimum floor updated')}
-                  className="w-full h-2 bg-accent-forest/20 rounded-lg appearance-none cursor-pointer accent-accent-sage"
+                  className="w-full h-2 bg-themed-input-border rounded-lg appearance-none cursor-pointer accent-accent-sage"
                 />
               </div>
-              <span className="text-sm font-medium text-accent-sage min-w-[50px] text-right">
+              <span className="font-mono text-sm text-themed-fg-main min-w-[50px] text-right">
                 {minFloorInput}%
               </span>
             </div>
@@ -385,10 +421,10 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
                   onChange={(e) => setPerfectScoreInput(e.target.value)}
                   onMouseUp={(e) => handleAutoSaveSlider('perfect_match_score', (e.target as HTMLInputElement).value, 'Perfect score updated')}
                   onKeyUp={(e) => handleAutoSaveSlider('perfect_match_score', (e.target as HTMLInputElement).value, 'Perfect score updated')}
-                  className="w-full h-2 bg-accent-forest/20 rounded-lg appearance-none cursor-pointer accent-accent-sage"
+                  className="w-full h-2 bg-themed-input-border rounded-lg appearance-none cursor-pointer accent-accent-sage"
                 />
               </div>
-              <span className="text-sm font-medium text-accent-sage min-w-[50px] text-right">
+              <span className="font-mono text-sm text-themed-fg-main min-w-[50px] text-right">
                 {perfectScoreInput}%
               </span>
             </div>
@@ -410,9 +446,57 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
                   }}
                   className="sr-only peer"
                 />
-                <div className="w-11 h-6 bg-accent-forest/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent-sage"></div>
-                <span className="ml-3 text-sm font-medium text-foreground">
+                <div className="w-11 h-6 bg-themed-input-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent-sage"></div>
+                <span className="ml-3 text-sm font-medium text-themed-fg-main">
                   {logAiInteractions ? 'On' : 'Off'}
+                </span>
+              </label>
+            </div>
+          </SettingsCard>
+
+          <SettingsCard
+            icon={Database}
+            title="AI Merge Verification"
+            description="Use the AI to double-check if similar criteria are true synonyms before merging them. Disable to strictly use vector similarity."
+          >
+            <div className="flex items-center justify-between">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={aiVerifyMerges}
+                  onChange={(e) => {
+                    setAiVerifyMerges(e.target.checked);
+                    handleAutoSaveVerifyMerges(e.target.checked);
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-themed-input-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent-sage"></div>
+                <span className="ml-3 text-sm font-medium text-themed-fg-main">
+                  {aiVerifyMerges ? 'On' : 'Off'}
+                </span>
+              </label>
+            </div>
+          </SettingsCard>
+
+          <SettingsCard
+            icon={Zap}
+            title="Allow Concurrent AI Processing"
+            description="Enable this if you are using a cloud AI provider (e.g., OpenAI) to drastically speed up extraction. Leave this disabled for local models (e.g., Ollama) to prevent queue thrashing and inaccurate timing logs."
+          >
+            <div className="flex items-center justify-between">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allowConcurrentAi}
+                  onChange={(e) => {
+                    setAllowConcurrentAi(e.target.checked);
+                    handleAutoSaveConcurrentAi(e.target.checked);
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-themed-input-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent-sage"></div>
+                <span className="ml-3 text-sm font-medium text-themed-fg-main">
+                  {allowConcurrentAi ? 'On' : 'Off'}
                 </span>
               </label>
             </div>
@@ -429,8 +513,16 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
       return <DimensionsTab isCreating={isCreatingDimension} setIsCreating={setIsCreatingDimension} />;
     }
 
-    const modelList = activeTab === 'chat-models' ? chatModels : embeddingModels;
-    const role = activeTab === 'chat-models' ? 'chat' : 'embedding';
+    if (activeTab === 'prompts') {
+      return <PromptsTab />;
+    }
+
+    if (activeTab === 'task-routing') {
+      return <ModelRoutingTab settings={settings} />;
+    }
+
+    const modelList = models;
+    const role = 'chat';
 
     return (
       <div className="space-y-4">
@@ -440,22 +532,13 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
           isLoading={loading}
           showForm={showForm}
           editingModelId={editingModel?.id || null}
-          hideAddButton={true}
-          formComponent={
-            <AiModelForm
-              formData={formData}
-              setFormData={setFormData}
-              isEditing={!!editingModel}
-              isSaving={saving}
-              isActive={editingModel?.isActive}
-              onSave={handleSaveModel}
-              onCancel={cancelForm}
-            />
-          }
-          onSetActive={handleSetActive}
+          formData={formData}
+          setFormData={setFormData}
+          isSaving={saving}
           onEdit={openEditForm}
           onDelete={handleDeleteModel}
-          onAddNew={openAddForm}
+          onSave={handleSaveModel}
+          onCancel={cancelForm}
         />
       </div>
     );
@@ -464,31 +547,24 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
   const renderFooterActions = () => {
     if (activeTab === 'general-settings') return null;
 
-    if (activeTab === 'chat-models' || activeTab === 'embedding-models') {
+    if (activeTab === 'chat-models') {
       if (showForm) return null;
-      const role = activeTab === 'chat-models' ? 'chat' : 'embedding';
       return (
-        <Button onClick={() => openAddForm(role)} size="sm">
-          <Plus className="w-4 h-4 mr-2" /> Add New Model
-        </Button>
+        <CreateButton entityName="Model" onClick={() => openAddForm('chat')} />
       );
     }
 
     if (activeTab === 'blueprints') {
       if (isCreatingBlueprint) return null;
       return (
-        <Button onClick={() => setIsCreatingBlueprint(true)} size="sm">
-          <Plus className="w-4 h-4 mr-2" /> Add Blueprint
-        </Button>
+        <CreateButton entityName="Blueprint" onClick={() => setIsCreatingBlueprint(true)} />
       );
     }
 
     if (activeTab === 'dimensions') {
       if (isCreatingDimension) return null;
       return (
-        <Button onClick={() => setIsCreatingDimension(true)} size="sm">
-          <Plus className="w-4 h-4 mr-2" /> Add Dimension
-        </Button>
+        <CreateButton entityName="Dimension" onClick={() => setIsCreatingDimension(true)} />
       );
     }
 

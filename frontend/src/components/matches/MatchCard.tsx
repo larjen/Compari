@@ -11,12 +11,12 @@
  * @boundary_rules
  * - ❌ MUST NOT contain API logic (delegated to hooks).
  * - ❌ MUST NOT handle business rules beyond data mapping.
+ * - ❌ MUST NOT calculate lifecycle states - delegated to BaseCard via useTaskLifecycle.
  * - Layout shell is delegated to BaseCard component.
  */
 import { User, Briefcase, Download } from 'lucide-react';
 import { EntityMatch } from '@/lib/types';
 import { getNuancedEntityName, parseMatchEntities, formatPercentage } from '@/lib/utils';
-import { useElapsedTime } from '@/hooks/useElapsedTime';
 import { useBlueprints } from '@/hooks/useBlueprints';
 import { useToast } from '@/hooks/useToast';
 import { Button } from '@/components/ui/Button';
@@ -30,17 +30,15 @@ interface MatchCardProps {
    * Must return a Promise to handle the async deletion process.
    */
   onDelete?: () => Promise<void>;
+  /**
+   * Callback function triggered when the user requests to retry a failed match.
+   */
+  onRetry?: () => void;
 }
 
-export function MatchCard({ match, onClick, onDelete }: MatchCardProps) {
-  const elapsedTime = useElapsedTime(match.queue_status === 'processing' ? match.created_at : undefined);
+export function MatchCard({ match, onClick, onDelete, onRetry }: MatchCardProps) {
   const { blueprints } = useBlueprints();
   const { addToast } = useToast();
-
-  const isPending = match.queue_status === 'pending';
-  const isProcessing = match.queue_status === 'processing';
-  const hasError = match.queue_status === 'error';
-  const isCompleted = match.queue_status === 'completed';
 
   const { reqEntity, offEntity } = parseMatchEntities(match);
 
@@ -49,6 +47,8 @@ export function MatchCard({ match, onClick, onDelete }: MatchCardProps) {
 
   const reqPrimaryName = reqDisplayName.split(' - ')[0] || reqDisplayName;
   const offPrimaryName = offDisplayName.split(' - ')[0] || offDisplayName;
+
+  const isCompleted = match.status === 'completed';
 
   const handleDownloadPdf = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -91,15 +91,13 @@ export function MatchCard({ match, onClick, onDelete }: MatchCardProps) {
   return (
     <BaseCard
       id={match.id}
-      isPending={isPending}
-      isProcessing={isProcessing}
-      hasError={hasError}
-      isCompleted={isCompleted}
+      status={match.status ?? null}
+      startTime={match.status === 'processing' ? match.updated_at : match.created_at}
       taskName="assessment"
-      elapsedTime={elapsedTime}
-      errorMessage={match.error || "Assessment failed"}
+      errorMessage={match.error || undefined}
       onClick={onClick}
       onDelete={onDelete}
+      onRetry={onRetry}
       customActions={
         isCompleted ? (
           <Button

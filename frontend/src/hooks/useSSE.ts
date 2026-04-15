@@ -9,12 +9,14 @@ export interface UseSSEOptions {
   onQueueUpdate?: (data: QueueStatus) => void;
   onMatchUpdate?: (data: SSEMatchUpdate) => void;
   onBlueprintUpdate?: (data: { timestamp: number }) => void;
+  onReconnect?: () => void;
 }
 
 // Global state for singleton SSE connection
 let globalEventSource: EventSource | null = null;
 let connectionCount = 0;
 let reconnectTimeout: NodeJS.Timeout | null = null;
+let wasDisconnected = false;
 
 const listeners = {
   entityUpdate: new Set<(data: SSEEntityUpdate) => void>(),
@@ -22,6 +24,7 @@ const listeners = {
   queueUpdate: new Set<(data: QueueStatus) => void>(),
   matchUpdate: new Set<(data: SSEMatchUpdate) => void>(),
   blueprintUpdate: new Set<(data: { timestamp: number }) => void>(),
+  reconnect: new Set<() => void>(),
 };
 
 function handleEvent<T>(eventName: keyof typeof listeners) {
@@ -41,6 +44,13 @@ function initGlobalSSE() {
 
   globalEventSource = new EventSource('/api/events');
 
+  globalEventSource.onopen = () => {
+    if (wasDisconnected) {
+      wasDisconnected = false;
+      listeners.reconnect.forEach(cb => cb());
+    }
+  };
+
   globalEventSource.addEventListener('entityUpdate', handleEvent('entityUpdate'));
   globalEventSource.addEventListener('notification', handleEvent('notification'));
   globalEventSource.addEventListener('queueUpdate', handleEvent('queueUpdate'));
@@ -48,6 +58,7 @@ function initGlobalSSE() {
   globalEventSource.addEventListener('blueprintUpdate', handleEvent('blueprintUpdate'));
 
   globalEventSource.onerror = () => {
+    wasDisconnected = true;
     globalEventSource?.close();
     globalEventSource = null;
     if (reconnectTimeout) clearTimeout(reconnectTimeout);
@@ -67,7 +78,8 @@ export function useSSE({
   onNotification,
   onQueueUpdate,
   onMatchUpdate,
-  onBlueprintUpdate
+  onBlueprintUpdate,
+  onReconnect
 }: UseSSEOptions = {}) {
   
   useEffect(() => {
@@ -81,6 +93,7 @@ export function useSSE({
     if (onQueueUpdate) listeners.queueUpdate.add(onQueueUpdate);
     if (onMatchUpdate) listeners.matchUpdate.add(onMatchUpdate);
     if (onBlueprintUpdate) listeners.blueprintUpdate.add(onBlueprintUpdate);
+    if (onReconnect) listeners.reconnect.add(onReconnect);
 
     return () => {
       if (onEntityUpdate) listeners.entityUpdate.delete(onEntityUpdate);
@@ -88,6 +101,7 @@ export function useSSE({
       if (onQueueUpdate) listeners.queueUpdate.delete(onQueueUpdate);
       if (onMatchUpdate) listeners.matchUpdate.delete(onMatchUpdate);
       if (onBlueprintUpdate) listeners.blueprintUpdate.delete(onBlueprintUpdate);
+      if (onReconnect) listeners.reconnect.delete(onReconnect);
 
       connectionCount--;
       if (connectionCount === 0) {
@@ -96,7 +110,7 @@ export function useSSE({
         globalEventSource = null;
       }
     };
-  }, [onEntityUpdate, onNotification, onQueueUpdate, onMatchUpdate, onBlueprintUpdate]);
+  }, [onEntityUpdate, onNotification, onQueueUpdate, onMatchUpdate, onBlueprintUpdate, onReconnect]);
 
   const reconnect = useCallback(() => {
     if (globalEventSource) {

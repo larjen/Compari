@@ -11,7 +11,7 @@ function MatchCategorySection({ items, title, dimensionId, matchType }: { items:
 
     return (
         <div className="mt-8 space-y-3">
-            <h4 className="flex items-center gap-2 text-lg font-semibold text-accent-forest/80 uppercase tracking-wider border-b border-accent-forest/10 pb-2 pt-2 print:break-after-avoid">
+            <h4 className="flex items-center gap-2 text-lg font-semibold text-accent-forest/80 uppercase tracking-wider border-b border-accent-forest/10 pb-2 pt-[20px] print:break-after-avoid">
                 {title} 
                 <span className="font-sans text-sm font-bold tracking-normal text-accent-forest bg-accent-forest/10 px-2.5 py-0.5 rounded-full">
                     {items.length}

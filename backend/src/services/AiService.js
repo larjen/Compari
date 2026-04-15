@@ -37,6 +37,7 @@
 const { OpenAI } = require('openai');
 const logService = require('./LogService');
 const aiModelRepo = require('../repositories/AiModelRepo');
+const settingsManager = require('../config/SettingsManager');
 
 const DEFAULT_CHAT_MODEL = 'gemma4:e4b';
 const DEFAULT_EMBEDDING_MODEL = 'nomic-embed-text';
@@ -53,26 +54,96 @@ class AiService {
      */
     _getModelConfigByRole(role, defaultModelIdentifier) {
         const activeModel = aiModelRepo.getActiveModelByRole(role);
-        
+
         if (activeModel) {
             return {
+                name: activeModel.name,
                 modelIdentifier: activeModel.modelIdentifier,
                 apiUrl: activeModel.apiUrl,
                 apiKey: activeModel.apiKey,
                 role: role,
                 temperature: activeModel.temperature,
-                contextWindow: activeModel.contextWindow
+                contextWindow: activeModel.contextWindow,
+                id: activeModel.id
             };
         }
 
         return {
+            name: defaultModelIdentifier,
             modelIdentifier: defaultModelIdentifier,
             apiUrl: DEFAULT_API_URL,
             apiKey: null,
             role: role,
             temperature: 0.1,
-            contextWindow: 8192
+            contextWindow: 8192,
+            id: null
         };
+    }
+
+    _getModelConfigById(id) {
+        if (!id) {
+            return null;
+        }
+        const model = aiModelRepo.getModelById(id);
+        if (!model) {
+            return null;
+        }
+        return {
+            name: model.name,
+            modelIdentifier: model.modelIdentifier,
+            apiUrl: model.apiUrl,
+            apiKey: model.apiKey,
+            role: model.role,
+            temperature: model.temperature,
+            contextWindow: model.contextWindow,
+            id: model.id
+        };
+    }
+
+    _getModelConfigForTask(taskType, defaultConfig) {
+        let settingKey = null;
+        let fallbackRole = null;
+
+        switch (taskType) {
+            case 'general':
+                settingKey = 'model_routing_general';
+                fallbackRole = 'chat';
+                break;
+            case 'verification':
+                settingKey = 'model_routing_verification';
+                fallbackRole = 'chat';
+                break;
+            case 'embedding':
+                settingKey = 'model_routing_embedding';
+                fallbackRole = 'embedding';
+                break;
+            case 'metadata':
+                settingKey = 'model_routing_metadata';
+                fallbackRole = 'chat';
+                break;
+            default:
+                return defaultConfig;
+        }
+
+        if (!settingKey) {
+            return defaultConfig;
+        }
+
+        const modelId = settingsManager.get(settingKey);
+
+        if (!modelId) {
+            logService.logTerminal('WARN', 'WARNING', 'AiService.js', `No model configured for task '${taskType}', falling back to active ${fallbackRole} model.`);
+            return this._getModelConfigByRole(fallbackRole, defaultConfig.modelIdentifier);
+        }
+
+        const config = this._getModelConfigById(modelId);
+
+        if (!config) {
+            logService.logTerminal('WARN', 'WARNING', 'AiService.js', `Model ID '${modelId}' not found for task '${taskType}', falling back to active ${fallbackRole} model.`);
+            return this._getModelConfigByRole(fallbackRole, defaultConfig.modelIdentifier);
+        }
+
+        return config;
     }
 
     /**
@@ -104,10 +175,10 @@ class AiService {
      */
     _getClient(overrideConfig) {
         const config = overrideConfig || this._getChatModelConfig();
-        
+
         const baseURL = config.apiUrl || 'https://api.openai.com/v1';
         const apiKey = config.apiKey || 'dummy-key';
-        
+
         return {
             client: new OpenAI({ baseURL, apiKey }),
             model: config.modelIdentifier
@@ -130,7 +201,7 @@ class AiService {
         } else {
             config = this._getChatModelConfig();
         }
-        
+
         const { client, model } = this._getClient(config);
 
         try {
@@ -166,14 +237,23 @@ class AiService {
      * - When format is provided, markdown backticks are automatically stripped from the response.
      */
     async generateChatResponse(messages, options = {}, overrideConfig, signal) {
-        const config = overrideConfig || this._getChatModelConfig();
+        const startTime = Date.now();
+        let config = overrideConfig;
+
+        if (!config && options.taskType) {
+            config = this._getModelConfigForTask(options.taskType, this._getChatModelConfig());
+        }
+
+        if (!config) {
+            config = this._getChatModelConfig();
+        }
         const { client, model: selectedModel } = this._getClient(config);
 
         await this.isHealthy('chat', config);
 
         const requestOptions = { ...options };
         const isJsonFormat = options.format === 'json' || (options.format && typeof options.format === 'object');
-        
+
         const chatParams = {
             model: selectedModel,
             messages: messages,
@@ -204,13 +284,6 @@ class AiService {
             throw error;
         }
 
-        try {
-            logService.logTerminal('INFO', 'LIGHTNING', 'AiService.js', `AI chat model finished generation successfully. Model: ${selectedModel}`);
-            logService.logSystemFile('AiService.js', `AI chat model finished generation successfully. Model: ${selectedModel}`);
-        } catch (err) {
-            logService.logTerminal('WARN', 'WARNING', 'AiService.js', `Failed to log AI generation: ${err.message}`);
-        }
-
         let content = response.choices[0].message.content.trim();
 
         if (options.logFolderPath) {
@@ -221,18 +294,29 @@ class AiService {
             }
         }
 
+        const durationMs = Date.now() - startTime;
+
+        if (options.logAction) {
+            const timeStr = durationMs < 1000 ? `${durationMs}ms` : logService.formatDuration(durationMs);
+            const origin = 'AiService';
+            const symbol = options.logSymbol || 'LIGHTNING';
+            logService.logTerminal('INFO', symbol, origin, `[Model: ${selectedModel}] [Time: ${timeStr}] ${options.logAction}`);
+        }
+
         if (isJsonFormat) {
             content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
-            
+
             const jsonMatch = content.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
             if (jsonMatch) {
                 content = jsonMatch[1];
             }
-            
-            return content;
         }
 
-        return content;
+        return {
+            content,
+            model: selectedModel,
+            durationMs
+        };
     }
 
     /**
@@ -245,10 +329,18 @@ class AiService {
      * @returns {Promise<number[]>} Array of floating point numbers representing the embedding.
      */
     async generateEmbedding(text, overrideConfig, embeddingModel, signal) {
-        const config = overrideConfig || this._getEmbeddingModelConfig();
-        
+        let config = overrideConfig;
+
+        if (!config) {
+            config = this._getModelConfigForTask('embedding', this._getEmbeddingModelConfig());
+        }
+
+        if (!config) {
+            config = this._getEmbeddingModelConfig();
+        }
+
         await this.isHealthy('embedding', config);
-        
+
         const { client } = this._getClient(config);
         const model = embeddingModel || config.modelIdentifier || DEFAULT_EMBEDDING_MODEL;
 
@@ -258,6 +350,57 @@ class AiService {
         });
 
         return response.data[0].embedding;
+    }
+
+    /**
+     * Pre-warms the AI model by sending a minimal payload to load it into memory.
+     * Logs the spin-up time to the terminal.
+     * @param {string} [taskType='general'] - The task type (e.g., 'general', 'metadata', 'embedding').
+     * @param {Object} [overrideConfig] - Optional override configuration.
+     * @returns {Promise<{model: string, durationMs: number}>}
+     */
+    async warmUpModel(taskType = 'general', overrideConfig) {
+        let config = overrideConfig;
+
+        if (!config) {
+            const defaultRole = taskType === 'embedding' ? 'embedding' : 'chat';
+            const defaultConfig = defaultRole === 'embedding' ? this._getEmbeddingModelConfig() : this._getChatModelConfig();
+            config = this._getModelConfigForTask(taskType, defaultConfig);
+        }
+
+        const safeApiUrl = config.apiUrl || 'default local endpoint';
+
+        logService.logTerminal('INFO', 'INFO', 'AiService', `Spinning up model ${config.name} (${config.modelIdentifier}) at ${safeApiUrl}`);
+
+        try {
+            await this.isHealthy(config.role, config);
+            const { client } = this._getClient(config);
+
+            const startTime = Date.now();
+
+            if (config.role === 'embedding') {
+                await client.embeddings.create({
+                    model: config.modelIdentifier,
+                    input: 'warmup'
+                });
+            } else {
+                await client.chat.completions.create({
+                    model: config.modelIdentifier,
+                    messages: [{ role: 'user', content: 'warmup' }],
+                    max_tokens: 1
+                });
+            }
+
+            const durationMs = Date.now() - startTime;
+            const timeStr = durationMs < 1000 ? `${durationMs}ms` : logService.formatDuration(durationMs);
+
+            logService.logTerminal('INFO', 'LIGHTNING', 'AiService', `Model ${config.name} (${config.modelIdentifier}) at ${safeApiUrl} spun up in ${timeStr}.`);
+
+            return { model: config.modelIdentifier, durationMs };
+        } catch (error) {
+            logService.logTerminal('WARN', 'WARNING', 'AiService', `Failed to warm up model ${config.name}: ${error.message}`);
+            return { model: config.modelIdentifier || 'unknown', durationMs: 0 };
+        }
     }
 
     /**
@@ -277,7 +420,7 @@ class AiService {
         } else {
             config = this._getChatModelConfig();
         }
-        
+
         const { client, model: selectedModel } = this._getClient(config);
 
         await this.isHealthy(role, config);

@@ -17,7 +17,7 @@ import { fetchWrapper } from './apiClient';
 export interface GetCriteriaParams {
   /** Page number (1-indexed). Default: 1 */
   page?: number;
-  /** Number of items per page. Default: 300 */
+  /** Number of items per page. Default: 200 */
   limit?: number;
   /** Search term to match against displayName (case-insensitive). */
   search?: string;
@@ -51,7 +51,7 @@ export const criteriaApi = {
     if (params.page !== undefined && params.page !== 1) {
       queryParams.set('page', String(params.page));
     }
-    if (params.limit !== undefined && params.limit !== 300) {
+    if (params.limit !== undefined && params.limit !== 200) {
       queryParams.set('limit', String(params.limit));
     }
     if (params.search) {

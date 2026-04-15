@@ -18,6 +18,8 @@
  */
 
 const logService = require('../services/LogService');
+const fs = require('fs');
+const path = require('path');
 
 /**
  * Seeds default AI models into the database.
@@ -34,7 +36,7 @@ function seedAiModels(db) {
 
     const defaultModels = [
         {
-            name: 'Gemma',
+            name: 'Gemma 4 (4B)',
             model_identifier: 'gemma4:e4b',
             api_url: 'http://127.0.0.1:11434/v1',
             api_key: null,
@@ -45,34 +47,23 @@ function seedAiModels(db) {
             context_window: 8192
         },
         {
-            name: 'Llama',
-            model_identifier: 'llama3.1:8b',
+            name: 'Gemma 4 (2B) Fast',
+            model_identifier: 'gemma4:e2b',
             api_url: 'http://127.0.0.1:11434/v1',
             api_key: null,
             role: 'chat',
-            is_active: 0,
-            is_system: 1,
-            temperature: 0.1,
-            context_window: 8192
-        },
-        {
-            name: 'Nomic',
-            model_identifier: 'nomic-embed-text',
-            api_url: 'http://127.0.0.1:11434/v1',
-            api_key: null,
-            role: 'embedding',
             is_active: 1,
             is_system: 1,
             temperature: 0.1,
             context_window: 8192
         },
         {
-            name: 'BGE-M3',
-            model_identifier: 'bge-m3',
+            name: 'Nomic Embed Text',
+            model_identifier: 'nomic-embed-text',
             api_url: 'http://127.0.0.1:11434/v1',
             api_key: null,
             role: 'embedding',
-            is_active: 0,
+            is_active: 1,
             is_system: 1,
             temperature: 0.1,
             context_window: 8192
@@ -273,7 +264,13 @@ function seedSettings(db) {
         { key: 'auto_merge_threshold', value: '0.95' },
         { key: 'minimum_match_floor', value: '0.50' },
         { key: 'perfect_match_score', value: '0.85' },
-        { key: 'log_ai_interactions', value: 'false' }
+        { key: 'log_ai_interactions', value: 'false' },
+        { key: 'ai_verify_merges', value: 'true' },
+        { key: 'model_routing_general', value: '1' },
+        { key: 'model_routing_verification', value: '2' },
+        { key: 'model_routing_embedding', value: '3' },
+        { key: 'model_routing_metadata', value: '2' },
+        { key: 'allow_concurrent_ai', value: 'false' }
     ];
 
     const stmt = db.prepare(`
@@ -285,7 +282,82 @@ function seedSettings(db) {
         stmt.run(setting.key, setting.value);
     }
 
-    logService.logTerminal('INFO', 'CHECKMARK', 'Seeder', 'Seeded default settings (auto_merge_threshold, minimum_match_floor, perfect_match_score) in settings table.');
+    logService.logTerminal('INFO', 'CHECKMARK', 'Seeder', 'Seeded default settings including model routing configuration in settings table.');
+}
+
+function seedPrompts(db) {
+    const promptsDir = path.join(__dirname, '../prompts');
+    
+    const readMarkdownFile = (filename) => {
+        try {
+            const filePath = path.join(promptsDir, filename);
+            return fs.readFileSync(filePath, 'utf-8');
+        } catch (err) {
+            logService.logTerminal('WARN', 'WARNING', 'Seeder', `Failed to read prompt file ${filename}: ${err.message}`);
+            return null;
+        }
+    };
+
+    const defaultPrompts = [
+        {
+            system_name: 'markdown_extraction',
+            title: 'Markdown Extraction',
+            description: 'Converts raw PDF text into clean Markdown format',
+            prompt: readMarkdownFile('markdown_extraction.md') || ''
+        },
+        {
+            system_name: 'entity_metadata',
+            title: 'Entity Metadata Extraction',
+            description: 'Extracts entity metadata fields based on blueprint definitions',
+            prompt: readMarkdownFile('entity_metadata.md') || ''
+        },
+        {
+            system_name: 'dynamic_extraction',
+            title: 'Dynamic Criteria Extraction',
+            description: 'Extracts criteria from entities across multiple dimensional categories',
+            prompt: readMarkdownFile('dynamic_extraction.md') || ''
+        },
+        {
+            system_name: 'match_summary',
+            title: 'Match Summary Generation',
+            description: 'Generates structured Markdown summaries of requirement-offering matches',
+            prompt: readMarkdownFile('match_summary.md') || ''
+        },
+        {
+            system_name: 'executive_summary',
+            title: 'Executive Summary Generation',
+            description: 'Synthesizes dimensional match analysis into executive summaries',
+            prompt: readMarkdownFile('executive_summary.md') || ''
+        },
+        {
+            system_name: 'synonym_validator',
+            title: 'Synonym Validator',
+            description: 'Determines if two criteria are functionally identical synonyms',
+            prompt: `You are a strict technical evaluator. Your job is to determine if two criteria are functionally identical synonyms. 
+
+CRITICAL RULES:
+- Related but distinct concepts (e.g., "Hardware" vs "Software", "B2B SaaS" vs "OT", "GDPR" vs "HIPAA", "React" vs "Node") are NOT synonyms.
+- Hierarchical differences (e.g., "Programming" vs "Python") are NOT synonyms.
+- ONLY approve if they mean the exact same thing in a professional context (e.g., "JS" vs "JavaScript", "P&L Management" vs "Profit and Loss").
+
+Respond with EXACTLY and ONLY the word "YES" or "NO".`
+        }
+    ];
+
+    for (const promptData of defaultPrompts) {
+        if (!promptData.prompt) {
+            logService.logTerminal('WARN', 'WARNING', 'Seeder', `Skipping seed for ${promptData.system_name} - empty prompt content`);
+            continue;
+        }
+        
+        const stmt = db.prepare(`
+            INSERT OR IGNORE INTO prompts (system_name, title, description, prompt)
+            VALUES (?, ?, ?, ?)
+        `);
+        stmt.run(promptData.system_name, promptData.title, promptData.description, promptData.prompt);
+    }
+
+    logService.logTerminal('INFO', 'CHECKMARK', 'Seeder', 'Seeded default prompts in prompts table.');
 }
 
 /**
@@ -300,6 +372,7 @@ function seed(db) {
     seedDimensions(db);
     seedBlueprints(db);
     seedSettings(db);
+    seedPrompts(db);
 }
 
 module.exports = {
@@ -307,5 +380,6 @@ module.exports = {
     seedAiModels,
     seedDimensions,
     seedBlueprints,
-    seedSettings
+    seedSettings,
+    seedPrompts
 };

@@ -1,20 +1,30 @@
 'use client';
 
-/**
- * @module AiModelList
- * @description List component for displaying AI models.
- * @responsibility
- * - Displays list of AI models with active state
- * - Handles user interactions for set/edit/delete/add
- * @separation_of_concerns
- * - Extracted from SettingsModal to enforce SoC
- * - Presentational component - no business logic
- */
-
-import { Loader2, Edit2, Plus } from 'lucide-react';
-import { Button, DeleteAction } from '@/components/ui';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { EditButton } from '@/components/ui/EditButton';
+import { DeleteAction } from '@/components/ui/DeleteAction';
 import { AiModel } from '@/lib/types';
-import { getThemeClasses } from '@/lib/utils';
+
+export interface ModelFormData {
+  name: string;
+  model_identifier: string;
+  api_url: string;
+  api_key: string;
+  role: 'chat' | 'embedding';
+  temperature?: number;
+  contextWindow?: number;
+}
+
+export const initialFormData: ModelFormData = {
+  name: '',
+  model_identifier: '',
+  api_url: 'http://127.0.0.1:11434/v1',
+  api_key: '',
+  role: 'chat',
+  temperature: 0.1,
+  contextWindow: 8192,
+};
 
 export interface AiModelListProps {
   models: AiModel[];
@@ -22,134 +32,192 @@ export interface AiModelListProps {
   isLoading: boolean;
   showForm: boolean;
   editingModelId?: number | null;
-  formComponent: React.ReactNode;
-  hideAddButton?: boolean;
-  onSetActive: (id: number) => Promise<void>;
+  formData: ModelFormData;
+  setFormData: (data: ModelFormData) => void;
+  isSaving: boolean;
   onEdit: (model: AiModel) => void;
   onDelete: (model: AiModel) => Promise<void>;
-  onAddNew: (role: 'chat' | 'embedding') => void;
+  onSave: () => Promise<void>;
+  onCancel: () => void;
 }
 
-/**
- * List component displaying AI models for a specific role.
- * @param models - Array of AI models to display
- * @param role - The role type (chat or embedding)
- * @param isLoading - Whether data is loading
- * @param showForm - Whether to show the form inline
- * @param formComponent - The form component to render inline
- * @param onSetActive - Async callback when user sets a model as active
- * @param onEdit - Callback when user clicks edit
- * @param onDelete - Async callback when user deletes a model
- * @param onAddNew - Callback when user clicks add new
- */
+const inputClass = "w-full px-3 py-2 border border-themed-input-border rounded-lg bg-themed-input-bg text-themed-fg-main focus:ring-2 focus:ring-accent-sage/50 outline-none text-sm";
+const labelClass = "block text-xs font-bold text-themed-fg-muted uppercase mb-1";
+
 export function AiModelList({
   models,
   role,
   isLoading,
   showForm,
   editingModelId,
-  formComponent,
-  hideAddButton,
-  onSetActive,
+  formData,
+  setFormData,
+  isSaving,
   onEdit,
   onDelete,
-  onAddNew,
+  onSave,
+  onCancel,
 }: AiModelListProps) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-accent-sage" />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-3">
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin text-accent-sage" />
+    <div className="space-y-6">
+      {/* CREATION FORM */}
+      {showForm && !editingModelId && (
+        <div className="p-6 bg-themed-inner border border-themed-border rounded-xl space-y-4 mb-8">
+          <h3 className="text-lg font-bold text-themed-fg-main border-b border-themed-border pb-2">
+            Add New {role === 'chat' ? 'Chat' : 'Embedding'} Model
+          </h3>
+          <ModelEditor data={formData} setData={setFormData} />
+          <div className="flex justify-end gap-3 pt-4 border-t border-themed-border">
+            <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+            <Button variant="primary" onClick={onSave} disabled={isSaving || !formData.name || !formData.model_identifier}>
+              {isSaving ? 'Creating...' : 'Create Model'}
+            </Button>
+          </div>
         </div>
-      ) : models.length === 0 ? (
-        <p className="text-sm text-accent-forest/50 py-2">
+      )}
+
+      {/* LIST */}
+      {models.length === 0 && !showForm ? (
+        <p className="text-sm text-themed-fg-muted/50 py-4 italic">
           No {role} models configured. Add one to get started.
         </p>
       ) : (
-        models.map((model) => {
-          const isEditingThis = editingModelId === model.id;
-          const theme = getThemeClasses(model.isActive);
-          const cardClasses = model.isActive ? theme.cardBg : `${theme.cardBg} hover:border-accent-sage/50`;
+        <div className="space-y-6">
+          {models.map((model) => {
+            const isEditing = editingModelId === model.id;
+            const isActive = model.isActive;
 
-          return (
-            <div
-              key={model.id}
-              className={`p-4 rounded-lg border transition-all ${cardClasses}`}
-            >
-              {isEditingThis ? (
-                <div onClick={(e) => e.stopPropagation()}>
-                  {formComponent}
+            return (
+              <div key={model.id} className="p-6 bg-themed-inner border border-themed-border rounded-xl">
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-lg font-bold text-themed-fg-main">{model.name}</h3>
+                    <span className="px-2 py-0.5 text-[10px] uppercase tracking-wider font-bold bg-accent-sage/20 text-accent-forest rounded-full">
+                      {model.role}
+                    </span>
+                  </div>
                 </div>
-              ) : (
-                <div className="flex items-start justify-between" onClick={() => onSetActive(model.id)}>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h4 className={`font-medium ${model.isActive ? 'text-white' : 'text-accent-forest'}`}>
-                        {model.name}
-                      </h4>
-                      {model.isActive && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-white/20 text-white">
-                          Active
-                        </span>
+
+                {isEditing ? (
+                  /* EDIT MODE */
+                  <div className="space-y-4">
+                    <ModelEditor data={formData} setData={setFormData} />
+                    <div className="flex justify-end items-center gap-3 pt-4 border-t border-themed-border">
+                      {model.isSystem ? (
+                        <div className="text-xs text-themed-fg-muted italic">System models cannot be deleted</div>
+                      ) : (
+                        <DeleteAction onDelete={() => onDelete(model)} buttonText="Delete Model" />
                       )}
+                      <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+                      <Button variant="primary" onClick={onSave} disabled={isSaving}>
+                        {isSaving ? 'Saving...' : 'Save Changes'}
+                      </Button>
                     </div>
-                    <p className={`text-sm ${model.isActive ? 'text-white/70' : 'text-accent-forest/60'}`}>
-                      {model.modelIdentifier}
-                    </p>
-                    <p className={`text-xs ${model.isActive ? 'text-white/50' : 'text-accent-forest/40'}`}>
-                      {model.apiUrl}
-                    </p>
                   </div>
-                    <div className="flex gap-1">
-                      {true && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onEdit(model);
-                          }}
-                          className={model.isActive ? 'text-white/70 hover:text-white hover:bg-white/20' : 'text-accent-forest/50 hover:text-accent-forest'}
-                          title="Edit"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
-                      )}
-                    
-                    {!model.isSystem && (
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <DeleteAction
-                          onDelete={() => onDelete(model)}
-                          iconOnly={true}
-                          className={model.isActive ? 'text-white/70 hover:text-white' : ''}
-                        />
+                ) : (
+                  /* READ-ONLY MODE */
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className={labelClass}>Model Identifier</label>
+                        <div className="font-mono text-sm text-themed-fg-main bg-themed-inner p-3 rounded-md border border-themed-border">
+                          {model.modelIdentifier}
+                        </div>
                       </div>
-                    )}
+                      <div>
+                        <label className={labelClass}>API URL</label>
+                        <div className="font-mono text-sm text-themed-fg-main bg-themed-inner p-3 rounded-md border border-themed-border">
+                          {model.apiUrl || <span className="text-themed-fg-muted italic">Local / Default</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className={labelClass}>Temperature</label>
+                        <div className="font-mono text-sm text-themed-fg-main bg-themed-inner p-3 rounded-md border border-themed-border">
+                          {model.temperature ?? 'N/A'}
+                        </div>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Context Window</label>
+                        <div className="font-mono text-sm text-themed-fg-main bg-themed-inner p-3 rounded-md border border-themed-border">
+                          {model.contextWindow ?? 'N/A'} tokens
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-4 mt-2">
+                      <EditButton entityName="Model" onClick={() => onEdit(model)} />
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          );
-        })
-      )}
-
-      {showForm && !editingModelId && (
-        <div>{formComponent}</div>
-      )}
-
-      {!showForm && !hideAddButton && (
-        <div className="flex justify-end mt-4">
-          <Button
-            onClick={() => onAddNew(role)}
-            variant="primary"
-            size="sm"
-            className="text-white"
-          >
-            <Plus className="w-4 h-4 mr-1" />
-            Add New Model
-          </Button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
+    </div>
+  );
+}
+
+// --- INTERNAL COMPONENT FOR DRY FORMS ---
+
+function ModelEditor({ data, setData }: { data: ModelFormData, setData: (d: ModelFormData) => void }) {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={labelClass}>Model Name</label>
+          <input type="text" value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} placeholder="e.g., Ollama Chat" className={inputClass} />
+        </div>
+        <div>
+          <label className={labelClass}>Model Identifier</label>
+          <input type="text" value={data.model_identifier} onChange={(e) => setData({ ...data, model_identifier: e.target.value })} placeholder="e.g., llama3.1:8b" className={inputClass} />
+        </div>
+      </div>
+
+      <div>
+        <label className={labelClass}>Model Role</label>
+        <select
+          value={data.role}
+          onChange={(e) => setData({ ...data, role: e.target.value as 'chat' | 'embedding' })}
+          className={inputClass}
+        >
+          <option value="chat">Chat (Text Generation)</option>
+          <option value="embedding">Embedding (Vectorization)</option>
+        </select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={labelClass}>API URL</label>
+          <input type="text" value={data.api_url} onChange={(e) => setData({ ...data, api_url: e.target.value })} placeholder="http://127.0.0.1:11434/v1" className={inputClass} />
+        </div>
+        <div>
+          <label className={labelClass}>API Key (Optional)</label>
+          <input type="password" value={data.api_key} onChange={(e) => setData({ ...data, api_key: e.target.value })} placeholder="Leave empty for local models" className={inputClass} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={labelClass}>Temperature (0.0 - 2.0)</label>
+          <input type="number" min="0" max="2" step="0.1" value={data.temperature ?? 0.1} onChange={(e) => setData({ ...data, temperature: e.target.value ? Number(e.target.value) : undefined })} className={inputClass} />
+        </div>
+        <div>
+          <label className={labelClass}>Context Window (Tokens)</label>
+          <input type="number" min="1024" step="1024" value={data.contextWindow ?? 8192} onChange={(e) => setData({ ...data, contextWindow: e.target.value ? Number(e.target.value) : undefined })} className={inputClass} />
+        </div>
+      </div>
     </div>
   );
 }

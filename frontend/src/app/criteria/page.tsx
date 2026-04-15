@@ -1,21 +1,22 @@
 'use client';
 
-import { useEffect, useMemo, Suspense } from 'react';
+import { useEffect, useMemo, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useCriteria } from '@/hooks/useCriteria';
 import { useEntities } from '@/hooks/useEntities';
 import { useModal } from '@/hooks/useModal';
 import { useDimensions } from '@/hooks/useDimensions';
 import { useFilterState } from '@/hooks/useFilterState';
 import { Loader2, Target } from 'lucide-react';
-import { EmptyState } from '@/components/shared/PageStates';
+import { EmptyState, ContentLoader } from '@/components/shared/PageStates';
 import { CriterionPill } from '@/components/shared/CriterionPill';
 import { Criterion } from '@/lib/types';
 import { getDimensionLabel, cn } from '@/lib/utils';
 import { CriterionDetailModal, EntityDetailModal } from '@/components/modals';
 import { Pagination } from '@/components/shared/Pagination';
 import { FilterBar } from '@/components/shared/FilterBar';
+import { AnimatedDataGrid } from '@/components/shared/AnimatedDataGrid';
 
 /**
  * Global variants for the criteria results list.
@@ -23,28 +24,6 @@ import { FilterBar } from '@/components/shared/FilterBar';
  * - masterContainer: Orchestrates a single stagger effect across the entire page.
  * - masterItem: A simple pure-fade for headers and pills.
  */
-const masterContainer = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.008, // High-performance ripple
-      when: "beforeChildren"
-    }
-  },
-  exit: {
-    opacity: 0,
-    transition: { duration: 0.05 } // Fast exit
-  }
-};
-
-const masterItem = {
-  hidden: { opacity: 0 },
-  visible: { 
-    opacity: 1, 
-    transition: { duration: 0.1 } // Snappier fade
-  }
-};
 
 /**
  * Criteria page content component.
@@ -69,7 +48,7 @@ function CriteriaPageContent() {
 
   const { search, setSearch, debouncedSearch, status: selectedDimension, setStatus: setSelectedDimension, page, setPage } = useFilterState('all');
   
-  const LIMIT = 300;
+  const LIMIT = 200;
   
   const { 
     criteria, 
@@ -86,7 +65,15 @@ function CriteriaPageContent() {
     dimension: selectedDimension === 'all' ? undefined : selectedDimension,
     immediate: true
   });
-  
+
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    if (!loading) {
+      setIsReady(true);
+    }
+  }, [loading]);
+
   const { entities: allEntities, loading: entitiesLoading, refetch: refetchEntities } = useEntities({ immediate: true });
   const { dimensions } = useDimensions();
 
@@ -195,7 +182,7 @@ function CriteriaPageContent() {
   return (
     <div className="flex-1 p-6">
       <div className="max-w-7xl mx-auto w-full min-h-full">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
+        <div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 transition-opacity duration-500 ease-in-out ${isReady ? 'opacity-100' : 'opacity-0'}`}>
           <FilterBar
             searchTerm={search}
             onSearchChange={setSearch}
@@ -219,53 +206,35 @@ function CriteriaPageContent() {
         </div>
 
         {loading && criteria.length === 0 ? (
-          <div className="py-20 flex justify-center items-center flex-col gap-4">
-            <Loader2 className="w-8 h-8 animate-spin text-accent-sage" />
-            <p className="text-accent-forest/70 font-medium">Loading criteria...</p>
-          </div>
+          <ContentLoader text="Loading criteria..." />
         ) : criteria.length > 0 ? (
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={`results-page-${page}-${debouncedSearch}-${selectedDimension}`}
-              variants={masterContainer}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              className="space-y-10"
-            >
-              {sortedDimensions.map((dimension) => {
-                const dimensionCriteria = displayGroups[dimension];
-                return (
-                  <div key={dimension} className="space-y-4">
-                    <motion.h2 
-                      variants={masterItem}
-                      className="text-xl font-serif font-semibold border-b border-border-light pb-2 text-accent-forest"
-                    >
-                      {getDimensionLabel(dimension)}
-                      <span className="ml-2 text-sm font-sans font-normal text-accent-forest/50">
-                        ({dimensionCriteria.length})
-                      </span>
-                    </motion.h2>
-
-                    <div className="flex flex-wrap gap-3">
-                      {dimensionCriteria.map((criterion) => (
-                        <motion.div
-                          key={criterion.id}
-                          variants={masterItem}
-                        >
-                          <CriterionPill
-                            id={criterion.id}
-                            label={criterion.displayName}
-                            dimensionId={criterion.dimensionId ?? 0}
-                          />
-                        </motion.div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </motion.div>
-          </AnimatePresence>
+          <AnimatedDataGrid
+            loading={loading}
+            page={page}
+            search={debouncedSearch}
+            status={selectedDimension}
+            gridKeyPrefix="criteria-grid"
+            groups={displayGroups}
+            sortedGroups={sortedDimensions}
+            renderGroupHeader={(dimension, itemCount) => (
+              <h2 className="text-xl font-serif font-semibold border-b border-border-light pb-2 text-accent-forest">
+                {getDimensionLabel(dimension)}
+                <span className="ml-2 text-sm font-sans font-normal text-accent-forest/50">
+                  ({itemCount})
+                </span>
+              </h2>
+            )}
+            renderGroupItem={(criterion) => (
+              <CriterionPill
+                id={criterion.id}
+                label={criterion.displayName}
+                dimensionId={criterion.dimensionId ?? 0}
+              />
+            )}
+            className="space-y-10"
+            staggerDelay={0.008}
+            exitDuration={0.05}
+          />
         ) : (
           <EmptyState
             icon={Target}
@@ -309,7 +278,7 @@ function CriteriaPageContent() {
 
 export default function CriteriaPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="w-8 h-8 animate-spin text-accent-sage" /></div>}>
+    <Suspense fallback={<ContentLoader delay={200} />}>
       <CriteriaPageContent />
     </Suspense>
   );

@@ -4,9 +4,30 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #FAF9F6;
-  --foreground: #1A2F24;
+@layer base {
+  :root {
+    --background: #FAF9F6;
+    --foreground: #1A2F24;
+    --theme-bg: #FFFFFF;
+    --theme-border: #F0EDE8;
+    --theme-fg-main: #1A2F24;
+    --theme-fg-muted: rgb(26 47 36 / 0.7);
+    --theme-input-bg: #FFFFFF;
+    --theme-input-border: #F0EDE8;
+    --theme-input-placeholder: #9ca3af;
+    --theme-inner-box: rgb(212 197 169 / 0.1);
+  }
+
+  .theme-inverted {
+    --theme-bg: #2D4A3A;
+    --theme-border: #1A2F24;
+    --theme-fg-main: rgb(255 255 255 / 0.95);
+    --theme-fg-muted: #D4C5A9;
+    --theme-input-bg: rgb(26 47 36 / 0.5);
+    --theme-input-border: rgb(255 255 255 / 0.1);
+    --theme-input-placeholder: rgb(255 255 255 / 0.4);
+    --theme-inner-box: rgb(26 47 36 / 0.4);
+  }
 }
 
 * {

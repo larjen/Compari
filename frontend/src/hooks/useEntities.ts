@@ -54,7 +54,8 @@ export function useEntities({
   }, [refetch]);
 
   useSSE({
-    onEntityUpdate: listenToSSE ? handleEntityUpdate : undefined
+    onEntityUpdate: listenToSSE ? handleEntityUpdate : undefined,
+    onReconnect: fetchEntities
   });
 
   const addEntity = async (data: CreateEntityData) => {

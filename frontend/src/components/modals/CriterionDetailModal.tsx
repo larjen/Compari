@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 import { getNuancedEntityName } from '@/lib/utils';
 import { useBlueprints } from '@/hooks/useBlueprints';
 import { EntityDetailLayout } from '@/components/shared/EntityDetailLayout';
-import { DeleteAction } from '@/components/ui';
+import { DeleteAction, EditButton } from '@/components/ui';
 import { MergeTab } from '@/components/criteria/MergeTab';
 
 const tabs = [
@@ -25,6 +25,7 @@ interface CriterionDetailModalProps {
   onTargetClick?: (entity: Entity) => void;
   onDelete: (id: number) => Promise<void>;
   onMerged?: () => void;
+  onEdit?: () => void;
 }
 
 export function CriterionDetailModal({ 
@@ -34,7 +35,8 @@ export function CriterionDetailModal({
   onSourceClick,
   onTargetClick,
   onDelete,
-  onMerged
+  onMerged,
+  onEdit
 }: CriterionDetailModalProps) {
   const { blueprints } = useBlueprints();
   const activeBlueprint = blueprints.find(b => b.is_active) || blueprints[0] || null;
@@ -120,12 +122,15 @@ export function CriterionDetailModal({
       onClose={onClose}
       footerActions={
         criterion && (
-          <DeleteAction 
-            onDelete={async () => { 
-              await onDelete(criterion.id); 
-              onClose(); 
-            }} 
-          />
+          <div className="flex items-center gap-3">
+            {onEdit && <EditButton entityName="Criterion" onClick={onEdit} />}
+            <DeleteAction 
+              onDelete={async () => { 
+                await onDelete(criterion.id); 
+                onClose(); 
+              }} 
+            />
+          </div>
         )
       }
     >

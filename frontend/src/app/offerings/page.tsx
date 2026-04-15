@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
 
 import { EntityCard } from '@/components/entities/EntityCard';
 import { CreateEntityModal } from '@/components/entities/CreateEntityModal';
@@ -19,37 +18,11 @@ import { CreateEntityData } from '@/lib/api/entityApi';
 import { getNuancedEntityName } from '@/lib/utils';
 import { ENTITY_STATUS } from '@/lib/constants';
 import { Loader2, Users as UsersIcon } from 'lucide-react';
-import { EmptyState } from '@/components/shared/PageStates';
+import { EmptyState, ContentLoader } from '@/components/shared/PageStates';
 import { Pagination } from '@/components/shared/Pagination';
 import { FilterBar } from '@/components/shared/FilterBar';
-
-const ITEMS_PER_PAGE = 12;
-
-const masterContainer = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.03,
-      when: "beforeChildren"
-    }
-  },
-  exit: {
-    opacity: 0,
-    transition: { duration: 0.2 }
-  }
-};
-
-const masterItem = {
-  hidden: { opacity: 0 },
-  visible: { 
-    opacity: 1, 
-    transition: { 
-      duration: 0.45,
-      ease: "easeOut" as const
-    } 
-  }
-};
+import { AnimatedDataGrid } from '@/components/shared/AnimatedDataGrid';
+import { ITEMS_PER_PAGE } from '@/lib/ui-configs';
 
 function OfferingsPageContent() {
   const router = useRouter();
@@ -75,6 +48,12 @@ function OfferingsPageContent() {
     search: debouncedSearch,
     status,
   });
+
+  useEffect(() => {
+    if (!loading) {
+      setIsReady(true);
+    }
+  }, [loading]);
   
   const { blueprints } = useBlueprints();
 
@@ -83,6 +62,7 @@ function OfferingsPageContent() {
   const offeringLabelPlural = activeBlueprint?.offeringLabelPlural || 'Offerings';
 
   const [createEntityOpen, setCreateEntityOpen] = useState(false);
+  const [isReady, setIsReady] = useState(false);
 
   const selectedEntityData = entityIdParam 
     ? offerings.find(e => e.id === Number(entityIdParam)) || null 
@@ -184,7 +164,7 @@ function OfferingsPageContent() {
 return (
     <div className="flex-1 p-6">
       <div className="max-w-7xl mx-auto min-h-full">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
+        <div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 transition-opacity duration-500 ease-in-out ${isReady ? 'opacity-100' : 'opacity-0'}`}>
           <FilterBar
             searchTerm={search}
             onSearchChange={setSearch}
@@ -211,33 +191,26 @@ return (
         </div>
 
         {loading && offerings.length === 0 ? (
-          <div className="py-20 flex justify-center items-center flex-col gap-4">
-            <Loader2 className="w-8 h-8 animate-spin text-accent-sage" />
-            <p className="text-accent-forest/70 font-medium">Loading...</p>
-          </div>
+          <ContentLoader />
         ) : offerings.length > 0 ? (
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={`off-grid-${page}-${debouncedSearch}-${status}`}
-              variants={masterContainer}
-              initial="hidden"
-              animate="visible"
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
-            >
-              {offerings.map((entity) => (
-                <motion.div key={entity.id} variants={masterItem}>
-                  <EntityCard
-                    entity={entity}
-                    entityLabel={offeringLabelSingular}
-                    onClick={() => router.push(`?entityId=${entity.id}`)}
-                    onRetry={() => handleRetryProcessing(entity.id)}
-                    onDelete={() => handleDeleteEntity(entity.id)}
-                    displayName={getNuancedEntityName(entity, blueprints)}
-                  />
-                </motion.div>
-              ))}
-            </motion.div>
-          </AnimatePresence>
+          <AnimatedDataGrid
+            items={offerings}
+            loading={loading}
+            page={page}
+            search={debouncedSearch}
+            status={status}
+            gridKeyPrefix="off-grid"
+            renderItem={(entity) => (
+              <EntityCard
+                entity={entity}
+                entityLabel={offeringLabelSingular}
+                onClick={() => router.push(`?entityId=${entity.id}`)}
+                onRetry={() => handleRetryProcessing(entity.id)}
+                onDelete={() => handleDeleteEntity(entity.id)}
+                displayName={getNuancedEntityName(entity, blueprints)}
+              />
+            )}
+          />
         ) : (
           <EmptyState icon={UsersIcon} title={`No ${offeringLabelPlural} yet`} subtitle={`Create a ${offeringLabelSingular.toLowerCase()} to get started`} />
         )}
@@ -263,11 +236,7 @@ return (
 // Next.js Requirement: Wrap in Suspense to support useSearchParams during static prerendering.
 export default function OfferingsPage() {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="w-8 h-8 animate-spin text-accent-sage" />
-      </div>
-    }>
+    <Suspense fallback={<ContentLoader delay={200} />}>
       <OfferingsPageContent />
     </Suspense>
   );

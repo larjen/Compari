@@ -22,6 +22,7 @@ const matchRoutes = require('./matchRoutes');
 const aiModelRoutes = require('./aiModelRoutes');
 const blueprintRoutes = require('./blueprintRoutes');
 const dimensionRoutes = require('./dimensionRoutes');
+const promptRoutes = require('./promptRoutes');
 
 /**
  * Sets up all API routes on the Express application.
@@ -40,6 +41,7 @@ function setupRoutes(app) {
     app.use('/api/ai-models', aiModelRoutes);
     app.use('/api/blueprints', blueprintRoutes);
     app.use('/api/dimensions', dimensionRoutes);
+    app.use('/api/prompts', promptRoutes);
 }
 
 module.exports = setupRoutes;

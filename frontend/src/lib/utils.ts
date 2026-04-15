@@ -260,21 +260,4 @@ export function parseMatchEntities(match: EntityMatch): { reqEntity: Partial<Ent
   return { reqEntity, offEntity };
 }
 
-/**
- * Centralized theme class generator for active/inverted UI states.
- * Change these Tailwind classes to update the inverted color scheme globally across the application.
- */
-export function getThemeClasses(isInverted: boolean) {
-  return {
-    cardBg: isInverted ? 'bg-accent-forest border-accent-forest text-white' : 'bg-white border-border-light',
-    textMain: isInverted ? 'text-white' : 'text-accent-forest',
-    textMuted: isInverted ? 'text-white/70' : 'text-accent-forest/70',
-    textDim: isInverted ? 'text-white/50' : 'text-accent-forest/50',
-    innerBox: isInverted ? 'bg-white/10 border-white/10' : 'bg-accent-sand/10 border-accent-sand/20',
-    input: isInverted 
-      ? 'bg-white/10 border-white/20 text-white placeholder-white/50 focus:ring-white/30' 
-      : 'bg-white border-border-light text-accent-forest focus:ring-accent-sage/50',
-    iconButton: isInverted ? 'text-white/70 hover:text-white hover:bg-white/20' : 'text-accent-forest/50 hover:text-accent-forest',
-    footer: isInverted ? 'bg-accent-forest/50 border-t border-white/10' : 'bg-accent-sand/5 border-t border-border-light'
-  };
-}
+

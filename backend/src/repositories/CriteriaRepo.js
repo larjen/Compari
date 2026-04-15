@@ -97,7 +97,7 @@ class CriteriaRepo extends BaseRepository {
      * @method getPaginatedCriteria
      * @param {Object} options - Query options.
      * @param {number} [options.page=1] - Page number (1-indexed).
-     * @param {number} [options.limit=300] - Items per page.
+     * @param {number} [options.limit=200] - Items per page.
      * @param {string} [options.search] - Search term for displayName matching (case-insensitive).
      * @param {string} [options.dimension] - Optional dimension filter.
      * @returns {Object} Object with criteria array, totalPages, and totalCount.
@@ -107,7 +107,7 @@ class CriteriaRepo extends BaseRepository {
      * then by displayName (alphabetically). Sorting is applied BEFORE OFFSET/LIMIT
      * to ensure dimension grouping headers persist across pages.
      */
-    getPaginatedCriteria({ page = 1, limit = 300, search, dimension } = {}) {
+    getPaginatedCriteria({ page = 1, limit = 200, search, dimension } = {}) {
         const params = [];
         let whereClauses = [];
 

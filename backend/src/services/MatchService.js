@@ -117,12 +117,27 @@ class MatchService {
     }
 
     /**
-     * Updates the queue status for an existing match.
+     * Updates the status for an existing match and emits SSE event to push state to UI.
      * @param {number} id - The match record ID.
-     * @param {string} status - The new queue status.
+     * @param {string} status - The new status.
+     * 
+     * @socexplanation
+     * - This method serves as the authoritative state transition point for match status.
+     * - The service layer is responsible for dispatching SSE events when state changes,
+     *   keeping workflows agnostic of transport layers (HTTP/SSE).
+     * - This ensures the frontend receives real-time status updates regardless of how
+     *   the workflow was triggered (API call, queued task, etc.).
+     * - Sanitizes the status string to lowercase and trims whitespace before
+     *   passing to the repository to prevent CHECK constraint violations
+     *   due to casing issues.
      */
-    updateMatchQueueStatus(id, status) {
-        return matchRepo.updateMatchQueueStatus(id, status);
+    updateMatchStatus(id, status) {
+        const sanitizedStatus = status.toLowerCase().trim();
+        matchRepo.updateMatchStatus(id, sanitizedStatus);
+        const updatedMatch = matchRepo.getMatchById(id);
+        if (updatedMatch) {
+            eventService.emit('matchUpdate', updatedMatch);
+        }
     }
 
     /**
@@ -326,6 +341,44 @@ class MatchService {
     }
 
     /**
+     * Retries a failed match assessment by resetting error state, status, and re-queuing the task.
+     * @method retryMatchAssessment
+     * @param {number} matchId - The match ID to retry.
+     * @returns {void}
+     * 
+     * @workflow_steps
+     * 1. Fetches the match by ID. Throws if not found.
+     * 2. Clears the error state (sets error string to null).
+     * 3. Resets the queue status to 'pending'.
+     * 4. Re-enqueues the assessment task with the original entity IDs and matchId.
+     * 5. Adds an activity log entry indicating the retry.
+     * 
+     * @socexplanation
+     * - Encapsulates queue re-entry logic for failed match assessments.
+     * - Delegates data access and persistence to MatchRepo.
+     * - Delegates queueing to QueueService.
+     * - This method is the domain-level retry orchestration, keeping Controllers
+     *   focused purely on HTTP transport and error forwarding.
+     */
+    retryMatchAssessment(matchId) {
+        const match = this.getMatchById(matchId);
+        if (!match) {
+            throw new Error('Match not found');
+        }
+
+        this.updateMatchError(matchId, null);
+        this.updateMatchStatus(matchId, 'pending');
+
+        queueService.enqueue(QUEUE_TASKS.ASSESS_ENTITY_MATCH, {
+            sourceEntityId: match.requirement_id,
+            targetEntityId: match.offering_id,
+            matchId
+        });
+
+        logService.addActivityLog('Match', matchId, 'INFO', 'Retrying match assessment.', match.folder_path);
+    }
+
+    /**
      * Evaluates a paginated chunk of potential matches for an entity using pure vector math.
      * @method evaluateMatchesChunk
      * @param {number} entityId - The base entity ID to find matches for.
@@ -414,7 +467,7 @@ class MatchService {
                     entity: opp,
                     score: fastScore,
                     existingMatchId: existingMatch ? existingMatch.id : null,
-                    existingMatchStatus: existingMatch ? existingMatch.queue_status : null
+                    existingMatchStatus: existingMatch ? existingMatch.status : null
                 });
             } catch(e) {
                 continue;

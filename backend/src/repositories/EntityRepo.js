@@ -100,7 +100,7 @@ class EntityRepo extends BaseRepository {
 
         // Get paginated entities
         const stmt = db.prepare(`
-            SELECT id, type, name, description, folder_path, metadata, status, error, processing_file_name, blueprint_id, created_at, updated_at 
+            SELECT id, type, name, description, folder_path, metadata, status, error, blueprint_id, created_at, updated_at 
             FROM entities 
             ${whereClause} 
             ORDER BY id DESC 
@@ -121,7 +121,7 @@ class EntityRepo extends BaseRepository {
      *                 fromRow() transformation (not plain row return).
      */
     getEntityById(id) {
-        const stmt = db.prepare('SELECT id, type, name, description, folder_path, metadata, status, error, processing_file_name, blueprint_id, created_at, updated_at FROM entities WHERE id = ?');
+        const stmt = db.prepare('SELECT id, type, name, description, folder_path, metadata, status, error, blueprint_id, created_at, updated_at FROM entities WHERE id = ?');
         const row = stmt.get(id);
         return Entity.fromRow(row);
     }
@@ -215,7 +215,7 @@ class EntityRepo extends BaseRepository {
      * @returns {Array<Entity>} Array of Entity instances.
      */
     getEntitiesByStatus(status) {
-        const stmt = db.prepare('SELECT id, type, name, description, folder_path, metadata, status, error, processing_file_name, blueprint_id, created_at, updated_at FROM entities WHERE status = ? ORDER BY id DESC');
+        const stmt = db.prepare('SELECT id, type, name, description, folder_path, metadata, status, error, blueprint_id, created_at, updated_at FROM entities WHERE status = ? ORDER BY id DESC');
         const rows = stmt.all(status);
         return rows.map(row => Entity.fromRow(row));
     }

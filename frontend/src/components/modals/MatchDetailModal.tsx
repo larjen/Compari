@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { DeleteAction } from '@/components/ui';
+import { DeleteAction, EditButton } from '@/components/ui';
 import { EntityMatch } from '@/lib/types';
 import { formatDate, cn, getNuancedEntityName, parseMatchEntities, formatPercentage } from '@/lib/utils';
 import { useBlueprints } from '@/hooks/useBlueprints';
@@ -20,6 +20,7 @@ interface MatchDetailModalProps {
   open: boolean;
   onClose: () => void;
   onDelete: (id: number) => Promise<void>;
+  onEdit?: () => void;
 }
 
 type TabId = 'info' | 'files' | 'report';
@@ -30,7 +31,7 @@ const tabs = [
   { id: 'report', label: 'Report', icon: FileText },
 ];
 
-export function MatchDetailModal({ match, open, onClose, onDelete }: MatchDetailModalProps) {
+export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: MatchDetailModalProps) {
   const [activeTab, setActiveTab] = useState<TabId>('info');
   const { blueprints } = useBlueprints();
 
@@ -130,6 +131,7 @@ export function MatchDetailModal({ match, open, onClose, onDelete }: MatchDetail
             <Download className="w-4 h-4 mr-2" />
             Download PDF
           </Button>
+          {onEdit && <EditButton entityName="Match" onClick={onEdit} />}
           <DeleteAction onDelete={handleDelete} />
         </div>
       }
@@ -137,7 +139,7 @@ export function MatchDetailModal({ match, open, onClose, onDelete }: MatchDetail
       <>
         {activeTab === 'info' && (
           <div className="space-y-4">
-            {match.queue_status === 'error' && match.error && (
+            {match.status === 'failed' && match.error && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
                 <div className="flex items-center gap-2 text-red-700 text-sm font-medium">
                   <AlertCircle className="w-4 h-4" />

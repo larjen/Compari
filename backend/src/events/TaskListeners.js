@@ -129,6 +129,7 @@ function registerTaskListeners() {
             // Must use ENTITY_STATUS (lowercase) for entities to maintain
             // compatibility with the frontend state machine expectations.
             entityService.updateEntityStatus(entityId, ENTITY_STATUS.PROCESSING);
+            entityService.updateEntityMetadata(entityId, { processingStartedAt: new Date().toISOString() });
         }
         
         await documentProcessorWorkflow.extractAndStoreEntityFromDocument(entityId, folderPath, fileName, signal);
@@ -143,6 +144,8 @@ function registerTaskListeners() {
             throw new Error('Missing sourceEntityId or targetEntityId in ASSESS_ENTITY_MATCH payload');
         }
         await matchAssessmentWorkflow.assessMatch(sourceEntityId, targetEntityId, matchId || null);
+        
+        eventService.emit('notification', { type: 'success', message: 'Match assessment completed successfully.' });
     }));
 
     // Listen for Entity Criteria Extraction tasks
@@ -185,6 +188,7 @@ function registerTaskListeners() {
             }
             if (payload.matchId) {
                 matchService.updateMatchError(payload.matchId, errorMsg);
+                matchService.updateMatchStatus(payload.matchId, ENTITY_STATUS.FAILED);
             }
         } catch (error) {
             logService.logTerminal('ERROR', 'ERROR', 'TaskListeners', `Failed to update domain entities on task ${taskId} failure: ${error.message}`, error);

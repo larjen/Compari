@@ -152,6 +152,23 @@ class MatchController {
         return handleFileDownload(res, match, filename, 'folder_path');
     });
 
+    /**
+     * POST /api/matches/:id/retry
+     * Retries a failed match assessment by re-queuing the task.
+     * @param {Object} req - Express request object
+     * @param {Object} res - Express response object
+     * @param {Function} next - Express next function for error handling
+     * 
+     * @socexplanation
+     * - Delegates retry orchestration to MatchService.retryMatchAssessment.
+     * - Controller only handles HTTP transport: parameter extraction and response formatting.
+     */
+    static retryProcessing = asyncHandler(async (req, res) => {
+        const { id } = req.params;
+        matchService.retryMatchAssessment(id);
+        res.json({ success: true, message: 'Queued for retry' });
+    });
+
     static downloadPdf = asyncHandler(async (req, res) => {
         const matchId = parseInt(req.params.id);
         const match = matchService.getMatchById(matchId);

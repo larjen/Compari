@@ -17,6 +17,7 @@ import { useCallback } from 'react';
 import { EntityMatch, SSEMatchUpdate } from '@/lib/types';
 import { matchApi, MatchQueryParams, MatchQueryResponse } from '@/lib/api/matchApi';
 import { useSafeFetch } from './useSafeFetch';
+import { useSSE } from './useSSE';
 
 /**
  * Custom hook for managing matches with query parameter support.
@@ -43,6 +44,11 @@ export function useMatches({ page, limit, search, status }: MatchQueryParams = {
   const handleMatchUpdate = useCallback((update: SSEMatchUpdate) => {
     refetch();
   }, [refetch]);
+
+  useSSE({
+    onMatchUpdate: handleMatchUpdate,
+    onReconnect: fetchMatches
+  });
 
   const addMatch = async (requirementEntityId: number, offeringEntityId: number) => {
     const matchId = await matchApi.createMatch(requirementEntityId, offeringEntityId);

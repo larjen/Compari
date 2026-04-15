@@ -8,19 +8,10 @@
  * - ✅ MUST know about Entities and Assessments.
  * - ❌ MUST NOT directly call infrastructure services (AiService).
  */
-const fs = require('fs');
-const path = require('path');
+
+const promptRepo = require('../repositories/PromptRepo');
 
 class PromptBuilder {
-    constructor() {
-        const promptsDir = path.join(__dirname, '../prompts');
-        this.markdownTemplate = fs.readFileSync(path.join(promptsDir, 'markdown_extraction.md'), 'utf-8');
-        this.metadataTemplate = fs.readFileSync(path.join(promptsDir, 'entity_metadata.md'), 'utf-8');
-        this.dynamicTemplate = fs.readFileSync(path.join(promptsDir, 'dynamic_extraction.md'), 'utf-8');
-        this.matchSummaryTemplate = fs.readFileSync(path.join(promptsDir, 'match_summary.md'), 'utf-8');
-        this.executiveSummaryTemplate = fs.readFileSync(path.join(promptsDir, 'executive_summary.md'), 'utf-8');
-    }
-
     _inject(template, vars) {
         let result = template;
         for (const key of Object.keys(vars)) {
@@ -30,9 +21,9 @@ class PromptBuilder {
     }
 
     buildMarkdownExtractionMessages(rawText) {
-        const systemPrompt = this.markdownTemplate;
+        const template = promptRepo.getPromptBySystemName('markdown_extraction').prompt;
         return [
-            { role: 'system', content: systemPrompt },
+            { role: 'system', content: template },
             { role: 'user', content: rawText }
         ];
     }
@@ -61,7 +52,8 @@ class PromptBuilder {
             return `- ${field.fieldName} (${field.fieldType})${required}: ${field.description}`;
         }).join('\n');
 
-        const systemPrompt = this._inject(this.metadataTemplate, {
+        const template = promptRepo.getPromptBySystemName('entity_metadata').prompt;
+        const systemPrompt = this._inject(template, {
             blueprintName,
             fieldsList
         });
@@ -105,15 +97,18 @@ class PromptBuilder {
             return `${index + 1}. ${dim.displayName}: ${instruction}`;
         }).join('\n');
 
-        const exampleOutput = {};
+        const exampleOutput = {
+            analysis: "The text mentions requiring a React developer with Node.js backend experience. I will split these into two atomic criteria.",
+        };
         for (const dim of activeDimensions) {
-            exampleOutput[dim.name] = ['example 1', 'example 2'];
+            exampleOutput[dim.name] = ['React', 'Node.js'];
         }
         const exampleJsonString = JSON.stringify(exampleOutput, null, 2);
 
         const roleLabel = entityRole === 'requirement' ? 'requirement document (defines criteria and needs)' : 'offering profile (possesses skills and attributes)';
 
-        const systemPrompt = this._inject(this.dynamicTemplate, {
+        const template = promptRepo.getPromptBySystemName('dynamic_extraction').prompt;
+        const systemPrompt = this._inject(template, {
             roleLabel,
             dimensionCount: activeDimensions.length,
             dimensionList,
@@ -147,7 +142,8 @@ class PromptBuilder {
     buildExecutiveSummaryMessages(dimensionalSummariesMap, requirementName, offeringName) {
         const dimensionNames = Object.keys(dimensionalSummariesMap).join(', ');
 
-        const systemPrompt = this._inject(this.executiveSummaryTemplate, {
+        const template = promptRepo.getPromptBySystemName('executive_summary').prompt;
+        const systemPrompt = this._inject(template, {
             requirementName,
             offeringName,
             dimensionNames
@@ -171,8 +167,9 @@ class PromptBuilder {
      * @returns {Array<Object>} Array of message objects for the LLM.
      */
     buildMatchSummaryMessages(reportJson) {
+        const template = promptRepo.getPromptBySystemName('match_summary').prompt;
         return [
-            { role: 'system', content: this.matchSummaryTemplate },
+            { role: 'system', content: template },
             { role: 'user', content: JSON.stringify(reportJson, null, 2) }
         ];
     }

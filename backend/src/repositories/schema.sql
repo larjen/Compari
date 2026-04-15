@@ -10,8 +10,8 @@
  * entity_blueprints, blueprint_metadata_fields, blueprint_dimensions,
  * criterion_merge_history, and settings.
  * 
- * Note: The 'status' column in 'entities' table maps to ENTITY_STATUS constants.
- * The legacy 'queue_status' column has been removed - use 'status' for all entity states.
+ * Note: The 'status' column in 'entities' and 'entity_matches' tables maps to ENTITY_STATUS constants.
+ * The legacy 'queue_status' column has been removed - use 'status' for all entity and match states.
  */
 
 CREATE TABLE IF NOT EXISTS entities (
@@ -23,9 +23,9 @@ CREATE TABLE IF NOT EXISTS entities (
     metadata TEXT,
     -- status column: single source of truth for entity processing state
     -- Must conform to ENTITY_STATUS constants (pending, processing, completed, failed)
-    status TEXT DEFAULT 'pending',
+    -- CHECK constraint mirrors ENTITY_STATUS in application code
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
     error TEXT,
-    processing_file_name TEXT,
     blueprint_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -42,9 +42,10 @@ CREATE TABLE IF NOT EXISTS entity_matches (
     match_score REAL,
     report_path TEXT,
     folder_path TEXT,
-    -- queue_status kept for entity_matches as it's a different entity type
-    queue_status TEXT DEFAULT 'pending',
-    status TEXT DEFAULT 'pending',
+    -- status column: single source of truth for match processing state
+    -- Must conform to ENTITY_STATUS constants (pending, processing, completed, failed)
+    -- CHECK constraint mirrors ENTITY_STATUS in application code
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
     error TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -193,4 +194,13 @@ CREATE TABLE IF NOT EXISTS criterion_merge_history (
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT
+);
+
+CREATE TABLE IF NOT EXISTS prompts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    system_name TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    prompt TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

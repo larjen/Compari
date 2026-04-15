@@ -30,7 +30,7 @@ class CriteriaController {
      * Retrieves all criteria with optional pagination and filtering.
      * 
      * @query {number} [page=1] - Page number (1-indexed).
-     * @query {number} [limit=300] - Number of items per page.
+     * @query {number} [limit=200] - Number of items per page.
      * @query {string} [search] - Search term to match against displayName (case-insensitive).
      * @query {string} [dimension] - Optional dimension filter.
      * 
@@ -45,7 +45,7 @@ class CriteriaController {
         const { page, limit, search, dimension } = req.query;
 
         const parsedPage = page ? parseInt(page, 10) : 1;
-        const parsedLimit = limit ? parseInt(limit, 10) : 300;
+        const parsedLimit = limit ? parseInt(limit, 10) : 200;
 
         const result = criteriaService.getPaginatedCriteria({
             page: parsedPage,

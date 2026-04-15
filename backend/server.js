@@ -118,7 +118,7 @@ app.use((req, res, next) => {
  * @param {Function} next - Express next function
  */
 app.use((err, req, res, next) => {
-    logService.logTerminal('ERROR', 'ERROR', 'GlobalErrorHandler', `API Error on ${req.method} ${req.url}`);
+    logService.logTerminal('ERROR', 'ERROR', 'GlobalErrorHandler', `API Error on ${req.method} ${req.url}`, err);
     logService.logErrorFile('GlobalErrorHandler', `API Error on ${req.method} ${req.url}`, err);
 
     res.status(err.status || 500).json({

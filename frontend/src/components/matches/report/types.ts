@@ -19,9 +19,10 @@ export interface RawMatchItem {
 export interface ScoreMetrics {
     score: number;
     weights: number;
-    matches: number;        // Represents perfect matches
-    partialMatches: number; // Represents partial matches
-    missedMatches: number;  // Represents missed matches
+    matches: number;        
+    partialMatches: number; 
+    missedMatches: number;  
+    formula?: string;
 }
 
 /**
@@ -38,13 +39,23 @@ export interface MatchScores {
 export interface ReportInfo {
     requirement: { id: number; name: string };
     offering: { id: number; name: string };
-    matchScores: MatchScores;
+    metrics?: {
+        score: number;
+        formula?: string;
+        similarityForPerfectMatch?: number;
+        similarityForPartialMatch?: number;
+    };
+    ai_summary_executive?: string;
 }
 
 /**
  * Represents the sliced arrays of criteria matches based on their similarity scores.
  */
 export interface CategorizedMatches {
+    id?: number;
+    displayName?: string;
+    metrics?: ScoreMetrics;
+    ai_summary?: string;
     perfectMatch: RawMatchItem[];
     partialMatch: RawMatchItem[];
     missedMatch: RawMatchItem[];
@@ -55,9 +66,12 @@ export interface CategorizedMatches {
  * Includes AI-generated summaries for executive summary and dimensional breakdowns.
  */
 export interface MatchReportData {
+    _document_meta?: {
+        document_type: string;
+        purpose: string;
+        generated_at: string;
+    };
     reportInfo: ReportInfo;
-    allDimensions: CategorizedMatches;
-    _ai_summary_executive?: string;
-    _ai_summaries_dimensional?: Record<string, string>;
-    [dimensionKey: string]: CategorizedMatches | ReportInfo | string | Record<string, string> | undefined;
+    dimensions?: Record<string, CategorizedMatches>;
+    allDimensions?: CategorizedMatches;
 }

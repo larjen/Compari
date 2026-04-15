@@ -21,7 +21,7 @@ export default function RootLayout({
         <ToastProvider>
           <ModalProvider>
             <Navbar />
-            <main className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden print:overflow-visible print:h-auto print:block">
+            <main className="flex-1 flex flex-col overflow-y-scroll overflow-x-hidden print:overflow-visible print:h-auto print:block">
               <div className="flex-1 flex flex-col">
                 {children}
               </div>

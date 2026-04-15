@@ -1,26 +1,34 @@
 'use client';
 
 import { Loader2, AlertCircle } from 'lucide-react';
+import { useTaskLifecycle } from '@/hooks/useTaskLifecycle';
 
 export interface StatusIndicatorProps {
-  isPending?: boolean;
-  isProcessing?: boolean;
-  hasError?: boolean;
+  /** Current status string from backend */
+  status?: string | null;
+  /** Name of the task/operation being performed (e.g., 'extraction', 'assessment') */
   taskName: string;
-  elapsedTime?: string;
+  /** Start time for elapsed time calculation */
+  startTime?: string | null;
+  /** Error message to display */
   errorMessage?: string;
+  /** Current processing step name (optional, for detailed status) */
   processingStep?: string;
 }
 
 export function StatusIndicator({
-  isPending,
-  isProcessing,
-  hasError,
+  status,
   taskName,
-  elapsedTime,
+  startTime,
   errorMessage,
   processingStep
 }: StatusIndicatorProps) {
+  const { isPending, isProcessing, hasError, elapsedTime } = useTaskLifecycle(
+    status,
+    startTime,
+    errorMessage
+  );
+
   if (isPending) {
     const pendingText = `In queue for ${taskName}`;
     return (

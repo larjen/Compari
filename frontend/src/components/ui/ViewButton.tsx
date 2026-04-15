@@ -1,0 +1,34 @@
+'use client';
+
+import { Eye } from 'lucide-react';
+import { Button } from './Button';
+import { ButtonHTMLAttributes } from 'react';
+
+interface ViewButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  /** The name of the entity being viewed (e.g., "Report", "Document"). Defaults to "Details". */
+  entityName?: string;
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  size?: 'sm' | 'md' | 'lg' | 'icon';
+}
+
+/**
+ * @component ViewButton
+ * @description Universal call-to-action button for viewing entities, reports, or files.
+ * @responsibility Enforces visual consistency by always providing the Eye icon and handling string formatting.
+ */
+export function ViewButton({ 
+  entityName = 'Details', 
+  variant = 'secondary', 
+  size = 'sm', 
+  className, 
+  ...props 
+}: ViewButtonProps) {
+  const formattedEntity = entityName.charAt(0).toUpperCase() + entityName.slice(1);
+  
+  return (
+    <Button variant={variant} size={size} className={className} {...props}>
+      <Eye className="w-4 h-4 mr-2 shrink-0" />
+      <span className="pr-1">View {formattedEntity}</span>
+    </Button>
+  );
+}

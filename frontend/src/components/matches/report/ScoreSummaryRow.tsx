@@ -3,26 +3,23 @@ import { ScoreMetrics } from './types';
 
 /**
  * Renders a single row in the summary header displaying score, progress bar, and metrics.
- * @description
- * - SoC: Isolates the presentation of scoring data from the main report layout.
- * - Places the percentage in a plain text field on the far left.
- * - Consolidates all title and metric information (Perfect, Partial, Missed, Weight) 
- * into a single line above the progress bar to save vertical space.
- * * @param {string} title - The name of the dimension or "Global Match Score".
- * @param {ScoreMetrics} metrics - The score data object containing counts and weights.
- * @param {string} barColorClass - Tailwind text color class (e.g., 'text-blue-700') to be used as the fill.
+ * @param {string} title - The name of the dimension or "Global Match Score".
+ * @param {any} metrics - The score data object containing counts and weights.
+ * @param {string} barColorClass - Tailwind text color class to be used as the fill.
  * @param {function} [onClick] - Optional click handler to scroll to the detailed section.
+ * @param {boolean} [hideMetrics] - If true, hides the Perfect/Partial/Missed/Weight labels.
  */
-export function ScoreSummaryRow({ title, metrics, barColorClass, onClick }: { title: string, metrics: ScoreMetrics, barColorClass: string, onClick?: () => void }) {
+export function ScoreSummaryRow({ title, metrics, barColorClass, onClick, hideMetrics }: { title: string, metrics: any, barColorClass: string, onClick?: () => void, hideMetrics?: boolean }) {
     if (!metrics) return null;
     
-    const rawScore = typeof metrics.score === 'number' ? metrics.score : 0;
+    // Safely extract the score whether it's a number or a legacy nested object
+    const rawScore = typeof metrics.score === 'number' ? metrics.score : (metrics.score?.score || 0);
     const percentage = Math.round(rawScore * 100);
 
     return (
         <div 
             onClick={onClick}
-            className="flex items-center gap-3 py-1 print:py-0 hover:bg-accent-sand/5 transition-colors cursor-pointer print:break-inside-avoid"
+            className={`flex items-center gap-3 py-1 print:py-0 transition-colors print:break-inside-avoid ${onClick ? 'hover:bg-accent-sand/5 cursor-pointer' : ''}`}
         >
             {/* Percentage Field on the Left */}
             <div className="w-16 print:w-12 shrink-0 text-center">
@@ -39,20 +36,22 @@ export function ScoreSummaryRow({ title, metrics, barColorClass, onClick }: { ti
                     </span>
                     
                     {/* Metrics: Perfect, Partial, Missed, Weight aligned to the right */}
-                    <div className="flex items-center text-xs print:text-[10px] text-accent-forest/60 gap-3 print:gap-2 shrink-0">
-                        <span className="flex gap-1">
-                            <span className="font-medium text-accent-forest">{metrics.matches || 0}</span> Perfect
-                        </span>
-                        <span className="flex gap-1">
-                            <span className="font-medium text-accent-forest">{metrics.partialMatches || 0}</span> Partial
-                        </span>
-                        <span className="flex gap-1">
-                            <span className="font-medium text-accent-forest">{metrics.missedMatches || 0}</span> Missed
-                        </span>
-                        <span className="flex gap-1">
-                            <span className="font-medium text-accent-forest">{formatPercentage(metrics.weights)}</span> Weight
-                        </span>
-                    </div>
+                    {!hideMetrics && (
+                        <div className="flex items-center text-xs print:text-[10px] text-accent-forest/60 gap-3 print:gap-2 shrink-0">
+                            <span className="flex gap-1">
+                                <span className="font-medium text-accent-forest">{metrics.matches || 0}</span> Perfect
+                            </span>
+                            <span className="flex gap-1">
+                                <span className="font-medium text-accent-forest">{metrics.partialMatches || 0}</span> Partial
+                            </span>
+                            <span className="flex gap-1">
+                                <span className="font-medium text-accent-forest">{metrics.missedMatches || 0}</span> Missed
+                            </span>
+                            <span className="flex gap-1">
+                                <span className="font-medium text-accent-forest">{formatPercentage(metrics.weights)}</span> Weight
+                            </span>
+                        </div>
+                    )}
                 </div>
                 
                 {/* Bottom Row: Progress Bar */}

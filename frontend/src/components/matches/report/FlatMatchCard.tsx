@@ -17,10 +17,10 @@ function FlatMatchCard({ matchItem, fallbackDimensionId, matchType }: { matchIte
     const actualDimensionId = matchItem.dimensionId ?? fallbackDimensionId;
 
     return (
-        <div className="flex items-center gap-4 print:gap-3 py-3 print:py-1.5 print:break-inside-avoid">
-            {/* Increased size to 72px and applied the new border classes */}
-            <div className={`flex items-center justify-center w-[60px] h-[60px] print:w-[36px] print:h-[36px] rounded-full shrink-0 shadow-sm print:shadow-none ${circleBgClass}`}>
-                <span className="text-sm print:text-[9px] font-medium">
+        <div className="flex items-center gap-4 print:gap-3 pt-3 pb-0 print:pt-1.5 print:pb-0 print:break-inside-avoid">
+            {/* Screen circle remains 50px, print circle shrinks proportionally to 36px */}
+            <div className={`flex items-center justify-center w-[50px] h-[50px] print:w-[36px] print:h-[36px] rounded-full shrink-0 shadow-sm print:shadow-none ${circleBgClass}`}>
+                <span className="text-[0.7rem] print:text-[10px] font-medium pl-[5px] print:pl-[3px]">
                     {percentageStr}
                 </span>
             </div>
@@ -31,14 +31,14 @@ function FlatMatchCard({ matchItem, fallbackDimensionId, matchType }: { matchIte
                         id={matchItem.reqId}
                         label={matchItem.reqCriteria}
                         dimensionId={actualDimensionId}
-                        className="max-w-full truncate bg-white shadow-sm"
+                        className="max-w-full truncate bg-white shadow-sm text-xs px-2.5 py-1 print:px-2 print:py-0.5 print:text-[8px]"
                     />
                 </div>
 
                 <div className="flex items-center gap-2 min-w-0 w-full">
                     <CornerDownRight className="w-4 h-4 text-gray-400 shrink-0" />
                     {matchItem.offCriteria === null ? (
-                        <div className="px-4 py-2 rounded-full text-sm font-medium border bg-white/60 text-gray-500 border-gray-200 max-w-full truncate">
+                        <div className="px-2.5 py-1 print:px-2 print:py-0.5 rounded-full text-xs print:text-[8px] font-medium border bg-white/60 text-gray-500 border-gray-200 max-w-full truncate">
                             No match found
                         </div>
                     ) : (
@@ -47,7 +47,7 @@ function FlatMatchCard({ matchItem, fallbackDimensionId, matchType }: { matchIte
                                 id={matchItem.offId!}
                                 label={matchItem.offCriteria}
                                 dimensionId={actualDimensionId}
-                                className="max-w-full truncate bg-white shadow-sm"
+                                className="max-w-full truncate bg-white shadow-sm text-xs px-2.5 py-1 print:px-2 print:py-0.5 print:text-[8px]"
                             />
                         </div>
                     )}

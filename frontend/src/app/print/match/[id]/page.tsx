@@ -13,8 +13,8 @@ export default function PrintMatchReportPage() {
     useEffect(() => {
         if (!matchId) return;
 
-        // Fetch the unified raw_json_comparison.json which now acts as our master file
-        fetch(`/api/matches/${matchId}/files/raw_json_comparison.json`)
+        // Fetch the unified match_report.json which now acts as our master file
+        fetch(`/api/matches/${matchId}/files/match_report.json`)
             .then(async (res) => {
                 if (!res.ok) throw new Error("Report not found");
                 const data = await res.json();

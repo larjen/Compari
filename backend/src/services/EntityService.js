@@ -289,9 +289,14 @@ class EntityService {
      * @method updateEntityStatus
      * @param {number} id - The entity ID.
      * @param {string} status - The new status (must conform to ENTITY_STATUS).
+     * @socexplanation
+     * - Sanitizes the status string to lowercase and trims whitespace before
+     *   passing to the repository to prevent CHECK constraint violations
+     *   due to casing issues.
      */
     updateEntityStatus(id, status) {
-        this._repo.updateEntityStatus(id, status);
+        const sanitizedStatus = status.toLowerCase().trim();
+        this._repo.updateEntityStatus(id, sanitizedStatus);
         eventService.emit('entityUpdate');
     }
 

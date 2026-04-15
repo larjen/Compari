@@ -68,92 +68,50 @@ function _formatMatch(match) {
 
 /**
  * Transforms raw comparison data into a structured general report for LLM summarization.
- * 
- * Extracts context information (requirement name, offering name, overall match score) and analysis
- * details (perfect matches, partial matches, missing requirements) from the allDimensions group.
- * This provides a comprehensive overview of the overall matching result while preserving the
- * distinction between match quality levels.
- * 
- * @param {Object} rawComparison - The raw comparison object from MatchingEngine with grouped structure.
- * @param {Object} rawComparison.reportInfo - Contains requirement, offering, and matchScores.
- * @param {Object} rawComparison.allDimensions - Contains perfectMatch, partialMatch, missedMatch arrays.
- * @returns {Object} Structured report matching the target JSON schema with type "general".
- * 
- * @target_structure
- * {
- *   "context": {
- *     "requirement_name": "String",
- *     "offering_name": "String",
- *     "match_score": "Number"
- *   },
- *   "analysis": {
- *     "type": "general",
- *     "name": "all_dimensions",
- *     "weight": "Number (from reportInfo or 1.0 default)",
- *     "perfect_matches": ["Array of formatted Strings"],
- *     "partial_matches": ["Array of formatted Strings"],
- *     "missing_requirements": ["Array of requirement Strings"]
- *   }
- * }
- * 
- * @example
- * const generalReport = generateGeneralAiReport(rawComparison);
- * // Returns { context: {...}, analysis: { type: "general", name: "all_dimensions", ... } }
- * 
- * @null_safety
- * - Handles null/undefined rawComparison gracefully, returning null context values.
- * - Handles missing nested properties with fallback defaults.
+ * Dynamically collects matches from all dimensions to feed the LLM a global view,
+ * injecting the mathematical formula breakdown for context.
+ *
+ * @param {Object} rawComparison - The raw comparison object from MatchingEngine.
+ * @returns {Object} Structured report matching the target JSON schema.
  */
 function generateGeneralAiReport(rawComparison) {
     if (!rawComparison) {
         return {
-            context: {
-                requirement_name: null,
-                offering_name: null,
-                match_score: null
-            },
-            analysis: {
-                type: "general",
-                name: "all_dimensions",
-                weight: 1.0,
-                perfect_matches: [],
-                partial_matches: [],
-                missing_requirements: []
-            }
+            context: { requirement_name: null, offering_name: null, match_score: null },
+            analysis: { type: "general", name: "overall_summary", weight: 1.0, perfect_matches: [], partial_matches: [], missing_requirements: [] }
         };
     }
 
     const reportInfo = rawComparison.reportInfo || {};
-    const requirement = reportInfo.requirement || {};
-    const offering = reportInfo.offering || {};
-    
-    const requirementName = requirement.name || null;
-    const offeringName = offering.name || null;
-    
-    const matchScores = reportInfo.matchScores || {};
-    const allDimensionsScore = matchScores.allDimensions || {};
-    const matchScore = allDimensionsScore.score !== undefined ? allDimensionsScore.score : 0;
-    const weight = allDimensionsScore.weight !== undefined ? allDimensionsScore.weight : 1.0;
+    const requirementName = reportInfo.requirement?.name || null;
+    const offeringName = reportInfo.offering?.name || null;
+    const matchScore = reportInfo.metrics?.score !== undefined ? reportInfo.metrics.score : 0;
 
-    const allDimensions = rawComparison.allDimensions || {};
-    const perfectMatch = allDimensions.perfectMatch || [];
-    const partialMatch = allDimensions.partialMatch || [];
-    const missedMatch = allDimensions.missedMatch || [];
+    const perfectMatches = [];
+    const partialMatches = [];
+    const missingRequirements = [];
 
-    const perfectMatches = perfectMatch.map(_formatMatch).filter(Boolean);
-    const partialMatches = partialMatch.map(_formatMatch).filter(Boolean);
-    const missingRequirements = missedMatch.map(_formatMatch).filter(Boolean);
+    // Dynamically collect matches from all dimensions to feed the LLM a global view
+    const keysToSkip = ['reportInfo'];
+    for (const [key, value] of Object.entries(rawComparison)) {
+        if (keysToSkip.includes(key) || !value || typeof value !== 'object') continue;
+        
+        if (value.perfectMatch) perfectMatches.push(...value.perfectMatch.map(_formatMatch).filter(Boolean));
+        if (value.partialMatch) partialMatches.push(...value.partialMatch.map(_formatMatch).filter(Boolean));
+        if (value.missedMatch) missingRequirements.push(...value.missedMatch.map(_formatMatch).filter(Boolean));
+    }
 
     return {
         context: {
             requirement_name: requirementName,
             offering_name: offeringName,
-            match_score: matchScore
+            match_score: matchScore,
+            formula_breakdown: reportInfo.metrics?.formula || null // Give the LLM access to the formula
         },
         analysis: {
             type: "general",
-            name: "all_dimensions",
-            weight: weight,
+            name: "overall_summary",
+            weight: 1.0,
             perfect_matches: perfectMatches,
             partial_matches: partialMatches,
             missing_requirements: missingRequirements
@@ -169,8 +127,8 @@ function generateGeneralAiReport(rawComparison) {
  * general report, enabling consistent LLM processing across all analysis levels.
  * 
  * @param {Object} rawComparison - The raw comparison object from MatchingEngine with grouped structure.
- * @param {Object} rawComparison.reportInfo - Contains dimension-specific matchScores.
- * @param {Object} rawComparison.reportInfo.matchScores - Object keyed by dimension with score and weight.
+ * @param {Object} rawComparison.reportInfo - Contains overall score and metadata.
+ * @param {Object} rawComparison[dimensionKey].metrics - Contains dimension-specific score and weight.
  * @returns {Object} Object keyed by dimension name, each value being a structured report with type "dimension".
  * 
  * @target_structure
@@ -199,7 +157,7 @@ function generateGeneralAiReport(rawComparison) {
  * 
  * @null_safety
  * - Handles null/undefined rawComparison gracefully, returning empty object.
- * - Falls back to score 0 and weight 1.0 for dimensions not found in matchScores.
+ * - Falls back to score 0 and weight 1.0 for dimensions not found in metrics.
  * - Skips non-object values and dimension keys in the skip list.
  */
 function generateDimensionalAiReports(rawComparison) {
@@ -212,7 +170,6 @@ function generateDimensionalAiReports(rawComparison) {
     const offering = reportInfo.offering || {};
     const requirementName = requirement.name || null;
     const offeringName = offering.name || null;
-    const matchScores = reportInfo.matchScores || {};
 
     const result = {};
     const keysToSkip = ['reportInfo', 'allDimensions'];
@@ -226,9 +183,9 @@ function generateDimensionalAiReports(rawComparison) {
             continue;
         }
 
-        const dimensionScoreData = matchScores[key] || {};
-        const dimensionScore = dimensionScoreData.score !== undefined ? dimensionScoreData.score : 0;
-        const dimensionWeight = dimensionScoreData.weight !== undefined ? dimensionScoreData.weight : 1.0;
+        const dimensionMetrics = value.metrics || {};
+        const dimensionScore = dimensionMetrics.score !== undefined ? dimensionMetrics.score : 0;
+        const dimensionWeight = dimensionMetrics.weights !== undefined ? dimensionMetrics.weights : 1.0;
 
         const perfectMatch = value.perfectMatch || [];
         const partialMatch = value.partialMatch || [];

@@ -18,7 +18,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { DeleteAction } from '@/components/ui';
+import { DeleteAction, EditButton } from '@/components/ui';
 import { Entity, Blueprint } from '@/lib/types';
 import { entityApi } from '@/lib/api/entityApi';
 import { getNuancedEntityName } from '@/lib/utils';
@@ -43,6 +43,8 @@ interface EntityDetailModalProps {
   onClose: () => void;
   /** Callback to delete the entity */
   onDelete: (id: number) => Promise<void>;
+  /** Callback to edit the entity */
+  onEdit?: () => void;
 }
 
 type TabId = 'info' | 'criteria' | 'files' | 'top-matches';
@@ -54,7 +56,7 @@ const tabs = [
   { id: 'files', label: 'Files', icon: Files },
 ];
 
-export function EntityDetailModal({ entity, open, onClose, onDelete }: EntityDetailModalProps) {
+export function EntityDetailModal({ entity, open, onClose, onDelete, onEdit }: EntityDetailModalProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -185,7 +187,12 @@ const handleSaveMetadata = async (key: string, value: string) => {
       layoutIdPrefix="entityDetail"
       open={open}
       onClose={onClose}
-      footerActions={<DeleteAction onDelete={async () => { await onDelete(entity.id); onClose(); }} />}
+      footerActions={
+        <div className="flex items-center gap-3">
+          {onEdit && <EditButton entityName={entity.type} onClick={onEdit} />}
+          <DeleteAction onDelete={async () => { await onDelete(entity.id); onClose(); }} />
+        </div>
+      }
     >
       <AnimatePresence mode="wait">
         {activeTab === 'info' && (

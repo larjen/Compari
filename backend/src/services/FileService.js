@@ -308,6 +308,54 @@ class FileService {
         const timestamp = Date.now();
         return path.join(MATCH_REPORTS_DIR, `Match_${sourceEntityId}_${targetEntityId}_${timestamp}`);
     }
+
+    /**
+     * Prepares a temporary entity directory and moves an uploaded file into it.
+     * Encapsulates path generation, directory creation, and file movement to enforce SoC.
+     * 
+     * @method prepareEntityDirectory
+     * @memberof FileService
+     * @param {string} entityType - The entity type ('requirement' or 'offering').
+     * @param {Object} file - The uploaded file object with path and filename properties.
+     * @returns {string} The path to the prepared temporary directory.
+     * 
+     * @socexplanation
+     * - Abstracts the entire temporary directory setup from the workflow.
+     * - Workflow no longer needs to construct paths using path.join with base directories.
+     * - This ensures the workflow remains agnostic to filesystem structure details.
+     */
+    prepareEntityDirectory(entityType, file) {
+        const { REQUIREMENTS_DIR, OFFERINGS_DIR } = require('../config/constants');
+        const baseDir = entityType === 'requirement' ? REQUIREMENTS_DIR : OFFERINGS_DIR;
+        const tempFolderName = `processing-${Date.now()}`;
+        const tempFolderPath = path.join(baseDir, tempFolderName);
+        
+        this.createDirectory(tempFolderPath);
+        this.moveFile(file.path, tempFolderPath, file.filename);
+        
+        return tempFolderPath;
+    }
+
+    /**
+     * Moves an entity from a temporary directory to its final named location.
+     * Encapsulates final path generation and directory movement to enforce SoC.
+     * 
+     * @method finalizeEntityDirectory
+     * @memberof FileService
+     * @param {string} entityType - The entity type ('requirement' or 'offering').
+     * @param {string} entityName - The name of the entity for folder naming.
+     * @param {string} currentPath - The current temporary directory path.
+     * @returns {string} The path to the final entity directory.
+     * 
+     * @socexplanation
+     * - Abstracts the final directory setup from the workflow.
+     * - Workflow calls this method and receives the final path without knowing the structure.
+     */
+    finalizeEntityDirectory(entityType, entityName, currentPath) {
+        const finalFolderPath = this.generateEntityFolderPath(entityType, entityName);
+        this.moveDirectory(currentPath, finalFolderPath);
+        return finalFolderPath;
+    }
 }
 
 module.exports = new FileService();

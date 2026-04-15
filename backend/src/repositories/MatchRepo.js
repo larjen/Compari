@@ -64,7 +64,7 @@ class MatchRepo extends BaseRepository {
      * @param {number} limit - Max number of records to return.
      * @param {number} offset - Number of records to skip.
      * @param {string} search - Search term for entity names.
-     * @param {string} status - Queue status filter.
+     * @param {string} status - Status filter.
      * @returns {Object} Object containing matches array and total count.
      */
     getPaginatedMatches(limit, offset, search, status) {
@@ -82,7 +82,7 @@ class MatchRepo extends BaseRepository {
         }
 
         if (status && status !== 'all') {
-            baseQuery += ` AND em.queue_status = ?`;
+            baseQuery += ` AND em.status = ?`;
             params.push(status);
         }
 
@@ -128,23 +128,23 @@ class MatchRepo extends BaseRepository {
      */
     createMatch(requirementId, offeringId, matchScore, reportPath, folderPath, status = 'pending') {
         const stmt = db.prepare(`
-            INSERT INTO entity_matches (requirement_id, offering_id, match_score, report_path, folder_path, queue_status, status)
-            VALUES (?, ?, ?, ?, ?, 'pending', ?)
+            INSERT INTO entity_matches (requirement_id, offering_id, match_score, report_path, folder_path, status)
+            VALUES (?, ?, ?, ?, ?, ?)
         `);
         const info = stmt.run(requirementId, offeringId, matchScore || null, reportPath || null, folderPath || null, status);
         return info.lastInsertRowid;
     }
 
     /**
-     * Updates the queue status for an existing match.
-     * @method updateMatchQueueStatus
+     * Updates the status for an existing match.
+     * @method updateMatchStatus
      * @param {number} id - The match record ID.
-     * @param {string} status - The new queue status ('pending', 'processing', 'completed', 'error').
+     * @param {string} status - The new status ('pending', 'processing', 'completed', 'failed').
      * @returns {void}
      * @why_not_base - Custom UPDATE with specific column targeting and timestamp.
      */
-    updateMatchQueueStatus(id, status) {
-        const stmt = db.prepare('UPDATE entity_matches SET queue_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+    updateMatchStatus(id, status) {
+        const stmt = db.prepare('UPDATE entity_matches SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
         stmt.run(status, id);
     }
 
@@ -348,28 +348,6 @@ class MatchRepo extends BaseRepository {
         stmt.run(offeringId);
     }
 
-
-    /**
-     * Retrieves matches with a specific queue status.
-     * @method getMatchesByQueueStatus
-     * @param {string} queueStatus - The queue status to filter by.
-     * @returns {Array<Object>} Array of match objects.
-     * @why_not_base - Requires JOIN with entities table to fetch entity names.
-     */
-    getMatchesByQueueStatus(queueStatus) {
-        const stmt = db.prepare(`
-            SELECT em.*,
-                re.name as requirement_name,
-                oe.name as offering_name
-            FROM entity_matches em
-            JOIN entities re ON em.requirement_id = re.id
-            JOIN entities oe ON em.offering_id = oe.id
-            WHERE em.queue_status = ?
-            ORDER BY em.created_at DESC
-        `);
-        const rows = stmt.all(queueStatus);
-        return rows;
-    }
 
     /**
      * Retrieves all matches with a specific status.

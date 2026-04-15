@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Loader2, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { ContentLoader } from '@/components/shared/PageStates';
 
 const browserStandardStyles = `
   .browser-standard-mono {
@@ -223,7 +224,7 @@ function LogViewerContent() {
 
 export default function LogViewerPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="w-8 h-8 animate-spin text-accent-sage" /></div>}>
+    <Suspense fallback={<ContentLoader delay={200} />}>
       <LogViewerContent />
     </Suspense>
   );

@@ -129,4 +129,13 @@ export const matchApi = {
   async openFolder(id: number): Promise<void> {
     return fetchWrapper(`/matches/${id}/folder/open`, { method: 'POST' });
   },
+
+  /**
+   * Retries the AI assessment process for a failed match.
+   * @param {number} id - The ID of the match to retry.
+   * @returns {Promise<void>}
+   */
+  async retryProcessing(id: number): Promise<void> {
+    await fetchWrapper(`/matches/${id}/retry`, { method: 'POST' });
+  },
 };

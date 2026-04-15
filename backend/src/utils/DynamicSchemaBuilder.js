@@ -45,6 +45,13 @@ class DynamicSchemaBuilder {
         const properties = {};
         const required = [];
 
+        // Chain of Thought: Force the LLM to reason before outputting criteria arrays
+        properties['analysis'] = {
+            type: 'string',
+            description: 'Briefly explain your thought process for extracting criteria for this dimension from the text. Think step-by-step to ensure accuracy, atomicity, and that no fluff is included.'
+        };
+        required.push('analysis');
+
         for (const dimension of activeDimensions) {
             if (!dimension.name) {
                 logService.logTerminal('WARN', 'WARNING', 'DynamicSchemaBuilder', `Skipping dimension with missing name: ${JSON.stringify(dimension)}`);

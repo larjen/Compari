@@ -100,9 +100,9 @@ class QueueRepo extends BaseRepository {
             // Safely fail matches whose background jobs were just destroyed
             db.prepare(`
                 UPDATE entity_matches 
-                SET queue_status = 'failed',
+                SET status = 'failed',
                     error = 'Interrupted by server shutdown. Please retry.' 
-                WHERE queue_status = 'pending' OR queue_status = 'processing'
+                WHERE status = 'pending' OR status = 'processing'
             `).run();
             
             return deleteResult.changes;

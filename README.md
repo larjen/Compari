@@ -18,6 +18,7 @@ Before installing, ensure your system meets the requirements below.
 After installing Ollama, open your terminal and pull the required local AI models:
 ```bash
 ollama pull gemma4:e4b
+ollama pull gemma4:e2b
 ollama pull nomic-embed-text
 ```
 

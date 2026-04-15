@@ -23,6 +23,7 @@ router.get('/:id', MatchController.getById);
 router.post('/', validate(matchSchema), MatchController.create);
 router.delete('/:id', MatchController.delete);
 router.post('/:id/folder/open', MatchController.openFolder);
+router.post('/:id/retry', MatchController.retryProcessing);
 router.get('/:id/files', MatchController.getFiles);
 router.get('/:id/files/:filename', MatchController.getFile);
 router.get('/:id/pdf', MatchController.downloadPdf);
