@@ -18,6 +18,7 @@
  */
 
 const logService = require('../services/LogService');
+const { AI_MODEL_ROLES, ENTITY_ROLES, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 const fs = require('fs');
 const path = require('path');
 
@@ -40,29 +41,29 @@ function seedAiModels(db) {
             model_identifier: 'gemma4:e4b',
             api_url: 'http://127.0.0.1:11434/v1',
             api_key: null,
-            role: 'chat',
+            role: AI_MODEL_ROLES.CHAT,
             is_active: 1,
             is_system: 1,
             temperature: 0.1,
-            context_window: 8192
+            context_window: 4096
         },
         {
-            name: 'Gemma 4 (2B) Fast',
+            name: 'Gemma 4 (2B)',
             model_identifier: 'gemma4:e2b',
             api_url: 'http://127.0.0.1:11434/v1',
             api_key: null,
-            role: 'chat',
+            role: AI_MODEL_ROLES.CHAT,
             is_active: 1,
             is_system: 1,
             temperature: 0.1,
-            context_window: 8192
+            context_window: 4096
         },
         {
-            name: 'Nomic Embed Text',
-            model_identifier: 'nomic-embed-text',
+            name: 'BGE-M3',
+            model_identifier: 'bge-m3',
             api_url: 'http://127.0.0.1:11434/v1',
             api_key: null,
-            role: 'embedding',
+            role: AI_MODEL_ROLES.EMBEDDING,
             is_active: 1,
             is_system: 1,
             temperature: 0.1,
@@ -89,7 +90,7 @@ function seedAiModels(db) {
         );
     }
 
-    logService.logTerminal('INFO', 'CHECKMARK', 'Seeder', 'Seeded default Ollama models (chat + embedding) in ai_models table.');
+    logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'Seeder', 'Seeded default Ollama models (chat + embedding) in ai_models table.');
 }
 
 /**
@@ -164,7 +165,7 @@ function seedDimensions(db) {
         );
     }
 
-    logService.logTerminal('INFO', 'CHECKMARK', 'Seeder', 'Seeded default 5 dimensions in dimensions table.');
+    logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'Seeder', 'Seeded default 5 dimensions in dimensions table.');
 }
 
 /**
@@ -183,7 +184,7 @@ function seedBlueprints(db) {
 
     const dimensions = db.prepare('SELECT id FROM dimensions').all();
     if (dimensions.length === 0) {
-        logService.logTerminal('WARN', 'WARNING', 'Seeder', 'No dimensions found, skipping blueprint seeding.');
+        logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'Seeder', 'No dimensions found, skipping blueprint seeding.');
         return;
     }
 
@@ -223,7 +224,7 @@ function seedBlueprints(db) {
     ];
 
     for (const field of requirementFields) {
-        insertField.run(blueprintId, field.field_name, field.field_type, field.description, field.is_required, 'requirement');
+        insertField.run(blueprintId, field.field_name, field.field_type, field.description, field.is_required, ENTITY_ROLES.REQUIREMENT);
     }
 
     const offeringFields = [
@@ -234,14 +235,14 @@ function seedBlueprints(db) {
     ];
 
     for (const field of offeringFields) {
-        insertField.run(blueprintId, field.field_name, field.field_type, field.description, field.is_required, 'offering');
+        insertField.run(blueprintId, field.field_name, field.field_type, field.description, field.is_required, ENTITY_ROLES.OFFERING);
     }
 
     for (const dim of dimensions) {
         insertDimension.run(blueprintId, dim.id);
     }
 
-    logService.logTerminal('INFO', 'CHECKMARK', 'Seeder', 'Seeded default blueprint (Employment Match) with Job Listing/Candidate fields.');
+    logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'Seeder', 'Seeded default blueprint (Employment Match) with Job Listing/Candidate fields.');
 }
 
 /**
@@ -267,9 +268,9 @@ function seedSettings(db) {
         { key: 'log_ai_interactions', value: 'false' },
         { key: 'ai_verify_merges', value: 'true' },
         { key: 'model_routing_general', value: '1' },
-        { key: 'model_routing_verification', value: '2' },
+        { key: 'model_routing_verification', value: '1' },
         { key: 'model_routing_embedding', value: '3' },
-        { key: 'model_routing_metadata', value: '2' },
+        { key: 'model_routing_metadata', value: '1' },
         { key: 'allow_concurrent_ai', value: 'false' }
     ];
 
@@ -282,18 +283,18 @@ function seedSettings(db) {
         stmt.run(setting.key, setting.value);
     }
 
-    logService.logTerminal('INFO', 'CHECKMARK', 'Seeder', 'Seeded default settings including model routing configuration in settings table.');
+    logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'Seeder', 'Seeded default settings including model routing configuration in settings table.');
 }
 
 function seedPrompts(db) {
     const promptsDir = path.join(__dirname, '../prompts');
-    
+
     const readMarkdownFile = (filename) => {
         try {
             const filePath = path.join(promptsDir, filename);
             return fs.readFileSync(filePath, 'utf-8');
         } catch (err) {
-            logService.logTerminal('WARN', 'WARNING', 'Seeder', `Failed to read prompt file ${filename}: ${err.message}`);
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'Seeder', `Failed to read prompt file ${filename}: ${err.message}`);
             return null;
         }
     };
@@ -346,10 +347,10 @@ Respond with EXACTLY and ONLY the word "YES" or "NO".`
 
     for (const promptData of defaultPrompts) {
         if (!promptData.prompt) {
-            logService.logTerminal('WARN', 'WARNING', 'Seeder', `Skipping seed for ${promptData.system_name} - empty prompt content`);
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'Seeder', `Skipping seed for ${promptData.system_name} - empty prompt content`);
             continue;
         }
-        
+
         const stmt = db.prepare(`
             INSERT OR IGNORE INTO prompts (system_name, title, description, prompt)
             VALUES (?, ?, ?, ?)
@@ -357,7 +358,7 @@ Respond with EXACTLY and ONLY the word "YES" or "NO".`
         stmt.run(promptData.system_name, promptData.title, promptData.description, promptData.prompt);
     }
 
-    logService.logTerminal('INFO', 'CHECKMARK', 'Seeder', 'Seeded default prompts in prompts table.');
+    logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'Seeder', 'Seeded default prompts in prompts table.');
 }
 
 /**

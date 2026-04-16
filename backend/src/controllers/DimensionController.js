@@ -14,6 +14,7 @@
 const dimensionService = require('../services/DimensionService');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
+const { HTTP_STATUS } = require('../config/constants');
 
 class DimensionController {
     /**
@@ -41,7 +42,7 @@ class DimensionController {
     static getById = asyncHandler(async (req, res) => {
         const dimension = dimensionService.getDimensionById(parseInt(req.params.id));
         if (!dimension) {
-            throw new AppError('Dimension not found', 404);
+            throw new AppError('Dimension not found', HTTP_STATUS.NOT_FOUND);
         }
         res.json({ dimension });
     });
@@ -53,7 +54,7 @@ class DimensionController {
     static create = asyncHandler(async (req, res) => {
         const { name, displayName, requirementInstruction, offeringInstruction, isActive, weight } = req.body;
         const dimensionId = dimensionService.createDimension(name, displayName, requirementInstruction, offeringInstruction, isActive, weight);
-        res.status(201).json({ success: true, dimensionId });
+        res.status(HTTP_STATUS.CREATED).json({ success: true, dimensionId });
     });
 
     /**
@@ -66,7 +67,7 @@ class DimensionController {
         
         const existing = dimensionService.getDimensionById(id);
         if (!existing) {
-            throw new AppError('Dimension not found', 404);
+            throw new AppError('Dimension not found', HTTP_STATUS.NOT_FOUND);
         }
 
         const updates = {};
@@ -89,7 +90,7 @@ class DimensionController {
         
         const existing = dimensionService.getDimensionById(id);
         if (!existing) {
-            throw new AppError('Dimension not found', 404);
+            throw new AppError('Dimension not found', HTTP_STATUS.NOT_FOUND);
         }
 
         dimensionService.deleteDimension(id);
@@ -105,7 +106,7 @@ class DimensionController {
         
         const existing = dimensionService.getDimensionById(id);
         if (!existing) {
-            throw new AppError('Dimension not found', 404);
+            throw new AppError('Dimension not found', HTTP_STATUS.NOT_FOUND);
         }
 
         const newStatus = !existing.isActive;

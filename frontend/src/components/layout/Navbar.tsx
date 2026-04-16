@@ -8,6 +8,7 @@ import { Button, CreateButton } from '@/components/ui';
 import { useModal, ModalType } from '@/hooks/useModal';
 import { useBlueprints } from '@/hooks/useBlueprints';
 import { Logo } from '@/components/ui/Logo';
+import { MODAL_TYPES } from '@/lib/constants';
 
 /**
  * Navigation route configuration.
@@ -74,9 +75,9 @@ export function Navbar({ isLoading }: NavbarProps) {
    * Blueprints and Dimensions are moved to Settings modal.
    */
   const NAV_ROUTES: NavRoute[] = [
-    { label: requirementLabelPlural, href: '/', modalType: 'create-requirement', entityName: requirementLabelSingular },
-    { label: offeringLabelPlural, href: '/offerings', modalType: 'create-offering', entityName: offeringLabelSingular },
-    { label: 'Matches', href: '/matches', modalType: 'create-match', entityName: 'Match' },
+    { label: requirementLabelPlural, href: '/', modalType: MODAL_TYPES.CREATE_REQUIREMENT, entityName: requirementLabelSingular },
+    { label: offeringLabelPlural, href: '/offerings', modalType: MODAL_TYPES.CREATE_OFFERING, entityName: offeringLabelSingular },
+    { label: 'Matches', href: '/matches', modalType: MODAL_TYPES.CREATE_MATCH, entityName: 'Match' },
     { label: 'Criteria', href: '/criteria', modalType: null, entityName: 'Criterion' },
   ];
 
@@ -149,7 +150,7 @@ export function Navbar({ isLoading }: NavbarProps) {
               />
             )}
 
-            <Button variant="ghost" size="sm" onClick={() => openModal('settings')}>
+            <Button variant="ghost" size="sm" onClick={() => openModal(MODAL_TYPES.SETTINGS)}>
               <Settings className="w-4 h-4" />
             </Button>
           </div>

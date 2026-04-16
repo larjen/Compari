@@ -27,7 +27,7 @@ const MatchingEngine = require('../utils/MatchingEngine');
 const FileService = require('./FileService');
 const logService = require('./LogService');
 const SettingsManager = require('../config/SettingsManager');
-const { TRASHED_DIR, QUEUE_TASKS } = require('../config/constants');
+const { TRASHED_DIR, QUEUE_TASKS, ENTITY_ROLES, APP_EVENTS, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 const path = require('path');
 const eventService = require('./EventService');
 const queueService = require('./QueueService');
@@ -74,9 +74,9 @@ class MatchService {
      * @description Updated terminology: 'source' → 'requirement', 'target' → 'offering'
      */
     getMatchesForEntity(entityId, role) {
-        if (role === 'requirement') {
+        if (role === ENTITY_ROLES.REQUIREMENT) {
             return matchRepo.getMatchesForRequirement(entityId);
-        } else if (role === 'offering') {
+        } else if (role === ENTITY_ROLES.OFFERING) {
             return matchRepo.getMatchesForOffering(entityId);
         }
         return matchRepo.getMatchesForRequirement(entityId).concat(matchRepo.getMatchesForOffering(entityId));
@@ -135,7 +135,7 @@ class MatchService {
         matchRepo.updateMatchStatus(id, sanitizedStatus);
         const updatedMatch = matchRepo.getMatchById(id);
         if (updatedMatch) {
-            eventService.emit('matchUpdate', updatedMatch);
+            eventService.emit(APP_EVENTS.MATCH_UPDATE, updatedMatch);
         }
     }
 
@@ -150,12 +150,12 @@ class MatchService {
         if (error) {
             const match = matchRepo.getMatchById(id);
             const folderPath = match ? match.folder_path : null;
-            logService.addActivityLog('Match', id, 'ERROR', `Assessment failed: ${error}`, folderPath);
+            logService.addActivityLog('Match', id, LOG_LEVELS.ERROR, `Assessment failed: ${error}`, folderPath);
         }
 
         const updatedMatch = matchRepo.getMatchById(id);
         if (updatedMatch) {
-            eventService.emit('matchUpdate', updatedMatch);
+            eventService.emit(APP_EVENTS.MATCH_UPDATE, updatedMatch);
         }
     }
 
@@ -206,9 +206,9 @@ class MatchService {
      * @description Updated terminology: 'source' → 'requirement', 'target' → 'offering'
      */
     deleteMatchesForEntity(entityId, role) {
-        if (role === 'requirement') {
+        if (role === ENTITY_ROLES.REQUIREMENT) {
             return matchRepo.deleteMatchesForRequirement(entityId);
-        } else if (role === 'offering') {
+        } else if (role === ENTITY_ROLES.OFFERING) {
             return matchRepo.deleteMatchesForOffering(entityId);
         }
         // If no role specified, delete matches where entity is either requirement or offering
@@ -247,7 +247,7 @@ class MatchService {
 
         const newMatch = matchRepo.getMatchById(matchId);
         if (newMatch) {
-            eventService.emit('matchUpdate', newMatch);
+            eventService.emit(APP_EVENTS.MATCH_UPDATE, newMatch);
         }
 
         return matchId;
@@ -284,7 +284,7 @@ class MatchService {
             try {
                 FileService.moveDirectory(match.folder_path, trashPath);
             } catch (err) {
-                logService.logTerminal('ERROR', 'ERROR', 'MatchService', `Failed to move match folder to trash: ${err.message}`);
+                logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'MatchService', `Failed to move match folder to trash: ${err.message}`);
             }
         }
 
@@ -304,7 +304,7 @@ class MatchService {
     openMatchFolder(id) {
         const match = matchRepo.getMatchById(id);
         if (!match || !match.folder_path) {
-            logService.logTerminal('WARN', 'WARNING', 'MatchService', 'Cannot open folder: match not found or has no folder path');
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'MatchService', 'Cannot open folder: match not found or has no folder path');
             return;
         }
         FileService.openFolderInOS(match.folder_path);
@@ -374,7 +374,7 @@ class MatchService {
             matchId
         });
 
-        logService.addActivityLog('Match', matchId, 'INFO', 'Retrying match assessment.', match.folder_path);
+        logService.addActivityLog('Match', matchId, LOG_LEVELS.INFO, 'Retrying match assessment.', match.folder_path);
     }
 
     /**
@@ -411,7 +411,7 @@ class MatchService {
         const entity = entityRepo.getEntityById(entityId);
         if (!entity) throw new Error('Entity not found');
 
-        const oppositeType = entity.type === 'requirement' ? 'offering' : 'requirement';
+        const oppositeType = entity.type === ENTITY_ROLES.REQUIREMENT ? ENTITY_ROLES.OFFERING : ENTITY_ROLES.REQUIREMENT;
 
         const baseCriteria = criteriaRepo.getCriteriaWithEmbeddingsForEntity(entityId);
         if (!baseCriteria || baseCriteria.length === 0) {
@@ -441,16 +441,16 @@ class MatchService {
 
         for (const opp of opposites) {
             try {
-                const reqId = entity.type === 'requirement' ? entity.id : opp.id;
-                const offId = entity.type === 'offering' ? entity.id : opp.id;
+                const reqId = entity.type === ENTITY_ROLES.REQUIREMENT ? entity.id : opp.id;
+                const offId = entity.type === ENTITY_ROLES.OFFERING ? entity.id : opp.id;
 
                 const oppositeCriteria = criteriaRepo.getCriteriaWithEmbeddingsForEntity(opp.id);
                 if (!oppositeCriteria || oppositeCriteria.length === 0) {
                     continue;
                 }
 
-                const reqCriteria = entity.type === 'requirement' ? baseCriteria : oppositeCriteria;
-                const offCriteria = entity.type === 'requirement' ? oppositeCriteria : baseCriteria;
+                const reqCriteria = entity.type === ENTITY_ROLES.REQUIREMENT ? baseCriteria : oppositeCriteria;
+                const offCriteria = entity.type === ENTITY_ROLES.REQUIREMENT ? oppositeCriteria : baseCriteria;
 
                 const fastScore = MatchingEngine.calculateFastMatchScore(
                     reqCriteria,

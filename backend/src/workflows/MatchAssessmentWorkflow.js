@@ -31,6 +31,7 @@ const AiService = require('../services/AiService');
 const PromptBuilder = require('../utils/PromptBuilder');
 const DimensionRepo = require('../repositories/DimensionRepo');
 const SettingsManager = require('../config/SettingsManager');
+const { LOG_LEVELS, LOG_SYMBOLS, SETTING_KEYS, DOCUMENT_TYPES } = require('../config/constants');
 const path = require('path');
 
 class MatchAssessmentWorkflow {
@@ -94,7 +95,7 @@ class MatchAssessmentWorkflow {
         const targetEntity = entityService.getEntityById(targetEntityId);
 
         try {
-            logService.addActivityLog('Match', matchId, 'INFO', `Started match assessment for source ${sourceEntityId} against target ${targetEntityId}.`, matchFolderPath);
+            logService.addActivityLog('Match', matchId, LOG_LEVELS.INFO, `Started match assessment for source ${sourceEntityId} against target ${targetEntityId}.`, matchFolderPath);
 
             // 1. Calculate vector match data
             const matchData = criteriaManagerWorkflow.calculateCriteriaMatch(sourceEntityId, targetEntityId);
@@ -106,7 +107,7 @@ class MatchAssessmentWorkflow {
             await AiService.warmUpModel('general');
 
             // 3. MAP PHASE: Generate Dimensional AI Summaries Concurrently (In-Memory)
-            logService.logTerminal('INFO', 'LIGHTNING', 'MatchAssessmentWorkflow', `Generating dimensional AI summaries for match ${matchId}...`);
+            logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.LIGHTNING, 'MatchAssessmentWorkflow', `Generating dimensional AI summaries for match ${matchId}...`);
             const aiSummaries = { dimensional: {} };
             const dimensionalTasks = [];
 
@@ -119,7 +120,7 @@ class MatchAssessmentWorkflow {
                 });
             }
 
-            const allowConcurrent = SettingsManager.get('allow_concurrent_ai') === 'true';
+            const allowConcurrent = SettingsManager.get(SETTING_KEYS.ALLOW_CONCURRENT_AI) === 'true';
             if (allowConcurrent) {
                 await Promise.all(dimensionalTasks.map(t => t()));
             } else {
@@ -129,7 +130,7 @@ class MatchAssessmentWorkflow {
             }
 
             // 5. REDUCE PHASE: Generate Executive Summary from Dimensional Summaries
-            logService.logTerminal('INFO', 'LIGHTNING', 'MatchAssessmentWorkflow', `Synthesizing executive summary for match ${matchId}...`);
+            logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.LIGHTNING, 'MatchAssessmentWorkflow', `Synthesizing executive summary for match ${matchId}...`);
             const reqName = sourceEntity.name || 'the requirement';
             const offName = targetEntity.name || 'the offering';
             const executiveMessages = PromptBuilder.buildExecutiveSummaryMessages(aiSummaries.dimensional, reqName, offName);
@@ -219,7 +220,7 @@ class MatchAssessmentWorkflow {
             FileService.writeJsonFile(reportPath, singleSourceOfTruthReport);
 
             // 7. Register Match Report in the Database
-            matchService.registerDocumentRecord(matchId, 'Match Report', reportFileName, reportPath);
+            matchService.registerDocumentRecord(matchId, DOCUMENT_TYPES.MATCH_REPORT, reportFileName, reportPath);
 
             // 7b. Register Logs if generated
             const matchFiles = FileService.listFilesInFolder(matchFolderPath);
@@ -230,7 +231,7 @@ class MatchAssessmentWorkflow {
                 if (!isRegistered) {
                     matchService.registerDocumentRecord(
                         matchId,
-                        'AI Debug Log',
+                        DOCUMENT_TYPES.AI_DEBUG_LOG,
                         'ai_interactions.jsonl',
                         path.join(matchFolderPath, 'ai_interactions.jsonl')
                     );
@@ -242,7 +243,7 @@ class MatchAssessmentWorkflow {
                 if (!isRegistered) {
                     matchService.registerDocumentRecord(
                         matchId,
-                        'Activity Log',
+                        DOCUMENT_TYPES.ACTIVITY_LOG,
                         'activity.jsonl',
                         path.join(matchFolderPath, 'activity.jsonl')
                     );
@@ -260,11 +261,11 @@ class MatchAssessmentWorkflow {
             const seconds = Math.floor((durationMs % 60000) / 1000);
             const durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 
-            logService.addActivityLog('Match', matchId, 'INFO', `Match assessment complete. Single JSON report generated. Score: ${matchData.score}%. Processing took ${durationStr}.`, matchFolderPath);
+            logService.addActivityLog('Match', matchId, LOG_LEVELS.INFO, `Match assessment complete. Single JSON report generated. Score: ${matchData.score}%. Processing took ${durationStr}.`, matchFolderPath);
 
             // 9. Generate and save PDF report to disk
             try {
-                logService.logTerminal('INFO', 'LIGHTNING', 'MatchAssessmentWorkflow', `Generating PDF report for match ${matchId}...`);
+                logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.LIGHTNING, 'MatchAssessmentWorkflow', `Generating PDF report for match ${matchId}...`);
                 const PdfGeneratorService = require('../services/PdfGeneratorService');
                 const rawPdfData = await PdfGeneratorService.generateMatchReport(matchId);
                 const pdfBuffer = Buffer.from(rawPdfData);
@@ -276,16 +277,16 @@ class MatchAssessmentWorkflow {
 
                 const fs = require('fs');
                 fs.writeFileSync(pdfPath, pdfBuffer);
-                matchService.registerDocumentRecord(matchId, 'Match Report PDF', pdfFileName, pdfPath);
-                logService.logTerminal('INFO', 'CHECKMARK', 'MatchAssessmentWorkflow', `PDF report saved to ${pdfPath}`);
+                matchService.registerDocumentRecord(matchId, DOCUMENT_TYPES.MATCH_REPORT_PDF, pdfFileName, pdfPath);
+                logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'MatchAssessmentWorkflow', `PDF report saved to ${pdfPath}`);
             } catch (pdfError) {
-                logService.logTerminal('WARN', 'WARNING', 'MatchAssessmentWorkflow', `Failed to generate PDF during assessment: ${pdfError.message}`);
+                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'MatchAssessmentWorkflow', `Failed to generate PDF during assessment: ${pdfError.message}`);
             }
         } catch (error) {
             matchService.updateMatchError(matchId, error.message);
             matchService.updateMatchStatus(matchId, 'failed');
 
-            logService.addActivityLog('Match', matchId, 'ERROR', `Match assessment failed: ${error.message}`, matchFolderPath);
+            logService.addActivityLog('Match', matchId, LOG_LEVELS.ERROR, `Match assessment failed: ${error.message}`, matchFolderPath);
 
             throw error;
         }

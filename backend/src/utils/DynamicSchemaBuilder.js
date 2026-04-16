@@ -15,6 +15,7 @@
  */
 
 const logService = require('../services/LogService');
+const { ENTITY_ROLES, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 class DynamicSchemaBuilder {
     /**
@@ -37,7 +38,7 @@ class DynamicSchemaBuilder {
      * // Returns: { type: 'object', properties: { core_competencies: {...}, experience: {...} }, required: [...] }
      * // Each property description uses the source_instruction or target_instruction based on entityRole.
      */
-    buildExtractionSchema(activeDimensions, entityRole = 'offering') {
+    buildExtractionSchema(activeDimensions, entityRole = ENTITY_ROLES.OFFERING) {
         if (!Array.isArray(activeDimensions) || activeDimensions.length === 0) {
             throw new Error('Active dimensions array is required and must not be empty.');
         }
@@ -54,12 +55,12 @@ class DynamicSchemaBuilder {
 
         for (const dimension of activeDimensions) {
             if (!dimension.name) {
-                logService.logTerminal('WARN', 'WARNING', 'DynamicSchemaBuilder', `Skipping dimension with missing name: ${JSON.stringify(dimension)}`);
+                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'DynamicSchemaBuilder', `Skipping dimension with missing name: ${JSON.stringify(dimension)}`);
                 continue;
             }
 
             // Use directional instruction based on entity role
-            const instruction = entityRole === 'requirement' 
+            const instruction = entityRole === ENTITY_ROLES.REQUIREMENT 
                 ? dimension.requirementInstruction 
                 : dimension.offeringInstruction;
             
@@ -158,7 +159,7 @@ class DynamicSchemaBuilder {
             const isRequired = field.isRequired || field.is_required;
             
             if (!fieldName || !fieldType) {
-                logService.logTerminal('WARN', 'WARNING', 'DynamicSchemaBuilder', `Skipping field with missing name or type: ${JSON.stringify(field)}`);
+                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'DynamicSchemaBuilder', `Skipping field with missing name or type: ${JSON.stringify(field)}`);
                 continue;
             }
 

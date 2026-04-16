@@ -65,9 +65,10 @@ try {
 // Phase 3: Application Logic
 // ==========================
 const logService = require('./src/services/LogService');
+const { LOG_LEVELS, LOG_SYMBOLS } = require('./src/config/constants');
 const setupRoutes = require('./src/routes/index');
 
-logService.logTerminal('INFO', 'NONE', 'server.js', `Server starting...`);
+logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.NONE, 'server.js', `Server starting...`);
 
 const express = require('express');
 
@@ -118,7 +119,7 @@ app.use((req, res, next) => {
  * @param {Function} next - Express next function
  */
 app.use((err, req, res, next) => {
-    logService.logTerminal('ERROR', 'ERROR', 'GlobalErrorHandler', `API Error on ${req.method} ${req.url}`, err);
+    logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'GlobalErrorHandler', `API Error on ${req.method} ${req.url}`, err);
     logService.logErrorFile('GlobalErrorHandler', `API Error on ${req.method} ${req.url}`, err);
 
     res.status(err.status || 500).json({
@@ -132,21 +133,23 @@ const registerTaskListeners = require('./src/events/TaskListeners');
 registerTaskListeners();
 
 const queueService = require('./src/services/QueueService');
-queueService.start();
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
     const startupTime = Math.round(performance.now() - startTime);
 
-    logService.logTerminal('INFO', 'CHECKMARK', 'server.js', `Backend API running on http://localhost:${PORT}`);
+    await queueService.sweepOrphanedTasks();
+    queueService.start();
+
+    logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'server.js', `Backend API running on http://localhost:${PORT}`);
 
     const isDevMode = process.env.NODE_ENV === 'development' || process.env.DEBUG_MODE === 'true';
     if (isDevMode) {
-        logService.logTerminal('WARN', 'WARNING', 'server.js', 'Server is running in DEBUG/DEV mode. Verbose logging is enabled.');
-        logService.logTerminal('INFO', 'NONE', 'server.js', 'To disable debug mode and run normally, stop this process and use: npm start');
+        logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'server.js', 'Server is running in DEBUG/DEV mode. Verbose logging is enabled.');
+        logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.NONE, 'server.js', 'To disable debug mode and run normally, stop this process and use: npm start');
     } else {
-        logService.logTerminal('INFO', 'CHECKMARK', 'server.js', 'Server is running in PRODUCTION mode.');
+        logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'server.js', 'Server is running in PRODUCTION mode.');
     }
 
-    logService.logTerminal('INFO', 'CHECKMARK', 'server.js', `Server started in ${startupTime}ms`);
+    logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'server.js', `Server started in ${startupTime}ms`);
     console.log();
 });

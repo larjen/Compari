@@ -1,11 +1,13 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { MODAL_TYPES } from '@/lib/constants';
 
 /**
- * Modal type enumeration for create actions.
+ * Modal type derived from centralized constants.
+ * Prevents magic string errors in modal type definitions.
  */
-export type ModalType = 'create-requirement' | 'create-offering' | 'create-match' | 'create-criterion' | 'create-blueprint' | 'create-dimension' | 'settings' | null;
+export type ModalType = typeof MODAL_TYPES[keyof typeof MODAL_TYPES];
 
 /**
  * Context shape for modal state management.

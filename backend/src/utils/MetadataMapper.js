@@ -24,6 +24,7 @@
  */
 
 const logService = require('../services/LogService');
+const { LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 /**
  * Maps raw AI JSON response to blueprint fields with proper fallback handling.
@@ -51,7 +52,7 @@ function mapRawAiResponseToBlueprint(parsedJson, blueprintFields) {
     const dynamicMetadata = {};
     
     if (!parsedJson || typeof parsedJson !== 'object') {
-        logService.logTerminal('WARN', 'WARNING', 'MetadataMapper', 'Invalid parsed JSON, applying fallback values.');
+        logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'MetadataMapper', 'Invalid parsed JSON, applying fallback values.');
         for (const field of blueprintFields) {
             dynamicMetadata[field.fieldName] = field.isRequired ? 'Unknown' : null;
         }
@@ -94,7 +95,7 @@ function parseAndMapMetadata(metadataJsonString, blueprintFields) {
     try {
         parsedJson = JSON.parse(metadataJsonString);
     } catch (parseError) {
-        logService.logTerminal('ERROR', 'ERROR', 'MetadataMapper', `JSON Parse Error: ${parseError.message}`);
+        logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'MetadataMapper', `JSON Parse Error: ${parseError.message}`);
         logService.logErrorFile('MetadataMapper', 'Failed to parse metadata JSON', parseError, { jsonString: metadataJsonString ? 'present (omitted)' : null });
         return mapRawAiResponseToBlueprint(null, blueprintFields);
     }

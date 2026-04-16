@@ -6,6 +6,7 @@ import { settingsApi } from '@/lib/api/settingsApi';
 import { aiModelApi } from '@/lib/api/aiModelApi';
 import { useToast } from '@/hooks/useToast';
 import { Loader2, GitMerge, Zap, Cpu } from 'lucide-react';
+import { TOAST_TYPES } from '@/lib/constants';
 
 interface ModelRoutingTabProps {
   settings: Settings;
@@ -32,7 +33,7 @@ export function ModelRoutingTab({ settings }: ModelRoutingTabProps) {
       const data = await aiModelApi.getModels();
       setModels(data);
     } catch (err) {
-      addToast('error', 'Failed to load models');
+      addToast(TOAST_TYPES.ERROR, 'Failed to load models');
     } finally {
       setLoading(false);
     }
@@ -43,9 +44,9 @@ export function ModelRoutingTab({ settings }: ModelRoutingTabProps) {
     setSaving(true);
     try {
       await settingsApi.updateSetting(key, value);
-      addToast('success', 'Routing updated');
+      addToast(TOAST_TYPES.SUCCESS, 'Routing updated');
     } catch (err) {
-      addToast('error', 'Failed to update routing');
+      addToast(TOAST_TYPES.ERROR, 'Failed to update routing');
     } finally {
       setSaving(false);
     }

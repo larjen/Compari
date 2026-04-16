@@ -37,6 +37,7 @@
 const { OpenAI } = require('openai');
 const logService = require('./LogService');
 const aiModelRepo = require('../repositories/AiModelRepo');
+const { AI_MODEL_ROLES, AI_TASK_TYPES, LOG_LEVELS, LOG_SYMBOLS, SETTING_KEYS } = require('../config/constants');
 
 const DEFAULT_CHAT_MODEL = 'gemma4:e4b';
 const DEFAULT_EMBEDDING_MODEL = 'nomic-embed-text';
@@ -48,6 +49,14 @@ class AiService {
      * Abstracts the database lookup, object mapping, and fallback logic to keep the service DRY.
      * @private
      * @param {string} role - The role to get config for ('chat' or 'embedding').
+     * @param {string} defaultModelIdentifier - The default model identifier to use if no active model is found.
+     * @returns {Object} Model configuration object with modelIdentifier, apiUrl, apiKey, role.
+     */
+    /**
+     * Retrieves the model configuration for a given role.
+     * Uses AI_MODEL_ROLES constants to enforce type safety and prevent typo-induced bugs.
+     * @private
+     * @param {string} role - The role to get config for (from AI_MODEL_ROLES).
      * @param {string} defaultModelIdentifier - The default model identifier to use if no active model is found.
      * @returns {Object} Model configuration object with modelIdentifier, apiUrl, apiKey, role.
      */
@@ -113,21 +122,21 @@ class AiService {
         let fallbackRole = null;
 
         switch (taskType) {
-            case 'general':
-                settingKey = 'model_routing_general';
-                fallbackRole = 'chat';
+            case AI_TASK_TYPES.GENERAL:
+                settingKey = SETTING_KEYS.MODEL_ROUTING_GENERAL;
+                fallbackRole = AI_MODEL_ROLES.CHAT;
                 break;
-            case 'verification':
-                settingKey = 'model_routing_verification';
-                fallbackRole = 'chat';
+            case AI_TASK_TYPES.VERIFICATION:
+                settingKey = SETTING_KEYS.MODEL_ROUTING_VERIFICATION;
+                fallbackRole = AI_MODEL_ROLES.CHAT;
                 break;
-            case 'embedding':
-                settingKey = 'model_routing_embedding';
-                fallbackRole = 'embedding';
+            case AI_TASK_TYPES.EMBEDDING:
+                settingKey = SETTING_KEYS.MODEL_ROUTING_EMBEDDING;
+                fallbackRole = AI_MODEL_ROLES.EMBEDDING;
                 break;
-            case 'metadata':
-                settingKey = 'model_routing_metadata';
-                fallbackRole = 'chat';
+            case AI_TASK_TYPES.METADATA:
+                settingKey = SETTING_KEYS.MODEL_ROUTING_METADATA;
+                fallbackRole = AI_MODEL_ROLES.CHAT;
                 break;
             default:
                 return defaultConfig;
@@ -140,14 +149,14 @@ class AiService {
         const modelId = settingsManager.get(settingKey);
 
         if (!modelId) {
-            logService.logTerminal('WARN', 'WARNING', 'AiService.js', `No model configured for task '${taskType}', falling back to active ${fallbackRole} model.`);
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiService.js', `No model configured for task '${taskType}', falling back to active ${fallbackRole} model.`);
             return this._getModelConfigByRole(fallbackRole, defaultConfig.modelIdentifier);
         }
 
         const config = this._getModelConfigById(modelId);
 
         if (!config) {
-            logService.logTerminal('WARN', 'WARNING', 'AiService.js', `Model ID '${modelId}' not found for task '${taskType}', falling back to active ${fallbackRole} model.`);
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiService.js', `Model ID '${modelId}' not found for task '${taskType}', falling back to active ${fallbackRole} model.`);
             return this._getModelConfigByRole(fallbackRole, defaultConfig.modelIdentifier);
         }
 
@@ -161,7 +170,7 @@ class AiService {
      * @returns {Object} Model configuration object with modelIdentifier, apiUrl, apiKey, role.
      */
     _getChatModelConfig() {
-        return this._getModelConfigByRole('chat', DEFAULT_CHAT_MODEL);
+        return this._getModelConfigByRole(AI_MODEL_ROLES.CHAT, DEFAULT_CHAT_MODEL);
     }
 
     /**
@@ -171,7 +180,7 @@ class AiService {
      * @returns {Object} Model configuration object with modelIdentifier, apiUrl, apiKey, role.
      */
     _getEmbeddingModelConfig() {
-        return this._getModelConfigByRole('embedding', DEFAULT_EMBEDDING_MODEL);
+        return this._getModelConfigByRole(AI_MODEL_ROLES.EMBEDDING, DEFAULT_EMBEDDING_MODEL);
     }
 
     /**
@@ -200,11 +209,11 @@ class AiService {
      * @returns {Promise<boolean>} True if healthy, throws error if not.
      * @throws {Error} If the AI provider is offline or unreachable.
      */
-    async isHealthy(role = 'chat', overrideConfig) {
+    async isHealthy(role = AI_MODEL_ROLES.CHAT, overrideConfig) {
         let config;
         if (overrideConfig) {
             config = overrideConfig;
-        } else if (role === 'embedding') {
+        } else if (role === AI_MODEL_ROLES.EMBEDDING) {
             config = this._getEmbeddingModelConfig();
         } else {
             config = this._getChatModelConfig();
@@ -218,6 +227,7 @@ class AiService {
         } catch (error) {
             const e = new Error(`AI is offline. Details: ${error.message}`);
             e.isAiError = true;
+            e.isConnectionError = true;
             throw e;
         }
     }
@@ -257,7 +267,7 @@ class AiService {
         }
         const { client, model: selectedModel } = this._getClient(config);
 
-        await this.isHealthy('chat', config);
+        await this.isHealthy(AI_MODEL_ROLES.CHAT, config);
 
         const requestOptions = { ...options };
         const isJsonFormat = options.format === 'json' || (options.format && typeof options.format === 'object');
@@ -271,12 +281,14 @@ class AiService {
         if (chatParams.temperature === undefined) {
             chatParams.temperature = config.temperature ?? 0.1;
         }
+        // Keep num_ctx to define total allocated VRAM
         if (chatParams.num_ctx === undefined && config.contextWindow) {
             chatParams.num_ctx = config.contextWindow;
         }
-        if (chatParams.max_tokens === undefined && config.contextWindow) {
-            chatParams.max_tokens = config.contextWindow;
-        }
+
+        // FIX: Removed the assignment of chatParams.max_tokens = config.contextWindow.
+        // max_tokens dictates output length. Setting it to the total context window size 
+        // causes OOM crashes and runaway hallucinations on local models.
 
         if (options.format === 'json') {
             chatParams.response_format = { type: 'json_object' };
@@ -285,9 +297,24 @@ class AiService {
         }
 
         try {
-            var response = await client.chat.completions.create(chatParams, { signal });
+            const timeoutSignal = AbortSignal.timeout(300000);
+            const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+
+            var response = await client.chat.completions.create(chatParams, { signal: combinedSignal });
         } catch (error) {
-            logService.logTerminal('ERROR', 'ERROR', 'AiService.js', `Error during AI generation: ${error.message}`);
+            if (error.name === 'TimeoutError' || error.message.includes('Timeout')) {
+                const timeoutErr = new Error(`Connection error.`);
+                timeoutErr.isConnectionError = true;
+                throw timeoutErr;
+            }
+
+            if (error.code === 'ECONNREFUSED' || error.message.includes('ECONNREFUSED') || error.message.includes('fetch failed')) {
+                const connErr = new Error(`Connection error.`);
+                connErr.isConnectionError = true;
+                throw connErr;
+            }
+
+            logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'AiService.js', `Error during AI generation: ${error.message}`);
             logService.logErrorFile('AiService.js', 'Error during AI generation', error, { messages: messages ? 'Query sent (omitted for brevity)' : null });
             throw error;
         }
@@ -298,7 +325,7 @@ class AiService {
             try {
                 logService.logAiTraffic(options.logFolderPath, messages, content, config);
             } catch (err) {
-                logService.logTerminal('WARN', 'WARNING', 'AiService.js', `Failed to log AI traffic: ${err.message}`);
+                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiService.js', `Failed to log AI traffic: ${err.message}`);
             }
         }
 
@@ -307,8 +334,8 @@ class AiService {
         if (options.logAction) {
             const timeStr = durationMs < 1000 ? `${durationMs}ms` : logService.formatDuration(durationMs);
             const origin = 'AiService';
-            const symbol = options.logSymbol || 'LIGHTNING';
-            logService.logTerminal('INFO', symbol, origin, `[Model: ${selectedModel}] [Time: ${timeStr}] ${options.logAction}`);
+            const symbol = options.logSymbol || LOG_SYMBOLS.LIGHTNING;
+            logService.logTerminal(LOG_LEVELS.INFO, symbol, origin, `[Model: ${selectedModel}] [Time: ${timeStr}] ${options.logAction}`);
         }
 
         if (isJsonFormat) {
@@ -336,26 +363,58 @@ class AiService {
      * @param {AbortSignal} [signal] - Optional signal to abort the AI generation.
      * @returns {Promise<number[]>} Array of floating point numbers representing the embedding.
      */
-    async generateEmbedding(text, overrideConfig, embeddingModel, _signal) {
+    async generateEmbedding(text, overrideConfig, embeddingModel, _signal, options = {}) {
         let config = overrideConfig;
 
         if (!config) {
-            config = this._getModelConfigForTask('embedding', this._getEmbeddingModelConfig());
+            config = this._getModelConfigForTask(AI_TASK_TYPES.EMBEDDING, this._getEmbeddingModelConfig());
         }
 
         if (!config) {
             config = this._getEmbeddingModelConfig();
         }
 
-        await this.isHealthy('embedding', config);
+        await this.isHealthy(AI_MODEL_ROLES.EMBEDDING, config);
 
         const { client } = this._getClient(config);
         const model = embeddingModel || config.modelIdentifier || DEFAULT_EMBEDDING_MODEL;
 
-        const response = await client.embeddings.create({
-            model: model,
-            input: text
-        });
+        let response;
+        try {
+            const timeoutSignal = AbortSignal.timeout(120000);
+            const combinedSignal = _signal ? AbortSignal.any([_signal, timeoutSignal]) : timeoutSignal;
+
+            response = await client.embeddings.create({
+                model: model,
+                input: text
+            }, { signal: combinedSignal });
+        } catch (error) {
+            if (error.name === 'TimeoutError' || error.message.includes('Timeout')) {
+                const timeoutErr = new Error(`Connection error.`);
+                timeoutErr.isConnectionError = true;
+                throw timeoutErr;
+            }
+
+            if (error.code === 'ECONNREFUSED' || error.message.includes('ECONNREFUSED') || error.message.includes('fetch failed')) {
+                const connErr = new Error(`Connection error.`);
+                connErr.isConnectionError = true;
+                throw connErr;
+            }
+
+            logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'AiService.js', `Error during AI generation: ${error.message}`);
+            logService.logErrorFile('AiService.js', 'Error during AI generation', error, { text: text ? 'Query sent (omitted for brevity)' : null });
+            throw error;
+        }
+
+        logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.LIGHTNING, 'AiService', `[Model: ${model}] Embedding Prompt: "${text}"`);
+        
+        if (options.logFolderPath) {
+            try {
+                logService.logAiTraffic(options.logFolderPath, { task: AI_TASK_TYPES.EMBEDDING, text }, '[Vector Array Omitted for Brevity]', config);
+            } catch (err) {
+                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiService.js', `Failed to log AI traffic: ${err.message}`);
+            }
+        }
 
         return response.data[0].embedding;
     }
@@ -371,14 +430,14 @@ class AiService {
         let config = overrideConfig;
 
         if (!config) {
-            const defaultRole = taskType === 'embedding' ? 'embedding' : 'chat';
-            const defaultConfig = defaultRole === 'embedding' ? this._getEmbeddingModelConfig() : this._getChatModelConfig();
+            const defaultRole = taskType === AI_TASK_TYPES.EMBEDDING ? AI_MODEL_ROLES.EMBEDDING : AI_MODEL_ROLES.CHAT;
+            const defaultConfig = defaultRole === AI_MODEL_ROLES.EMBEDDING ? this._getEmbeddingModelConfig() : this._getChatModelConfig();
             config = this._getModelConfigForTask(taskType, defaultConfig);
         }
 
         const safeApiUrl = config.apiUrl || 'default local endpoint';
 
-        logService.logTerminal('INFO', 'INFO', 'AiService', `Spinning up model ${config.name} (${config.modelIdentifier}) at ${safeApiUrl}`);
+        logService.logTerminal(LOG_LEVELS.INFO, LOG_LEVELS.INFO, 'AiService', `Spinning up model ${config.name} (${config.modelIdentifier}) at ${safeApiUrl}`);
 
         try {
             await this.isHealthy(config.role, config);
@@ -386,7 +445,7 @@ class AiService {
 
             const startTime = Date.now();
 
-            if (config.role === 'embedding') {
+            if (config.role === AI_MODEL_ROLES.EMBEDDING) {
                 await client.embeddings.create({
                     model: config.modelIdentifier,
                     input: 'warmup'
@@ -402,13 +461,70 @@ class AiService {
             const durationMs = Date.now() - startTime;
             const timeStr = durationMs < 1000 ? `${durationMs}ms` : logService.formatDuration(durationMs);
 
-            logService.logTerminal('INFO', 'LIGHTNING', 'AiService', `Model ${config.name} (${config.modelIdentifier}) at ${safeApiUrl} spun up in ${timeStr}.`);
+            logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.LIGHTNING, 'AiService', `Model ${config.name} (${config.modelIdentifier}) at ${safeApiUrl} spun up in ${timeStr}.`);
 
             return { model: config.modelIdentifier, durationMs };
         } catch (error) {
-            logService.logTerminal('WARN', 'WARNING', 'AiService', `Failed to warm up model ${config.name}: ${error.message}`);
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiService', `Failed to warm up model ${config.name}: ${error.message}`);
             return { model: config.modelIdentifier || 'unknown', durationMs: 0 };
         }
+    }
+
+    /**
+     * Pre-warms AI models required for a list of tasks.
+     * Deduplicates configurations so the exact same model isn't spun up multiple times.
+     * @param {Array<string>} taskTypes - Array of task types from AI_TASK_TYPES.
+     * @returns {Promise<Array<{model: string, durationMs: number}>>}
+     */
+    async warmUpModels(taskTypes = []) {
+        const uniqueConfigs = new Map();
+
+        for (const taskType of taskTypes) {
+            const defaultRole = taskType === AI_TASK_TYPES.EMBEDDING ? AI_MODEL_ROLES.EMBEDDING : AI_MODEL_ROLES.CHAT;
+            const defaultConfig = defaultRole === AI_MODEL_ROLES.EMBEDDING ? this._getEmbeddingModelConfig() : this._getChatModelConfig();
+            const config = this._getModelConfigForTask(taskType, defaultConfig);
+            
+            if (config && config.modelIdentifier) {
+                uniqueConfigs.set(config.modelIdentifier, config);
+            }
+        }
+
+        const results = [];
+
+        for (const config of uniqueConfigs.values()) {
+            const safeApiUrl = config.apiUrl || 'default local endpoint';
+            logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.LIGHTNING, 'AiService', `Spinning up model ${config.name} (${config.modelIdentifier}) at ${safeApiUrl}`);
+
+            try {
+                await this.isHealthy(config.role, config);
+                const { client } = this._getClient(config);
+                const startTime = Date.now();
+
+                if (config.role === AI_MODEL_ROLES.EMBEDDING) {
+                    await client.embeddings.create({
+                        model: config.modelIdentifier,
+                        input: 'warmup'
+                    });
+                } else {
+                    await client.chat.completions.create({
+                        model: config.modelIdentifier,
+                        messages: [{ role: 'user', content: 'warmup' }],
+                        max_tokens: 1
+                    });
+                }
+
+                const durationMs = Date.now() - startTime;
+                const timeStr = durationMs < 1000 ? `${durationMs}ms` : logService.formatDuration(durationMs);
+
+                logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'AiService', `Model ${config.name} (${config.modelIdentifier}) spun up in ${timeStr}.`);
+                results.push({ model: config.modelIdentifier, durationMs });
+            } catch (error) {
+                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiService', `Failed to warm up model ${config.name}: ${error.message}`);
+                results.push({ model: config.modelIdentifier || 'unknown', durationMs: 0 });
+            }
+        }
+
+        return results;
     }
 
     /**
@@ -419,11 +535,11 @@ class AiService {
      * @returns {Promise<string>} The AI's response.
      * @throws {Error} If the AI connection fails.
      */
-    async testChat(message, role = 'chat', overrideConfig) {
+    async testChat(message, role = AI_MODEL_ROLES.CHAT, overrideConfig) {
         let config;
         if (overrideConfig) {
             config = overrideConfig;
-        } else if (role === 'embedding') {
+        } else if (role === AI_MODEL_ROLES.EMBEDDING) {
             config = this._getEmbeddingModelConfig();
         } else {
             config = this._getChatModelConfig();

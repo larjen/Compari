@@ -12,6 +12,7 @@ import { SaveButton } from '@/components/ui/SaveButton';
 import { EditButton } from '@/components/ui/EditButton';
 import { DeleteAction } from '@/components/ui/DeleteAction';
 import { Dimension } from '@/lib/types';
+import { TOAST_TYPES } from '@/lib/constants';
 
 export interface FieldFormData {
   fieldName: string;
@@ -53,49 +54,49 @@ export function BlueprintsTab({ isCreating, setIsCreating }: { isCreating: boole
 
   const handleCreate = async () => {
     if (!formData.name.trim() || !formData.requirementLabelSingular.trim() || !formData.offeringLabelSingular.trim()) {
-      addToast('error', 'Name and singular labels are required');
+      addToast(TOAST_TYPES.ERROR, 'Name and singular labels are required');
       return;
     }
 
     try {
       await addBlueprint({ ...formData });
       setIsCreating(false);
-      addToast('success', 'Blueprint created');
+      addToast(TOAST_TYPES.SUCCESS, 'Blueprint created');
     } catch (err) {
-      addToast('error', 'Failed to create blueprint');
+      addToast(TOAST_TYPES.ERROR, 'Failed to create blueprint');
     }
   };
 
   const handleUpdate = async (id: number) => {
     if (!editFormData.name.trim() || !editFormData.requirementLabelSingular.trim() || !editFormData.offeringLabelSingular.trim()) {
-      addToast('error', 'Name and singular labels are required');
+      addToast(TOAST_TYPES.ERROR, 'Name and singular labels are required');
       return;
     }
 
     try {
       await updateBlueprint(id, { ...editFormData });
       setEditingId(null);
-      addToast('success', 'Blueprint updated');
+      addToast(TOAST_TYPES.SUCCESS, 'Blueprint updated');
     } catch (err) {
-      addToast('error', 'Failed to update blueprint');
+      addToast(TOAST_TYPES.ERROR, 'Failed to update blueprint');
     }
   };
 
   const handleDelete = async (id: number) => {
     try {
       await deleteBlueprint(id);
-      addToast('success', 'Blueprint deleted');
+      addToast(TOAST_TYPES.SUCCESS, 'Blueprint deleted');
     } catch (err) {
-      addToast('error', 'Failed to delete blueprint');
+      addToast(TOAST_TYPES.ERROR, 'Failed to delete blueprint');
     }
   };
 
   const handleSetActive = async (id: number) => {
     try {
       await setActiveBlueprint(id);
-      addToast('success', 'Blueprint set as active');
+      addToast(TOAST_TYPES.SUCCESS, 'Blueprint set as active');
     } catch (err) {
-      addToast('error', 'Failed to set active blueprint');
+      addToast(TOAST_TYPES.ERROR, 'Failed to set active blueprint');
     }
   };
 

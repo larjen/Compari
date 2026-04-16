@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
+import { APP_EVENTS } from '@/lib/constants';
 import { SSEEntityUpdate, SSENotification, QueueStatus, SSEMatchUpdate } from '@/lib/types';
 
 export interface UseSSEOptions {
@@ -45,20 +46,22 @@ function initGlobalSSE() {
   globalEventSource = new EventSource('/api/events');
 
   globalEventSource.onopen = () => {
+    document.dispatchEvent(new CustomEvent('sse:connected'));
     if (wasDisconnected) {
       wasDisconnected = false;
       listeners.reconnect.forEach(cb => cb());
     }
   };
 
-  globalEventSource.addEventListener('entityUpdate', handleEvent('entityUpdate'));
-  globalEventSource.addEventListener('notification', handleEvent('notification'));
-  globalEventSource.addEventListener('queueUpdate', handleEvent('queueUpdate'));
-  globalEventSource.addEventListener('matchUpdate', handleEvent('matchUpdate'));
-  globalEventSource.addEventListener('blueprintUpdate', handleEvent('blueprintUpdate'));
+  globalEventSource.addEventListener(APP_EVENTS.ENTITY_UPDATE, handleEvent('entityUpdate'));
+  globalEventSource.addEventListener(APP_EVENTS.NOTIFICATION, handleEvent('notification'));
+  globalEventSource.addEventListener(APP_EVENTS.QUEUE_UPDATE, handleEvent('queueUpdate'));
+  globalEventSource.addEventListener(APP_EVENTS.MATCH_UPDATE, handleEvent('matchUpdate'));
+  globalEventSource.addEventListener(APP_EVENTS.BLUEPRINT_UPDATE, handleEvent('blueprintUpdate'));
 
   globalEventSource.onerror = () => {
     wasDisconnected = true;
+    document.dispatchEvent(new CustomEvent('sse:disconnected'));
     globalEventSource?.close();
     globalEventSource = null;
     if (reconnectTimeout) clearTimeout(reconnectTimeout);
@@ -81,6 +84,21 @@ export function useSSE({
   onBlueprintUpdate,
   onReconnect
 }: UseSSEOptions = {}) {
+  const [isConnected, setIsConnected] = useState(false);
+  const wasDisconnectedRef = useRef(false);
+  const onReconnectRef = useRef(onReconnect);
+  onReconnectRef.current = onReconnect;
+
+  useEffect(() => {
+    const handleConnected = () => setIsConnected(true);
+    const handleDisconnected = () => setIsConnected(false);
+    document.addEventListener('sse:connected', handleConnected);
+    document.addEventListener('sse:disconnected', handleDisconnected);
+    return () => {
+      document.removeEventListener('sse:connected', handleConnected);
+      document.removeEventListener('sse:disconnected', handleDisconnected);
+    };
+  }, []);
   
   useEffect(() => {
     if (connectionCount === 0) {
@@ -93,7 +111,17 @@ export function useSSE({
     if (onQueueUpdate) listeners.queueUpdate.add(onQueueUpdate);
     if (onMatchUpdate) listeners.matchUpdate.add(onMatchUpdate);
     if (onBlueprintUpdate) listeners.blueprintUpdate.add(onBlueprintUpdate);
-    if (onReconnect) listeners.reconnect.add(onReconnect);
+    
+    const handleReconnect = () => {
+      setIsConnected(true);
+      if (wasDisconnectedRef.current) {
+        console.log('[SSE] Reconnected to server. Triggering resync...');
+        if (onReconnectRef.current) onReconnectRef.current();
+      }
+      wasDisconnectedRef.current = false;
+    };
+    
+    listeners.reconnect.add(handleReconnect);
 
     return () => {
       if (onEntityUpdate) listeners.entityUpdate.delete(onEntityUpdate);
@@ -101,7 +129,7 @@ export function useSSE({
       if (onQueueUpdate) listeners.queueUpdate.delete(onQueueUpdate);
       if (onMatchUpdate) listeners.matchUpdate.delete(onMatchUpdate);
       if (onBlueprintUpdate) listeners.blueprintUpdate.delete(onBlueprintUpdate);
-      if (onReconnect) listeners.reconnect.delete(onReconnect);
+      listeners.reconnect.delete(handleReconnect);
 
       connectionCount--;
       if (connectionCount === 0) {
@@ -110,7 +138,7 @@ export function useSSE({
         globalEventSource = null;
       }
     };
-  }, [onEntityUpdate, onNotification, onQueueUpdate, onMatchUpdate, onBlueprintUpdate, onReconnect]);
+  }, [onEntityUpdate, onNotification, onQueueUpdate, onMatchUpdate, onBlueprintUpdate]);
 
   const reconnect = useCallback(() => {
     if (globalEventSource) {
@@ -120,5 +148,5 @@ export function useSSE({
     initGlobalSSE();
   }, []);
 
-  return { reconnect };
+  return { reconnect, isConnected };
 }

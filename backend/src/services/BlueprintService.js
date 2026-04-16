@@ -13,6 +13,7 @@
  * - ❌ MUST NOT contain business rules or workflow logic.
  */
 const eventService = require('./EventService');
+const { APP_EVENTS } = require('../config/constants');
 
 class BlueprintService {
     constructor({
@@ -79,7 +80,7 @@ class BlueprintService {
 
         const blueprintId = this._repo.createBlueprint(blueprintData, fields, dimensionIds);
         
-        eventService.emit('blueprintUpdate', { timestamp: Date.now() });
+        eventService.emit(APP_EVENTS.BLUEPRINT_UPDATE, { timestamp: Date.now() });
         
         return blueprintId;
     }
@@ -96,7 +97,7 @@ class BlueprintService {
      */
     updateBlueprint(id, updates, fields, dimensionIds) {
         this._repo.updateBlueprint(id, updates, fields, dimensionIds);
-        eventService.emit('blueprintUpdate', { timestamp: Date.now() });
+        eventService.emit(APP_EVENTS.BLUEPRINT_UPDATE, { timestamp: Date.now() });
     }
 
     /**
@@ -107,7 +108,7 @@ class BlueprintService {
      */
     setActiveBlueprint(id) {
         this._repo.setActiveBlueprint(id);
-        eventService.emit('blueprintUpdate', { timestamp: Date.now() });
+        eventService.emit(APP_EVENTS.BLUEPRINT_UPDATE, { timestamp: Date.now() });
     }
 
     /**
@@ -118,7 +119,7 @@ class BlueprintService {
      */
     deleteBlueprint(id) {
         this._repo.deleteBlueprint(id);
-        eventService.emit('blueprintUpdate', { timestamp: Date.now() });
+        eventService.emit(APP_EVENTS.BLUEPRINT_UPDATE, { timestamp: Date.now() });
     }
 }
 

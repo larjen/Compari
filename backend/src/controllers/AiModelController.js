@@ -19,6 +19,7 @@
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const aiModelRepo = require('../repositories/AiModelRepo');
+const { HTTP_STATUS } = require('../config/constants');
 
 class AiModelController {
     /**
@@ -45,7 +46,7 @@ class AiModelController {
         const model = aiModelRepo.getModelById(id);
         
         if (!model) {
-            throw new AppError(`AI model with ID ${id} not found`, 404);
+            throw new AppError(`AI model with ID ${id} not found`, HTTP_STATUS.NOT_FOUND);
         }
         
         res.json({ success: true, model });
@@ -106,7 +107,7 @@ class AiModelController {
         const id = aiModelRepo.createModel(modelData);
         const createdModel = aiModelRepo.getModelById(id);
         
-        res.status(201).json({ success: true, model: createdModel });
+        res.status(HTTP_STATUS.CREATED).json({ success: true, model: createdModel });
     });
 
     /**
@@ -122,7 +123,7 @@ class AiModelController {
         
         const existing = aiModelRepo.getModelById(id);
         if (!existing) {
-            throw new AppError(`AI model with ID ${id} not found`, 404);
+            throw new AppError(`AI model with ID ${id} not found`, HTTP_STATUS.NOT_FOUND);
         }
 
         const modelData = {
@@ -139,14 +140,14 @@ class AiModelController {
             const updated = aiModelRepo.updateModel(id, modelData);
             
             if (!updated) {
-                throw new AppError('Failed to update AI model', 500);
+                throw new AppError('Failed to update AI model', HTTP_STATUS.INTERNAL_SERVER_ERROR);
             }
 
             const updatedModel = aiModelRepo.getModelById(id);
             res.json({ success: true, model: updatedModel });
         } catch (err) {
             if (err.message === 'Cannot update system model') {
-                err.status = 403;
+                err.status = HTTP_STATUS.FORBIDDEN;
             }
             next(err);
         }
@@ -164,24 +165,24 @@ class AiModelController {
         
         const existing = aiModelRepo.getModelById(id);
         if (!existing) {
-            throw new AppError(`AI model with ID ${id} not found`, 404);
+            throw new AppError(`AI model with ID ${id} not found`, HTTP_STATUS.NOT_FOUND);
         }
 
         if (existing.isSystem) {
-            throw new AppError('Cannot delete system model', 403);
+            throw new AppError('Cannot delete system model', HTTP_STATUS.FORBIDDEN);
         }
 
         try {
             const deleted = aiModelRepo.deleteModel(id);
             
             if (!deleted) {
-                throw new AppError('Failed to delete AI model', 500);
+                throw new AppError('Failed to delete AI model', HTTP_STATUS.INTERNAL_SERVER_ERROR);
             }
 
             res.json({ success: true, message: 'AI model deleted successfully' });
         } catch (err) {
             if (err.message === 'Cannot delete system model') {
-                err.status = 403;
+                err.status = HTTP_STATUS.FORBIDDEN;
             }
             next(err);
         }
@@ -200,7 +201,7 @@ class AiModelController {
         const success = aiModelRepo.setActiveModel(id);
         
         if (!success) {
-            throw new AppError(`AI model with ID ${id} not found`, 404);
+            throw new AppError(`AI model with ID ${id} not found`, HTTP_STATUS.NOT_FOUND);
         }
 
         const updatedModel = aiModelRepo.getModelById(id);

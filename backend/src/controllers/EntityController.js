@@ -32,7 +32,7 @@ const logService = require('../services/LogService');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const { handleFileDownload } = require('../utils/fileHandler');
-const { QUEUE_TASKS, ENTITY_STATUS } = require('../config/constants');
+const { QUEUE_TASKS, ENTITY_STATUS, LOG_LEVELS, HTTP_STATUS } = require('../config/constants');
 
 class EntityController {
     /**
@@ -63,7 +63,7 @@ class EntityController {
     static getById = asyncHandler(async (req, res) => {
         const entity = entityService.getEntityById(req.params.id);
         if (!entity) {
-            throw new AppError('Entity not found', 404);
+            throw new AppError('Entity not found', HTTP_STATUS.NOT_FOUND);
         }
         res.json({ entity });
     });
@@ -116,12 +116,12 @@ class EntityController {
      */
     static uploadFile = asyncHandler(async (req, res) => {
         if (!req.file) {
-            throw new AppError('No document was uploaded.', 400);
+            throw new AppError('No document was uploaded.', HTTP_STATUS.BAD_REQUEST);
         }
 
         const entityId = req.params.id;
         if (!entityId) {
-            throw new AppError('Entity ID is required', 400);
+            throw new AppError('Entity ID is required', HTTP_STATUS.BAD_REQUEST);
         }
         
         const movedPath = entityService.uploadEntityFile(entityId, req.file);
@@ -136,7 +136,7 @@ class EntityController {
             fileName: req.file.filename
         });
         
-        logService.addActivityLog('Entity', entityId, 'INFO', `Document uploaded: ${req.file.filename}. Queued for AI processing.`, entity?.folderPath);
+        logService.addActivityLog('Entity', entityId, LOG_LEVELS.INFO, `Document uploaded: ${req.file.filename}. Queued for AI processing.`, entity?.folderPath);
         
         res.json({ success: true, message: 'File uploaded successfully. AI criteria extraction has been queued.', path: movedPath });
     });
@@ -150,12 +150,12 @@ class EntityController {
      */
     static uploadFiles = asyncHandler(async (req, res) => {
         if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
-            throw new AppError('No documents were uploaded.', 400);
+            throw new AppError('No documents were uploaded.', HTTP_STATUS.BAD_REQUEST);
         }
 
         const entityId = req.params.id;
         if (!entityId) {
-            throw new AppError('Entity ID is required', 400);
+            throw new AppError('Entity ID is required', HTTP_STATUS.BAD_REQUEST);
         }
         
         const movedPaths = entityService.uploadEntityFiles(entityId, req.files);
@@ -171,7 +171,7 @@ class EntityController {
                 fileName: file.filename
             });
             
-            logService.addActivityLog('Entity', entityId, 'INFO', `Document uploaded: ${file.filename}. Queued for AI processing.`, entity?.folderPath);
+            logService.addActivityLog('Entity', entityId, LOG_LEVELS.INFO, `Document uploaded: ${file.filename}. Queued for AI processing.`, entity?.folderPath);
         }
         
         res.json({ success: true, message: 'Files uploaded successfully. AI criteria extraction has been queued.', paths: movedPaths });
@@ -200,7 +200,7 @@ class EntityController {
     static downloadFile = asyncHandler(async (req, res) => {
         const entity = entityService.getEntityById(req.params.id);
         if (!entity) {
-            throw new AppError('Entity not found', 404);
+            throw new AppError('Entity not found', HTTP_STATUS.NOT_FOUND);
         }
         return handleFileDownload(res, entity, req.params.filename);
     });
@@ -324,7 +324,7 @@ class EntityController {
         
         const entity = entityService.getEntityById(id);
         if (!entity) {
-            throw new AppError('Entity not found', 404);
+            throw new AppError('Entity not found', HTTP_STATUS.NOT_FOUND);
         }
 
         let fileName = entity.metadata?.processingFileName;
@@ -347,7 +347,7 @@ class EntityController {
         }
 
         if (!fileName || !folderPath) {
-            throw new AppError('No processing file name found for retry. The file may have been deleted from the disk.', 400);
+            throw new AppError('No processing file name found for retry. The file may have been deleted from the disk.', HTTP_STATUS.BAD_REQUEST);
         }
 
         entityService.updateEntityStatus(id, ENTITY_STATUS.PENDING);
@@ -359,7 +359,7 @@ class EntityController {
             fileName 
         });
 
-        logService.addActivityLog('Entity', id, 'INFO', `Retrying AI extraction for: ${fileName}.`, folderPath);
+        logService.addActivityLog('Entity', id, LOG_LEVELS.INFO, `Retrying AI extraction for: ${fileName}.`, folderPath);
 
         res.json({ message: 'Queued for retry' });
     });

@@ -10,6 +10,7 @@
  */
 
 const z = require('zod');
+const { HTTP_STATUS, ERROR_MESSAGES } = require('../config/constants');
 
 /**
  * Middleware factory that creates a validation middleware for a given Zod schema.
@@ -34,8 +35,9 @@ const validate = (schema) => {
                     path: err.path.join('.'),
                     message: err.message
                 }));
-                const validationError = new Error('Validation failed');
-                validationError.status = 400;
+                // Use centralized constants instead of magic strings/numbers
+                const validationError = new Error(ERROR_MESSAGES.VALIDATION_FAILED);
+                validationError.status = HTTP_STATUS.BAD_REQUEST;
                 validationError.errors = errors;
                 return next(validationError);
             }

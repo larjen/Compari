@@ -10,6 +10,7 @@ import { useDimensions } from '@/hooks/useDimensions';
 import { formatPercentage } from '@/lib/utils';
 import { CriterionPill } from '@/components/shared/CriterionPill';
 import { Button } from '@/components/ui';
+import { TOAST_TYPES } from '@/lib/constants';
 
 interface MergeTabProps {
   criterion: Criterion;
@@ -38,11 +39,11 @@ export function MergeTab({ criterion, onMerged }: MergeTabProps) {
     setIsProcessing(true);
     try {
       await criteriaApi.mergeCriteria(criterion.id, removeId);
-      addToast('success', 'Criteria merged successfully');
+      addToast(TOAST_TYPES.SUCCESS, 'Criteria merged successfully');
       setSimilar(prev => prev.filter(s => s.criterion.id !== removeId));
       onMerged();
     } catch (err) {
-      addToast('error', 'Failed to merge criteria');
+      addToast(TOAST_TYPES.ERROR, 'Failed to merge criteria');
     } finally {
       setIsProcessing(false);
       setConfirmId(null);

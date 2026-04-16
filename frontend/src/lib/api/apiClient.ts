@@ -17,9 +17,12 @@
  * - GET requests automatically append _t=${Date.now()} to bust browser cache
  * - All responses are checked for !res.ok and throw standardized errors
  * - Error messages are extracted from JSON response when available
+ * 
+ * @deps
+ * - Relies on centralized API_BASE_PATH, HTTP_METHODS, and FETCH_CACHE_MODES from lib/constants.ts
  */
 
-const API_BASE = '/api';
+import { API_BASE_PATH, HTTP_METHODS, FETCH_CACHE_MODES } from '../constants';
 
 /**
  * Options for fetch requests.
@@ -56,10 +59,10 @@ export async function fetchWrapper<T = any>(
 ): Promise<T> {
   const { params, skipCacheBust, ...fetchOptions } = options;
   
-  let url = `${API_BASE}${endpoint}`;
+  let url = `${API_BASE_PATH}${endpoint}`;
   
   // Add cache-busting query param for GET requests
-  if (fetchOptions.method === undefined || fetchOptions.method === 'GET') {
+  if (fetchOptions.method === undefined || fetchOptions.method === HTTP_METHODS.GET) {
     const separator = url.includes('?') ? '&' : '?';
     url += `${separator}_t=${Date.now()}`;
   }
@@ -77,7 +80,7 @@ export async function fetchWrapper<T = any>(
   const res = await fetch(url, {
     ...fetchOptions,
     // Set cache: 'no-store' for GET requests to prevent caching
-    cache: fetchOptions.method === 'GET' ? 'no-store' : undefined,
+    cache: fetchOptions.method === HTTP_METHODS.GET ? FETCH_CACHE_MODES.NO_STORE : undefined,
   });
   
   if (!res.ok) {

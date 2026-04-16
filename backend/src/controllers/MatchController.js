@@ -26,6 +26,7 @@ const matchService = require('../services/MatchService');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const { handleFileDownload } = require('../utils/fileHandler');
+const { HTTP_STATUS } = require('../config/constants');
 
 class MatchController {
     /**
@@ -56,7 +57,7 @@ class MatchController {
         const { id } = req.params;
         const match = matchService.getMatchById(id);
         if (!match) {
-            throw new AppError('Match not found', 404);
+            throw new AppError('Match not found', HTTP_STATUS.NOT_FOUND);
         }
         res.json({ match });
     });
@@ -130,7 +131,7 @@ class MatchController {
         const match = matchService.getMatchById(id);
 
         if (!match) {
-            throw new AppError('Match not found', 404);
+            throw new AppError('Match not found', HTTP_STATUS.NOT_FOUND);
         }
 
         const docs = matchService.getDocumentsForMatch(id);
@@ -173,7 +174,7 @@ class MatchController {
         const match = matchService.getMatchById(matchId);
         
         if (!match) {
-            throw new AppError('Match not found', 404);
+            throw new AppError('Match not found', HTTP_STATUS.NOT_FOUND);
         }
 
         const safeReqName = (match.requirement_name || "Requirement").replace(/[/\\?%*:|"<>]/g, '-');

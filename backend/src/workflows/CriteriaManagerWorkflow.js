@@ -28,6 +28,7 @@ const DynamicSchemaBuilder = require('../utils/DynamicSchemaBuilder');
 const MatchingEngine = require('../utils/MatchingEngine');
 const AiValidator = require('../utils/AiValidator');
 const { cosineSimilarity } = require('../utils/VectorMath');
+const { ENTITY_ROLES, LOG_LEVELS, LOG_SYMBOLS, SETTING_KEYS } = require('../config/constants');
 const path = require('path');
 
 class CriteriaManagerWorkflow {
@@ -75,7 +76,7 @@ class CriteriaManagerWorkflow {
         try {
             parsed = JSON.parse(jsonStr);
         } catch (e) {
-            logService.logTerminal('ERROR', 'ERROR', 'CriteriaManagerWorkflow', `JSON Parse Error: ${e.message}`);
+            logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'CriteriaManagerWorkflow', `JSON Parse Error: ${e.message}`);
             throw new Error(`Failed to parse dimension JSON. AI returned: ${responseString.substring(0, 100)}...`);
         }
 
@@ -136,7 +137,7 @@ class CriteriaManagerWorkflow {
      * const dimensions = { core_competencies: ['Java', 'Python'], soft_skills: ['Communication'] };
      * const criteriaBatch = await this._processDimensionsAndGenerateEmbeddings(dimensions, signal, true, true);
      */
-    async _processDimensionsAndGenerateEmbeddings(dimensions, signal, deduplicate = false, isRequired = true) {
+    async _processDimensionsAndGenerateEmbeddings(dimensions, signal, deduplicate = false, isRequired = true, folderPath = null) {
         const criteriaBatch = [];
         const seenNormalized = new Set();
 
@@ -157,9 +158,20 @@ class CriteriaManagerWorkflow {
                 if (existingCriterion) {
                     embedding = existingCriterion.embedding;
                 } else {
-                    embedding = await AiService.generateEmbedding(criterionName, undefined, undefined, signal);
+                    /**
+                     * SEMANTIC EMBEDDING GENERATION (Context-Anchored)
+                     * @rationale We use a lightweight tagging format: "[Dimension Display Name] Keyword".
+                     * This provides BGE-M3 with enough context to resolve polysemy.
+                     * We look up the dimension's display name to ensure natural language 
+                     * tokenization, falling back to a string replacement if not found.
+                     */
+                    const dimRecord = dimensionRepo.getActiveDimensions().find(d => d.name === dimension);
+                    const tag = dimRecord ? dimRecord.displayName : dimension.replace(/_/g, ' ');
+                    const contextualizedText = `[${tag}] ${criterionName}`;
+                    embedding = await AiService.generateEmbedding(contextualizedText, undefined, undefined, signal, { logFolderPath: folderPath });
                 }
 
+                // Ensure this remains unchanged so the UI stays clean:
                 const criterionObj = {
                     normalizedName,
                     displayName: criterionName,
@@ -243,11 +255,11 @@ class CriteriaManagerWorkflow {
         const entity = entityRepo.getEntityById(entityId);
 
         if (!entity) {
-            logService.logTerminal('WARN', 'WARNING', 'CriteriaManagerWorkflow', `Entity #${entityId} not found for extraction`);
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'CriteriaManagerWorkflow', `Entity #${entityId} not found for extraction`);
             return;
         }
 
-        const entityRole = entity.type || 'offering';
+        const entityRole = entity.type || ENTITY_ROLES.OFFERING;
 
         let activeDimensions = [];
 
@@ -256,12 +268,12 @@ class CriteriaManagerWorkflow {
         }
 
         if (activeDimensions.length === 0) {
-            logService.logTerminal('WARN', 'WARNING', 'CriteriaManagerWorkflow', 'No blueprint dimensions found, falling back to global active dimensions.');
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'CriteriaManagerWorkflow', 'No blueprint dimensions found, falling back to global active dimensions.');
             activeDimensions = dimensionRepo.getActiveDimensions();
         }
 
         if (activeDimensions.length === 0) {
-            logService.logTerminal('WARN', 'WARNING', 'CriteriaManagerWorkflow', 'No active dimensions found in database.');
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'CriteriaManagerWorkflow', 'No active dimensions found in database.');
             return;
         }
 
@@ -281,7 +293,7 @@ class CriteriaManagerWorkflow {
 
                 const { content } = await AiService.generateChatResponse(
                     messages,
-                    { format: extractionSchema, logFolderPath: entity.folderPath, logAction: `Extracted dimension '${dim.display_name}' for Entity #${entityId}.` },
+                    { format: extractionSchema, logFolderPath: entity.folderPath, logAction: `Extracted dimension '${dim.displayName}' for Entity #${entityId}.` },
                     undefined, undefined, signal
                 );
 
@@ -294,14 +306,14 @@ class CriteriaManagerWorkflow {
                     combinedDimensions[dim.name] = [];
                 }
             } catch (err) {
-                logService.logTerminal('ERROR', 'ERROR', 'CriteriaManagerWorkflow', `Failed to extract dimension '${dim.name}' for Entity #${entityId}: ${err.message}`);
+                logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'CriteriaManagerWorkflow', `Failed to extract dimension '${dim.name}' for Entity #${entityId}: ${err.message}`);
                 logService.logErrorFile('CriteriaManagerWorkflow', `Failed to extract dimension '${dim.name}' for Entity #${entityId}`, err);
                 combinedDimensions[dim.name] = [];
             }
         });
 
         // Execute all chunked requests based on concurrency setting
-        const allowConcurrent = SettingsManager.get('allow_concurrent_ai') === 'true';
+        const allowConcurrent = SettingsManager.get(SETTING_KEYS.ALLOW_CONCURRENT_AI) === 'true';
         if (allowConcurrent) {
             await Promise.all(extractionTasks.map(t => t()));
         } else {
@@ -314,7 +326,7 @@ class CriteriaManagerWorkflow {
 
         if (AiValidator.isEmptyExtraction(dimensions, activeDimensions)) {
             const inputPreview = text.trim().substring(0, 200);
-            logService.logTerminal('WARN', 'WARNING', 'CriteriaManagerWorkflow', `AI returned completely empty dimensions for Entity #${entityId}. Input text preview: "${inputPreview}"`);
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'CriteriaManagerWorkflow', `AI returned completely empty dimensions for Entity #${entityId}. Input text preview: "${inputPreview}"`);
             logService.logErrorFile('CriteriaManagerWorkflow', `AI returned completely empty dimensions for Entity #${entityId}`, null, { entityId, inputLength: text.length, inputPreview });
             return;
         }
@@ -329,22 +341,22 @@ class CriteriaManagerWorkflow {
             logService.addActivityLog(
                 'Entity',
                 entityId,
-                'INFO',
+                LOG_LEVELS.INFO,
                 `Extracted ${activeDimensions.length}-Dimension criteria from entity text.`,
                 entity.folderPath,
                 criteriaByDimension
             );
         } catch (err) {
-            logService.logTerminal('ERROR', 'ERROR', 'CriteriaManagerWorkflow', `Failed to log criteria extraction: ${err.message}`);
+            logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'CriteriaManagerWorkflow', `Failed to log criteria extraction: ${err.message}`);
         }
 
         // Determine if entity is a requirement (has isRequired=true) or offering (has isRequired=null)
         // Requirements define required criteria, Offerings possess them
-        const isRequired = entity && entity.type === 'requirement' ? true : false;
+        const isRequired = entity && entity.type === ENTITY_ROLES.REQUIREMENT ? true : false;
 
         entityService.updateProcessingStep(entityId, 'Vectorizing Criteria');
 
-        const criteriaBatch = await this._processDimensionsAndGenerateEmbeddings(dimensions, signal, false, isRequired);
+        const criteriaBatch = await this._processDimensionsAndGenerateEmbeddings(dimensions, signal, false, isRequired, entity.folderPath);
 
         const insertedCount = criteriaRepo.insertEntityCriteriaBatch(entityId, criteriaBatch);
 
@@ -353,7 +365,7 @@ class CriteriaManagerWorkflow {
         // methods exclude heavy vector data.
         const allDbCriteria = criteriaRepo._getAllCriteriaWithEmbeddings();
 
-        const threshold = parseFloat(SettingsManager.get('auto_merge_threshold')) || 0.95;
+        const threshold = parseFloat(SettingsManager.get(SETTING_KEYS.AUTO_MERGE_THRESHOLD)) || 0.95;
 
         // State Tracking: Prevents duplicate merge attempts caused by the AI extracting identical criteria across different dimensions.
         const deletedCriteriaIds = new Set();
@@ -391,7 +403,7 @@ class CriteriaManagerWorkflow {
 
                         // --- LLM VERIFICATION GATE ---
                         // Check if AI verification is enabled - if not, trust the vector match
-                        const isAiVerificationEnabled = SettingsManager.get('ai_verify_merges') === 'true';
+                        const isAiVerificationEnabled = SettingsManager.get(SETTING_KEYS.AI_VERIFY_MERGES) === 'true';
 
                         let isSynonym = true;
 
@@ -401,26 +413,26 @@ class CriteriaManagerWorkflow {
                         }
 
                         if (!isSynonym) {
-                            logService.logTerminal('INFO', 'INFO', 'CriteriaManager', `Merge rejected by AI Gate: "${newTitle}" !== "${existingTitle}" (Vector Likeness: ${Math.round(score * 100)}%)`);
+                            logService.logTerminal(LOG_LEVELS.INFO, LOG_LEVELS.INFO, 'CriteriaManager', `Merge rejected by AI Gate: "${newTitle}" !== "${existingTitle}" (Vector Likeness: ${Math.round(score * 100)}%)`);
                             continue;
                         }
 
                         await criteriaService.mergeCriteria(linked.id, newCriterionFull.id);
                         // State Management: Track merged criterion to prevent duplicate merge attempts in same batch
                         deletedCriteriaIds.add(newCriterionFull.id);
-                        logService.logTerminal('INFO', 'CHECKMARK', 'CriteriaManager', `Auto-merged ${newTitle} into ${existingTitle} (Likeness: ${Math.round(score * 100)}%)`);
+                        logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'CriteriaManager', `Auto-merged ${newTitle} into ${existingTitle} (Likeness: ${Math.round(score * 100)}%)`);
                         break;
                     }
                 } catch (e) {
-                    logService.logTerminal('WARN', 'WARNING', 'CriteriaManagerWorkflow', `Similarity check failed: ${e.message}`);
+                    logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'CriteriaManagerWorkflow', `Similarity check failed: ${e.message}`);
                 }
             }
         }
 
         try {
-            logService.addActivityLog('Entity', entityId, 'INFO', `Stored ${insertedCount} criteria across ${activeDimensions.length} dimensions with embeddings.`, entity.folderPath);
+            logService.addActivityLog('Entity', entityId, LOG_LEVELS.INFO, `Stored ${insertedCount} criteria across ${activeDimensions.length} dimensions with embeddings.`, entity.folderPath);
         } catch (err) {
-            logService.logTerminal('ERROR', 'ERROR', 'CriteriaManagerWorkflow', `Failed to log criteria storage: ${err.message}`);
+            logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'CriteriaManagerWorkflow', `Failed to log criteria storage: ${err.message}`);
         }
     }
 
@@ -546,8 +558,8 @@ class CriteriaManagerWorkflow {
 
         const activeDimensions = dimensionRepo.getActiveDimensions();
 
-        const minFloorSetting = parseFloat(SettingsManager.get('minimum_match_floor')) || 0.50;
-        const perfectScoreSetting = parseFloat(SettingsManager.get('perfect_match_score')) || 0.85;
+        const minFloorSetting = parseFloat(SettingsManager.get(SETTING_KEYS.MINIMUM_MATCH_FLOOR)) || 0.50;
+        const perfectScoreSetting = parseFloat(SettingsManager.get(SETTING_KEYS.PERFECT_MATCH_SCORE)) || 0.85;
 
         const matchSettings = {
             minimumFloor: minFloorSetting,
@@ -613,7 +625,7 @@ class CriteriaManagerWorkflow {
     async extractEntityCriteriaFromFile(entityId, fileName, signal) {
         const entity = entityRepo.getEntityById(entityId);
         if (!entity || !entity.folderPath) {
-            logService.logTerminal('WARN', 'WARNING', 'CriteriaManagerWorkflow', 'Cannot extract criteria: entity not found or has no folder path');
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'CriteriaManagerWorkflow', 'Cannot extract criteria: entity not found or has no folder path');
             return 0;
         }
 
@@ -625,7 +637,7 @@ class CriteriaManagerWorkflow {
 
             const text = await FileService.extractTextFromFile(filePath);
             if (!text || text.trim().length === 0) {
-                logService.logTerminal('WARN', 'WARNING', 'CriteriaManagerWorkflow', `No text content extracted from file: ${fileName}`);
+                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'CriteriaManagerWorkflow', `No text content extracted from file: ${fileName}`);
                 entityService.updateEntityStatus(entityId, null);
                 return 0;
             }
@@ -635,7 +647,7 @@ class CriteriaManagerWorkflow {
             logService.addActivityLog(
                 'Entity',
                 entityId,
-                'INFO',
+                LOG_LEVELS.INFO,
                 `Extracted criteria from file: ${fileName}`,
                 entity.folderPath
             );
@@ -644,13 +656,13 @@ class CriteriaManagerWorkflow {
 
             return 1;
         } catch (error) {
-            logService.logTerminal('ERROR', 'ERROR', 'CriteriaManagerWorkflow', `Failed to extract criteria from file: ${error.message}`);
+            logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'CriteriaManagerWorkflow', `Failed to extract criteria from file: ${error.message}`);
             logService.logErrorFile('CriteriaManagerWorkflow', `Failed to extract criteria from file: ${fileName}`, error);
             entityService.updateEntityStatus(entityId, null);
             logService.addActivityLog(
                 'Entity',
                 entityId,
-                'ERROR',
+                LOG_LEVELS.ERROR,
                 `Failed to extract criteria from file: ${fileName} - ${error.message}`,
                 entity.folderPath
             );

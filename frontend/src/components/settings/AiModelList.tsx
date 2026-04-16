@@ -7,6 +7,7 @@ import { SaveButton } from '@/components/ui/SaveButton';
 import { EditButton } from '@/components/ui/EditButton';
 import { DeleteAction } from '@/components/ui/DeleteAction';
 import { AiModel } from '@/lib/types';
+import { AI_MODEL_ROLES } from '@/lib/constants';
 
 export interface ModelFormData {
   name: string;

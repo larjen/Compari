@@ -17,6 +17,7 @@
 
 const { cosineSimilarity } = require('./VectorMath');
 const logService = require('../services/LogService');
+const { LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 /**
  * Calculates scaled points for a match score using a sliding scale.
@@ -218,7 +219,7 @@ function calculate(requirementCriteria, offeringCriteria) {
                     bestOfferingId = offering.id;
                 }
             } catch (err) {
-                logService.logTerminal('WARN', 'WARNING', 'MatchingEngine', `Vector similarity calculation failed: ${err.message}`);
+                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'MatchingEngine', `Vector similarity calculation failed: ${err.message}`);
                 continue;
             }
         }
@@ -461,7 +462,7 @@ function buildRawComparison(requirement, offering, activeDimensions, matchSettin
                             };
                         }
                     } catch (err) {
-                        logService.logTerminal('WARN', 'WARNING', 'MatchingEngine', `Vector similarity calculation failed: ${err.message}`);
+                        logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'MatchingEngine', `Vector similarity calculation failed: ${err.message}`);
                     }
                 }
 
@@ -528,7 +529,7 @@ function buildRawComparison(requirement, offering, activeDimensions, matchSettin
                             };
                         }
                     } catch (err) {
-                        logService.logTerminal('WARN', 'WARNING', 'MatchingEngine', `Vector similarity calculation failed: ${err.message}`);
+                        logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'MatchingEngine', `Vector similarity calculation failed: ${err.message}`);
                     }
                 }
 

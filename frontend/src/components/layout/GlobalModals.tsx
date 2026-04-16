@@ -3,6 +3,7 @@
 import { useModal } from '@/hooks/useModal';
 import { useToast } from '@/hooks/useToast';
 import { SettingsModal } from '@/components/modals';
+import { MODAL_TYPES, TOAST_TYPES } from '@/lib/constants';
 
 export function GlobalModals() {
   const { activeModal, closeModal } = useModal();
@@ -10,10 +11,10 @@ export function GlobalModals() {
 
   return (
     <SettingsModal
-      open={activeModal === 'settings'}
+      open={activeModal === MODAL_TYPES.SETTINGS}
       onClose={closeModal}
-      onSuccess={(msg) => addToast('success', msg)}
-      onError={(msg) => addToast('error', msg)}
+      onSuccess={(msg) => addToast(TOAST_TYPES.SUCCESS, msg)}
+      onError={(msg) => addToast(TOAST_TYPES.ERROR, msg)}
     />
   );
 }

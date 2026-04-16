@@ -23,6 +23,7 @@
 
 const criteriaService = require('../services/CriteriaService');
 const asyncHandler = require('../utils/asyncHandler');
+const { HTTP_STATUS } = require('../config/constants');
 
 class CriteriaController {
     /**
@@ -66,7 +67,7 @@ class CriteriaController {
         const criterion = criteriaService.getCriterionByIdForApi(id);
         
         if (!criterion) {
-            return res.status(404).json({ error: 'Criterion not found' });
+            return res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Criterion not found' });
         }
         
         res.json(criterion);

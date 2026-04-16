@@ -24,6 +24,7 @@
 const blueprintService = require('../services/BlueprintService');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
+const { HTTP_STATUS } = require('../config/constants');
 
 class BlueprintController {
     /**
@@ -49,7 +50,7 @@ class BlueprintController {
     static getById = asyncHandler(async (req, res) => {
         const blueprint = blueprintService.getBlueprintById(req.params.id);
         if (!blueprint) {
-            throw new AppError('Blueprint not found', 404);
+            throw new AppError('Blueprint not found', HTTP_STATUS.NOT_FOUND);
         }
         res.json({ blueprint });
     });
@@ -77,7 +78,7 @@ class BlueprintController {
             dimensionIds || []
         );
         
-        res.status(201).json({ success: true, blueprintId });
+        res.status(HTTP_STATUS.CREATED).json({ success: true, blueprintId });
     });
 
     /**
@@ -93,7 +94,7 @@ class BlueprintController {
         
         const existing = blueprintService.getBlueprintById(id);
         if (!existing) {
-            throw new AppError('Blueprint not found', 404);
+            throw new AppError('Blueprint not found', HTTP_STATUS.NOT_FOUND);
         }
         
         const updates = {};
@@ -124,7 +125,7 @@ class BlueprintController {
         
         const existing = blueprintService.getBlueprintById(id);
         if (!existing) {
-            throw new AppError('Blueprint not found', 404);
+            throw new AppError('Blueprint not found', HTTP_STATUS.NOT_FOUND);
         }
         
         blueprintService.setActiveBlueprint(id);
@@ -144,11 +145,11 @@ class BlueprintController {
         
         const existing = blueprintService.getBlueprintById(id);
         if (!existing) {
-            throw new AppError('Blueprint not found', 404);
+            throw new AppError('Blueprint not found', HTTP_STATUS.NOT_FOUND);
         }
         
         if (existing.isActive) {
-            throw new AppError('Cannot delete the active blueprint. Please set another blueprint as active first.', 400);
+            throw new AppError('Cannot delete the active blueprint. Please set another blueprint as active first.', HTTP_STATUS.BAD_REQUEST);
         }
         
         blueprintService.deleteBlueprint(id);

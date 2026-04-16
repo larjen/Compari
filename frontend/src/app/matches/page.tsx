@@ -17,9 +17,9 @@ import { Loader2, FileSearch } from 'lucide-react';
 import { EmptyState, ContentLoader } from '@/components/shared/PageStates';
 import { AnimatedDataGrid } from '@/components/shared/AnimatedDataGrid';
 import { EntityMatch } from '@/lib/types';
-import { ITEMS_PER_PAGE } from '@/lib/ui-configs';
+import { UI_CONFIG } from '@/lib/constants';
 import { matchApi } from '@/lib/api/matchApi';
-import { ENTITY_STATUS } from '@/lib/constants';
+import { ENTITY_STATUS, TOAST_TYPES, MODAL_TYPES } from '@/lib/constants';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -41,7 +41,7 @@ function MatchesPageContent() {
 
   const { matches, loading, addMatch, deleteMatch, handleMatchUpdate, totalPages, refetch } = useMatches({
     page,
-    limit: ITEMS_PER_PAGE,
+    limit: UI_CONFIG.PAGINATION.ITEMS_PER_PAGE,
     search: debouncedSearch,
     status,
   });
@@ -90,7 +90,7 @@ function MatchesPageContent() {
   const selectedMatchData = localMatch || deepLinkedMatch;
 
   useEffect(() => {
-    if (activeModal === 'create-match') {
+    if (activeModal === MODAL_TYPES.CREATE_MATCH) {
       setCreateMatchOpen(true);
       closeModal();
     }
@@ -103,10 +103,10 @@ function MatchesPageContent() {
   const handleCreateMatch = async (sourceId: number, targetId: number): Promise<number> => {
     try {
       const matchId = await addMatch(sourceId, targetId);
-      addToast('success', 'Match created and assessment queued');
+      addToast(TOAST_TYPES.SUCCESS, 'Match created and assessment queued');
       return matchId;
     } catch (err) {
-      addToast('error', 'Failed to create match');
+      addToast(TOAST_TYPES.ERROR, 'Failed to create match');
       throw err;
     }
   };
@@ -114,10 +114,10 @@ function MatchesPageContent() {
   const handleDeleteMatch = async (id: number) => {
     try {
       await deleteMatch(id);
-      addToast('success', 'Match deleted successfully');
+      addToast(TOAST_TYPES.SUCCESS, 'Match deleted successfully');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete match';
-      addToast('error', message);
+      addToast(TOAST_TYPES.ERROR, message);
       throw err;
     }
   };
@@ -125,11 +125,11 @@ function MatchesPageContent() {
   const handleRetryProcessing = async (matchId: number) => {
     try {
       await matchApi.retryProcessing(matchId);
-      addToast('success', 'Match assessment queued for retry');
+      addToast(TOAST_TYPES.SUCCESS, 'Match assessment queued for retry');
       refetch();
     } catch (err) {
       console.error('Failed to retry:', err);
-      addToast('error', 'Failed to retry match assessment');
+      addToast(TOAST_TYPES.ERROR, 'Failed to retry match assessment');
     }
   };
 

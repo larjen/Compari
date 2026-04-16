@@ -6,10 +6,12 @@
  * - Provides strict type-safe schemas for all domain entities.
  * - Eliminates manual validation logic from controllers.
  * - Enforces DRY principle by centralizing validation rules.
+ * - Uses centralized constants from ../config/constants.js to prevent magic strings.
  * - Used by validateZod middleware for request body parsing.
  */
 
 const { z } = require('zod');
+const { ENTITY_ROLES, AI_MODEL_ROLES } = require('../config/constants');
 
 /**
  * @typedef {Object} AiModelInput
@@ -31,7 +33,7 @@ const aiModelSchema = z.object({
     model_identifier: z.string().min(1, 'model_identifier is required'),
     api_url: z.string().nullable().optional(),
     api_key: z.string().nullable().optional(),
-    role: z.enum(['chat', 'embedding']),
+    role: z.enum(Object.values(AI_MODEL_ROLES)),
     temperature: z.number().min(0).max(2).nullable().optional(),
     contextWindow: z.number().int().min(1024).nullable().optional()
 });
@@ -88,7 +90,7 @@ const dimensionSchema = z.object({
  * @type {z.ZodSchema<EntityInput>}
  */
 const entitySchema = z.object({
-    type: z.enum(['requirement', 'offering']),
+    type: z.enum(Object.values(ENTITY_ROLES)),
     name: z.string().min(1, 'name is required')
 });
 

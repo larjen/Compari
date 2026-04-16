@@ -33,7 +33,9 @@ const {
     UPLOADS_DIR,
     DATA_DIR,
     REQUIREMENTS_DIR,
-    MATCH_REPORTS_DIR
+    MATCH_REPORTS_DIR,
+    LOG_LEVELS,
+    LOG_SYMBOLS
 } = require('../config/constants');
 
 class FileService {
@@ -228,7 +230,7 @@ class FileService {
                     try {
                         results.push(JSON.parse(trimmed));
                     } catch (parseError) {
-                        logService.logTerminal('WARN', 'WARNING', 'FileService', `Failed to parse JSONL line: ${parseError.message}`);
+                        logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'FileService', `Failed to parse JSONL line: ${parseError.message}`);
                     }
                 }
             }
@@ -251,7 +253,7 @@ class FileService {
      */
     openFolderInOS(folderPath) {
         if (!folderPath || !fs.existsSync(folderPath)) {
-            logService.logTerminal('WARN', 'WARNING', 'FileService', `Cannot open folder: path does not exist: ${folderPath}`);
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'FileService', `Cannot open folder: path does not exist: ${folderPath}`);
             return;
         }
 
@@ -259,15 +261,15 @@ class FileService {
         
         if (platform === 'win32') {
             exec(`explorer "${folderPath}"`, (error) => {
-                if (error) logService.logTerminal('ERROR', 'ERROR', 'FileService', `Failed to open folder on Windows: ${error.message}`);
+                if (error) logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'FileService', `Failed to open folder on Windows: ${error.message}`);
             });
         } else if (platform === 'darwin') {
             exec(`open "${folderPath}"`, (error) => {
-                if (error) logService.logTerminal('ERROR', 'ERROR', 'FileService', `Failed to open folder on macOS: ${error.message}`);
+                if (error) logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'FileService', `Failed to open folder on macOS: ${error.message}`);
             });
         } else if (platform === 'linux') {
             exec(`xdg-open "${folderPath}"`, (error) => {
-                if (error) logService.logTerminal('ERROR', 'ERROR', 'FileService', `Failed to open folder on Linux: ${error.message}`);
+                if (error) logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'FileService', `Failed to open folder on Linux: ${error.message}`);
             });
         }
     }

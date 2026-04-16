@@ -28,6 +28,7 @@
  */
 
 const logService = require('../services/LogService');
+const { LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 class Logger {
     /**
@@ -52,11 +53,11 @@ class Logger {
 
             const startTime = Date.now();
 
-            logService.logTerminal('INFO', 'NONE', 'HTTP', `INCOMING: ${req.method} ${req.url}`);
+            logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.NONE, 'HTTP', `INCOMING: ${req.method} ${req.url}`);
 
             res.on('finish', () => {
                 const duration = Date.now() - startTime;
-                logService.logTerminal('INFO', 'NONE', 'HTTP', `RESOLVED: ${req.method} ${req.url} (${res.statusCode}) - ${duration}ms`);
+                logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.NONE, 'HTTP', `RESOLVED: ${req.method} ${req.url} (${res.statusCode}) - ${duration}ms`);
             });
 
             next();

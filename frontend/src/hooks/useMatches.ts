@@ -18,6 +18,7 @@ import { EntityMatch, SSEMatchUpdate } from '@/lib/types';
 import { matchApi, MatchQueryParams, MatchQueryResponse } from '@/lib/api/matchApi';
 import { useSafeFetch } from './useSafeFetch';
 import { useSSE } from './useSSE';
+import { useProcessingWatchdog } from './useProcessingWatchdog';
 
 export interface UseMatchesOptions extends MatchQueryParams {
   immediate?: boolean;
@@ -41,6 +42,13 @@ export function useMatches({ page, limit, search, status, immediate = true }: Us
     onMatchUpdate: handleMatchUpdate,
     onReconnect: fetchMatches
   });
+
+  useProcessingWatchdog(
+    matches,
+    'status',
+    'processing',
+    refetch
+  );
 
   const addMatch = async (requirementEntityId: number, offeringEntityId: number) => {
     const matchId = await matchApi.createMatch(requirementEntityId, offeringEntityId);

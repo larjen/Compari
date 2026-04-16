@@ -19,7 +19,7 @@ After installing Ollama, open your terminal and pull the required local AI model
 ```bash
 ollama pull gemma4:e4b
 ollama pull gemma4:e2b
-ollama pull nomic-embed-text
+ollama pull bge-m3
 ```
 
 ### Download

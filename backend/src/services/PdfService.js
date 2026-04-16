@@ -21,6 +21,7 @@
 
 const pdf = require('pdf-parse');
 const logService = require('./LogService');
+const { LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 /**
  * Renders a PDF page with proper text formatting.
@@ -72,7 +73,7 @@ async function extractTextFromPDF(filePath) {
         const data = await pdf(dataBuffer, { pagerender: _renderPage });
         return data.text;
     } catch (error) {
-        logService.logTerminal('ERROR', 'ERROR', 'PdfService', `Failed to extract text from PDF: ${error.message}`);
+        logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'PdfService', `Failed to extract text from PDF: ${error.message}`);
         logService.logErrorFile('PdfService', 'Failed to extract text from PDF', error, { filePath });
         return '';
     }

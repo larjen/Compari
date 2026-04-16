@@ -27,6 +27,8 @@
 const queueRepo = require('../repositories/QueueRepo');
 const logService = require('./LogService');
 const eventService = require('./EventService');
+const { withStaggeredRetry } = require('../utils/retryHelper');
+const { APP_EVENTS, LOG_LEVELS: { INFO, WARN, ERROR }, LOG_SYMBOLS, QUEUE_STATUSES } = require('../config/constants');
 
 
 class QueueService {
@@ -96,14 +98,14 @@ class QueueService {
      */
     enqueue(taskType, payload) {
         const taskId = queueRepo.enqueue(taskType, payload);
-        logService.logTerminal('INFO', 'CHECKMARK', 'QueueService.js', `Task #${taskId} (${taskType}) added to queue.`);
+        logService.logTerminal(INFO, LOG_SYMBOLS.CHECKMARK, 'QueueService.js', `Task #${taskId} (${taskType}) added to queue.`);
         logService.logSystemFile('QueueService.js', `Task #${taskId} (${taskType}) added to queue.`);
 
         this.processNext();
 
         // Emit domain event for SSE listeners - provides raw queue state without HTTP formatting.
         // This allows the frontend to receive real-time updates without polling.
-        eventService.emit('queueUpdate', this.getQueueStatus());
+        eventService.emit(APP_EVENTS.QUEUE_UPDATE, this.getQueueStatus());
 
         return taskId;
     }
@@ -111,11 +113,11 @@ class QueueService {
     start() {
         const clearedCount = queueRepo.wipeQueue();
         if (clearedCount > 0) {
-            logService.logTerminal('WARN', 'WARNING', 'QueueService.js', `Wiped ${clearedCount} old task(s) and reset statuses on startup.`);
+            logService.logTerminal(WARN, LOG_SYMBOLS.WARNING, 'QueueService.js', `Wiped ${clearedCount} old task(s) and reset statuses on startup.`);
             logService.logSystemFile('QueueService.js', `Wiped ${clearedCount} old task(s) and reset statuses on startup.`);
         }
 
-        logService.logTerminal('INFO', 'CHECKMARK', 'QueueService.js', `Background worker started. Listening for tasks...`);
+        logService.logTerminal(INFO, LOG_SYMBOLS.CHECKMARK, 'QueueService.js', `Background worker started. Listening for tasks...`);
         // Store reference to the interval
         this.workerInterval = setInterval(() => this.processNext(), 3000);
         this.processNext();
@@ -129,7 +131,7 @@ class QueueService {
         if (this.workerInterval) {
             clearInterval(this.workerInterval);
             this.workerInterval = null;
-            logService.logTerminal('INFO', 'NONE', 'QueueService.js', 'Background worker stopped.');
+            logService.logTerminal(INFO, LOG_SYMBOLS.NONE, 'QueueService.js', 'Background worker stopped.');
         }
     }
 
@@ -163,19 +165,38 @@ class QueueService {
         this.isProcessing = true;
         this.currentAbortController = new AbortController();
         
-        logService.logTerminal('INFO', 'NONE', 'QueueService.js', `Starting Task #${task.id}: ${task.task_type}`);
+        logService.logTerminal(INFO, LOG_SYMBOLS.NONE, 'QueueService.js', `Starting Task #${task.id}: ${task.task_type}`);
 
         // Emit queueUpdate when task starts processing - this is a critical state change
         // that the frontend needs to know about to show progress indicators.
-        eventService.emit('queueUpdate', this.getQueueStatus());
+        eventService.emit(APP_EVENTS.QUEUE_UPDATE, this.getQueueStatus());
 
         try {
             const payload = JSON.parse(task.payload);
-            eventService.emit(`task:${task.task_type}`, { task, payload, signal: this.currentAbortController.signal });
+            const taskId = task.id;
+            
+            await withStaggeredRetry(
+                async () => {
+                    eventService.emit(`task:${task.task_type}`, { task, payload, signal: this.currentAbortController.signal });
+                    
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+                    const checkResult = queueRepo.getCurrentTaskById(taskId);
+                    if (checkResult && checkResult.status === QUEUE_STATUSES.FAILED) {
+                        throw new Error(checkResult.error || 'Task failed during processing');
+                    }
+                },
+                [5000, 10000, 30000],
+                `Queue Task ${taskId}`
+            );
         } catch (error) {
-            logService.logTerminal('ERROR', 'ERROR', 'QueueService.js', `Task #${task.id} failed: ${error.message}`);
+            const failureMessage = error.isConnectionError
+                ? 'Connection error.'
+                : error.message;
+
+            logService.logTerminal(ERROR, LOG_SYMBOLS.ERROR, 'AiService.js', `Error during AI generation: ${failureMessage}`);
             logService.logErrorFile('QueueService.js', `Task #${task.id} failed`, error);
-            this.markFailed(task.id, error.message || "Invalid task payload", error);
+            this.markFailed(task.id, failureMessage || "Invalid task payload", error);
         }
     }
 
@@ -193,7 +214,7 @@ class QueueService {
      */
     markCompleted(taskId) {
         queueRepo.markCompleted(taskId);
-        logService.logTerminal('INFO', 'CHECKMARK', 'QueueService.js', `Task #${taskId} completed successfully.`);
+        logService.logTerminal(INFO, LOG_SYMBOLS.CHECKMARK, 'QueueService.js', `Task #${taskId} completed successfully.`);
         logService.logSystemFile('QueueService.js', `Task #${taskId} completed successfully.`);
         this.isProcessing = false;
         // Break the synchronous recursion loop
@@ -201,7 +222,7 @@ class QueueService {
 
         // Emit domain event - allows frontend to reactively update when a task completes
         // without needing to poll for the new queue state.
-        eventService.emit('queueUpdate', this.getQueueStatus());
+        eventService.emit(APP_EVENTS.QUEUE_UPDATE, this.getQueueStatus());
     }
 
     /**
@@ -226,11 +247,11 @@ class QueueService {
      */
     markFailed(taskId, errorMsg, verboseDetails = null, payload = null) {
         queueRepo.markFailed(taskId, errorMsg);
-        logService.logTerminal('ERROR', 'ERROR', 'QueueService.js', `Task #${taskId} failed: ${errorMsg}`);
+        logService.logTerminal(ERROR, LOG_SYMBOLS.ERROR, 'QueueService.js', `Task #${taskId} failed: ${errorMsg}`);
         logService.logErrorFile('QueueService.js', `Task #${taskId} failed: ${errorMsg}`, verboseDetails, payload);
 
         if (payload) {
-            eventService.emit('task:failed', { taskId, errorMsg, payload });
+            eventService.emit(APP_EVENTS.TASK_FAILED, { taskId, errorMsg, payload });
         }
 
         this.isProcessing = false;
@@ -239,7 +260,7 @@ class QueueService {
 
         // Emit domain event - enables frontend to reactively display failure status
         // immediately when a task fails, rather than waiting for the next poll.
-        eventService.emit('queueUpdate', this.getQueueStatus());
+        eventService.emit(APP_EVENTS.QUEUE_UPDATE, this.getQueueStatus());
     }
 
     /**
@@ -278,8 +299,40 @@ class QueueService {
         this._abortIfProcessingMatches('entityId', entityId);
 
         const deletedCount = queueRepo.deleteEntityExtractionTasks(entityId);
-        logService.logTerminal('INFO', 'NONE', 'QueueService.js', `Cancelled ${deletedCount} background task(s) for entity #${entityId}.`);
-        eventService.emit('queueUpdate', this.getQueueStatus());
+        logService.logTerminal(INFO, LOG_SYMBOLS.NONE, 'QueueService.js', `Cancelled ${deletedCount} background task(s) for entity #${entityId}.`);
+        eventService.emit(APP_EVENTS.QUEUE_UPDATE, this.getQueueStatus());
+    }
+
+    /**
+     * Sweeps the database on server boot for tasks left in the PROCESSING state due to a server restart.
+     * Marks them as FAILED so the frontend accurately reflects the failure reason.
+     */
+    async sweepOrphanedTasks() {
+        logService.logTerminal(INFO, LOG_SYMBOLS.CHECKMARK, 'QueueService.js', 'Sweeping for orphaned processing tasks due to server restart...');
+        try {
+            const staleTasks = queueRepo.getStaleProcessingTasks();
+            
+            if (staleTasks.length === 0) {
+                logService.logTerminal(INFO, LOG_SYMBOLS.CHECKMARK, 'QueueService.js', 'No orphaned tasks found.');
+                return;
+            }
+
+            for (const task of staleTasks) {
+                const failureMessage = 'Task failed due to unexpected backend server restart.';
+                logService.logTerminal(ERROR, LOG_SYMBOLS.ERROR, 'QueueService.js', `Failing orphaned task ${task.id}: ${failureMessage}`);
+                
+                queueRepo.markFailed(task.id, failureMessage);
+                
+                eventService.emit(APP_EVENTS.QUEUE_UPDATE, { 
+                    id: task.id, 
+                    status: QUEUE_STATUSES.FAILED,
+                    error: failureMessage 
+                });
+            }
+        } catch (error) {
+            logService.logTerminal(ERROR, LOG_SYMBOLS.ERROR, 'QueueService.js', `Failed to execute orphaned task sweep: ${error.message}`, error);
+            logService.logErrorFile('QueueService.js', 'Failed to execute orphaned task sweep', error);
+        }
     }
 }
 

@@ -20,6 +20,7 @@
  */
 
 const logService = require('../services/LogService');
+const { LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 /**
  * Registers process-level event listeners for error handling.
@@ -30,12 +31,12 @@ const logService = require('../services/LogService');
 function registerProcessListeners() {
     process.on('unhandledRejection', (reason, _promise) => {
         const errorObj = reason instanceof Error ? reason : new Error(String(reason));
-        logService.logTerminal('ERROR', 'ERROR', 'Process', 'Unhandled Promise Rejection', errorObj);
+        logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'Process', 'Unhandled Promise Rejection', errorObj);
         logService.logErrorFile('Process', 'Unhandled Promise Rejection', errorObj);
     });
 
     process.on('uncaughtException', (error) => {
-        logService.logTerminal('ERROR', 'ERROR', 'Process', 'Uncaught Exception', error);
+        logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'Process', 'Uncaught Exception', error);
         logService.logErrorFile('Process', 'Uncaught Exception', error);
         process.exit(1);
     });

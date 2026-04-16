@@ -1,4 +1,5 @@
 const promptRepo = require('../repositories/PromptRepo');
+const { HTTP_STATUS } = require('../config/constants');
 
 class PromptController {
     static getPrompts(req, res, next) {
@@ -16,12 +17,12 @@ class PromptController {
             const { prompt } = req.body;
             
             if (!prompt) {
-                return res.status(400).json({ error: 'Prompt content is required' });
+                return res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'Prompt content is required' });
             }
 
             const success = promptRepo.updatePrompt(Number(id), prompt);
             if (!success) {
-                return res.status(404).json({ error: 'Prompt not found' });
+                return res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Prompt not found' });
             }
 
             const updatedPrompt = promptRepo.getPromptById(Number(id));

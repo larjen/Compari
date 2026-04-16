@@ -12,16 +12,17 @@
  * - All requests go through the REST API endpoints.
  */
 import { Entity, EntityFiles, EntityMatch, Criterion } from '../types';
+import { ENTITY_ROLES } from '../constants';
 import { fetchWrapper } from './apiClient';
 
 export interface CreateEntityData {
-  type: 'requirement' | 'offering';
+  type: typeof ENTITY_ROLES.REQUIREMENT | typeof ENTITY_ROLES.OFFERING;
   name: string;
   description?: string;
   folderPath?: string;
   metadata?: Record<string, unknown>;
   blueprintId?: number;
-  entityRole?: 'requirement' | 'offering';
+  entityRole?: typeof ENTITY_ROLES.REQUIREMENT | typeof ENTITY_ROLES.OFFERING;
 }
 
 export interface UpdateEntityData {
@@ -32,7 +33,7 @@ export interface UpdateEntityData {
  * Parameters for querying entities with pagination, search, and status filtering.
  */
 export interface EntityQueryParams {
-  type?: 'requirement' | 'offering';
+  type?: typeof ENTITY_ROLES.REQUIREMENT | typeof ENTITY_ROLES.OFFERING;
   page?: number;
   limit?: number;
   search?: string;
@@ -193,7 +194,7 @@ export const entityApi = {
    * @returns {Promise<EntityMatch[]>} Array of EntityMatch objects.
    * @throws {Error} If the request fails.
    */
-  async getMatches(entityId: number, role?: 'requirement' | 'offering'): Promise<EntityMatch[]> {
+  async getMatches(entityId: number, role?: typeof ENTITY_ROLES.REQUIREMENT | typeof ENTITY_ROLES.OFFERING): Promise<EntityMatch[]> {
     const data = await fetchWrapper<{ matches: EntityMatch[] }>(`/entities/${entityId}/matches`, {
       params: role ? { role } : undefined,
     });

@@ -15,7 +15,7 @@
  * - ❌ MUST NOT contain business rules or workflow logic (delegates to Workflows if needed).
  */
 const path = require('path');
-const { REQUIREMENTS_DIR, OFFERINGS_DIR, QUEUE_TASKS, TRASHED_DIR, ENTITY_STATUS } = require('../config/constants');
+const { REQUIREMENTS_DIR, OFFERINGS_DIR, QUEUE_TASKS, TRASHED_DIR, ENTITY_STATUS, ENTITY_ROLES, APP_EVENTS, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 const logService = require('./LogService');
 const eventService = require('./EventService');
 
@@ -86,7 +86,7 @@ class EntityService {
             const safeName = name.replace(/[^a-zA-Z0-9]/g, '');
             const folderName = `${timestamp}-${safeName}`;
             
-            const baseDir = type === 'requirement' ? REQUIREMENTS_DIR : OFFERINGS_DIR;
+            const baseDir = type === ENTITY_ROLES.REQUIREMENT ? REQUIREMENTS_DIR : OFFERINGS_DIR;
             finalFolderPath = path.join(baseDir, folderName);
             this._files.createDirectory(finalFolderPath);
         }
@@ -94,9 +94,9 @@ class EntityService {
         const entityId = this._repo.createEntity(type, name, description, finalFolderPath, metadata, blueprintId);
 
         try {
-            logService.addActivityLog('Entity', entityId, 'INFO', `Entity '${name}' created successfully.`, finalFolderPath);
+            logService.addActivityLog('Entity', entityId, LOG_LEVELS.INFO, `Entity '${name}' created successfully.`, finalFolderPath);
         } catch (err) {
-            logService.logTerminal('ERROR', 'ERROR', 'EntityService', `Failed to log entity creation: ${err.message}`);
+            logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'EntityService', `Failed to log entity creation: ${err.message}`);
         }
 
         return entityId;
@@ -125,14 +125,14 @@ class EntityService {
                 const folderName = path.basename(entity.folderPath);
                 const targetPath = path.join(TRASHED_DIR, folderName);
                 this._files.moveDirectory(entity.folderPath, targetPath);
-                logService.logTerminal('INFO', 'INFO', 'EntityService', `Moved entity folder to trash: ${targetPath}`);
+                logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.INFO, 'EntityService', `Moved entity folder to trash: ${targetPath}`);
             } catch (err) {
-                logService.logTerminal('WARN', 'WARNING', 'EntityService', `Failed to move entity folder to trash (it may already be deleted): ${err.message}`);
+                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'EntityService', `Failed to move entity folder to trash (it may already be deleted): ${err.message}`);
             }
         }
 
         this._repo.deleteById(id);
-        eventService.emit('entityUpdate');
+        eventService.emit(APP_EVENTS.ENTITY_UPDATE);
     }
 
     /**
@@ -159,7 +159,7 @@ class EntityService {
 
         this._repo.updateEntityMetadata(id, mergedMetadata);
         
-        eventService.emit('entityUpdate');
+        eventService.emit(APP_EVENTS.ENTITY_UPDATE);
     }
 
     /**
@@ -264,7 +264,7 @@ class EntityService {
         const queueService = require('./QueueService');
         queueService.enqueue(QUEUE_TASKS.EXTRACT_ENTITY_CRITERIA, { entityId, fileName });
 
-        logService.addActivityLog('Entity', entityId, 'INFO', `AI criteria extraction manually queued for file: ${fileName}`, entity.folderPath);
+        logService.addActivityLog('Entity', entityId, LOG_LEVELS.INFO, `AI criteria extraction manually queued for file: ${fileName}`, entity.folderPath);
     }
 
     /**
@@ -297,7 +297,7 @@ class EntityService {
     updateEntityStatus(id, status) {
         const sanitizedStatus = status.toLowerCase().trim();
         this._repo.updateEntityStatus(id, sanitizedStatus);
-        eventService.emit('entityUpdate');
+        eventService.emit(APP_EVENTS.ENTITY_UPDATE);
     }
 
     /**
@@ -313,7 +313,7 @@ class EntityService {
      */
     updateProcessingStep(id, step) {
         this.updateEntityMetadata(id, { processingStep: step });
-        eventService.emit('entityUpdate');
+        eventService.emit(APP_EVENTS.ENTITY_UPDATE);
     }
 
     /**
@@ -328,10 +328,10 @@ class EntityService {
         if (error) {
             const entity = this._repo.getEntityById(id);
             const folderPath = entity ? entity.folderPath : null;
-            logService.addActivityLog('Entity', id, 'ERROR', `Processing failed: ${error}`, folderPath);
+            logService.addActivityLog('Entity', id, LOG_LEVELS.ERROR, `Processing failed: ${error}`, folderPath);
         }
 
-        eventService.emit('entityUpdate');
+        eventService.emit(APP_EVENTS.ENTITY_UPDATE);
     }
 
     /**
@@ -376,7 +376,7 @@ class EntityService {
     openEntityFolder(entityId) {
         const entity = this._repo.getEntityById(entityId);
         if (!entity || !entity.folderPath) {
-            logService.logTerminal('WARN', 'WARNING', 'EntityService', 'Cannot open folder: entity not found or has no folder path');
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'EntityService', 'Cannot open folder: entity not found or has no folder path');
             return;
         }
         this._files.openFolderInOS(entity.folderPath);
@@ -395,9 +395,9 @@ class EntityService {
         if (typeof this._repo.updateEntityFolderPath === 'function') {
             this._repo.updateEntityFolderPath(id, newFolderPath);
         } else {
-            logService.logTerminal('WARN', 'WARNING', 'EntityService', 'Repository missing updateEntityFolderPath method. Path sync may fail.');
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'EntityService', 'Repository missing updateEntityFolderPath method. Path sync may fail.');
         }
-        eventService.emit('entityUpdate');
+        eventService.emit(APP_EVENTS.ENTITY_UPDATE);
     }
 
     }

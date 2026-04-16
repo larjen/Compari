@@ -90,17 +90,27 @@ export function useSafeFetch<T>(
    * against the active request ID when the response comes back.
    */
   const activeRequestRef = useRef<number>(0);
+  const isFetchingRef = useRef<boolean>(false);
+  const pendingRefetchRef = useRef<boolean>(false);
 
   /**
    * Executes the fetcher function with race condition protection.
    * @returns {Promise<void>} A promise that resolves when the fetch completes (or fails).
    * @description
+   * - Deduplication guard prevents redundant network calls when request is in-flight.
    * - Increments the request ID before fetching.
    * - Sets loading state and clears any previous errors.
    * - Calls the provided fetcher function.
    * - Only updates state if this is still the most recent request (checked via request ID comparison).
+   * - Executes catch-up fetch if SSE events fired during network wait.
    */
   const execute = useCallback(async () => {
+    if (isFetchingRef.current) {
+      pendingRefetchRef.current = true;
+      return;
+    }
+
+    isFetchingRef.current = true;
     const currentRequestId = ++activeRequestRef.current;
 
     try {
@@ -117,8 +127,15 @@ export function useSafeFetch<T>(
         setError(err instanceof Error ? err.message : 'An unknown error occurred');
       }
     } finally {
+      isFetchingRef.current = false;
+
       if (currentRequestId === activeRequestRef.current) {
         setLoading(false);
+      }
+
+      if (pendingRefetchRef.current) {
+        pendingRefetchRef.current = false;
+        execute();
       }
     }
   }, [fetcher]);
@@ -132,6 +149,8 @@ export function useSafeFetch<T>(
     setLoading(false);
     setError(null);
     activeRequestRef.current = 0;
+    isFetchingRef.current = false;
+    pendingRefetchRef.current = false;
   }, []);
 
   /**

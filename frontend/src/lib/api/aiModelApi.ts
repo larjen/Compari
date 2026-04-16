@@ -11,6 +11,7 @@
  */
 
 import { AiModel } from '../types';
+import { AI_MODEL_ROLES } from '../constants';
 import { fetchWrapper } from './apiClient';
 
 export const aiModelApi = {
@@ -41,7 +42,7 @@ export const aiModelApi = {
    * @returns {Promise<AiModel | null>} The active AI model or null.
    * @throws {Error} If the request fails.
    */
-  async getActiveModel(role: 'chat' | 'embedding'): Promise<AiModel | null> {
+  async getActiveModel(role: typeof AI_MODEL_ROLES.CHAT | typeof AI_MODEL_ROLES.EMBEDDING): Promise<AiModel | null> {
     const data = await fetchWrapper<{ success: boolean; model: AiModel | null }>('/ai-models/active', {
       params: { role },
     });
@@ -67,7 +68,7 @@ export const aiModelApi = {
     model_identifier: string;
     api_url?: string | null;
     api_key?: string | null;
-    role?: 'chat' | 'embedding';
+role?: typeof AI_MODEL_ROLES.CHAT | typeof AI_MODEL_ROLES.EMBEDDING;
     temperature?: number | null;
     contextWindow?: number | null;
   }): Promise<AiModel> {
@@ -76,33 +77,25 @@ export const aiModelApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(modelData),
     });
+
     return data.model;
   },
 
   /**
    * Updates an existing AI model.
-   * @description Updates an AI model's configuration by ID.
-   * @param {number} id - The AI model ID to update.
-   * @param {Object} modelData - The updated AI model data.
-   * @param {string} [modelData.name] - Display name for the model.
-   * @param {string} [modelData.model_identifier] - Model identifier/name.
-   * @param {string|null} [modelData.api_url] - API endpoint URL (can be null).
-   * @param {string|null} [modelData.api_key] - API key (can be null).
+   * @param {number} id - The AI model ID.
+   * @param {Object} modelData - The updated model data.
    * @param {string} [modelData.role] - Role type ('chat' or 'embedding').
-   * @param {number|null} [modelData.temperature] - Temperature setting (0-2, can be null).
-   * @param {number|null} [modelData.contextWindow] - Context window size (min 1024, can be null).
    * @returns {Promise<AiModel>} The updated AI model.
-   * @throws {Error} If the request fails or model is a system model.
+   * @throws {Error} If the request fails.
    */
-  async updateModel(
-    id: number,
-    modelData: {
-      name?: string;
-      model_identifier?: string;
-      api_url?: string | null;
-      api_key?: string | null;
-      role?: 'chat' | 'embedding';
-      temperature?: number | null;
+  async updateModel(id: number, modelData: {
+    name?: string;
+    model_identifier?: string;
+    api_url?: string | null;
+    api_key?: string | null;
+    role?: typeof AI_MODEL_ROLES.CHAT | typeof AI_MODEL_ROLES.EMBEDDING;
+    temperature?: number | null;
       contextWindow?: number | null;
     }
   ): Promise<AiModel> {

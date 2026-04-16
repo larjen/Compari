@@ -21,6 +21,7 @@ import { useBlueprints } from '@/hooks/useBlueprints';
 import { useToast } from '@/hooks/useToast';
 import { DownloadButton } from '@/components/ui';
 import { BaseCard } from '../shared/BaseCard';
+import { TOAST_TYPES } from '@/lib/constants';
 
 interface MatchCardProps {
   match: EntityMatch;
@@ -85,7 +86,7 @@ export function MatchCard({ match, onClick, onDelete, onRetry }: MatchCardProps)
       document.body.removeChild(a);
     } catch (error) {
       console.error(error);
-      addToast('error', error instanceof Error ? error.message : "There was an error downloading the PDF.");
+      addToast(TOAST_TYPES.ERROR, error instanceof Error ? error.message : "There was an error downloading the PDF.");
     }
   };
 

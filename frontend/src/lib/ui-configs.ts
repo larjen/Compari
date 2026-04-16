@@ -1,6 +1,9 @@
-export const ITEMS_PER_PAGE = 12;
+import { UI_CONFIG } from './constants';
 
-export const getMasterContainer = (staggerDelay = 0.05, exitDuration = 0.1) => ({
+export const getMasterContainer = (
+  staggerDelay: number = UI_CONFIG.ANIMATION.STAGGER_DELAY, 
+  exitDuration: number = UI_CONFIG.ANIMATION.EXIT_DURATION
+) => ({
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
@@ -20,8 +23,8 @@ export const masterItem = {
   visible: {
     opacity: 1,
     transition: {
-      duration: 0.3,
-      ease: "easeOut" as const
+      duration: UI_CONFIG.ANIMATION.ENTRY_DURATION,
+      ease: UI_CONFIG.ANIMATION.EASING_OUT
     }
   }
 };

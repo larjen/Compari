@@ -19,7 +19,7 @@ const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 const logService = require('../services/LogService');
-const { DB_DIR } = require('../config/constants');
+const { DB_DIR, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 class DatabaseConnection {
     constructor() {
@@ -51,7 +51,7 @@ function initializeSchema(db) {
         const sql = fs.readFileSync(schemaPath, 'utf8');
         db.exec(sql);
     } catch (err) {
-        logService.logTerminal('ERROR', 'ERROR', 'Database', `FATAL: Failed to read or execute schema.sql: ${err.message}`);
+        logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'Database', `FATAL: Failed to read or execute schema.sql: ${err.message}`);
         logService.logErrorFile('Database', 'Failed to read or execute schema.sql', err);
         throw err;
     }

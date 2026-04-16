@@ -15,6 +15,7 @@ const db = require('./Database');
 const BaseRepository = require('./BaseRepository');
 const Blueprint = require('../models/Blueprint');
 const BlueprintField = require('../models/BlueprintField');
+const { ENTITY_ROLES } = require('../config/constants');
 
 /**
  * @class BlueprintRepo
@@ -224,7 +225,7 @@ class BlueprintRepo extends BaseRepository {
                         field.fieldType || 'string',
                         field.description,
                         field.isRequired ? 1 : 0,
-                        field.entityRole || 'requirement'
+                        field.entityRole || ENTITY_ROLES.REQUIREMENT
                     );
                 }
             }

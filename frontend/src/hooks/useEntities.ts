@@ -18,6 +18,7 @@ import { Entity } from '@/lib/types';
 import { entityApi, CreateEntityData, EntityQueryParams, EntityQueryResponse } from '@/lib/api/entityApi';
 import { useSafeFetch } from './useSafeFetch';
 import { useSSE } from './useSSE';
+import { useProcessingWatchdog } from './useProcessingWatchdog';
 
 interface UseEntitiesOptions extends EntityQueryParams {
   /** Whether to automatically fetch on mount (default: true) */
@@ -57,6 +58,13 @@ export function useEntities({
     onEntityUpdate: listenToSSE ? handleEntityUpdate : undefined,
     onReconnect: fetchEntities
   });
+
+  useProcessingWatchdog(
+    entities,
+    'status',
+    'processing',
+    refetch
+  );
 
   const addEntity = async (data: CreateEntityData) => {
     await entityApi.createEntity(data);

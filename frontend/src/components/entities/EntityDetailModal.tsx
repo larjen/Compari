@@ -33,6 +33,7 @@ import { useEntityFiles, useEntityCriteria, useTopMatches } from '@/hooks/useEnt
 import { useMatches } from '@/hooks/useMatches';
 import { useBlueprints } from '@/hooks/useBlueprints';
 import { TopMatchesTab } from './TopMatchesTab';
+import { TOAST_TYPES } from '@/lib/constants';
 
 interface EntityDetailModalProps {
   /** The entity to display */
@@ -96,7 +97,7 @@ const handleSaveMetadata = async (key: string, value: string) => {
     };
     await entityApi.updateEntity(currentEntity.id, { metadata: updatedMetadata });
     setCurrentEntity({ ...currentEntity, metadata: updatedMetadata });
-    addToast('success', `${key} updated`);
+    addToast(TOAST_TYPES.SUCCESS, `${key} updated`);
   };
 
   /**
@@ -113,7 +114,7 @@ const handleSaveMetadata = async (key: string, value: string) => {
     );
     if (existingMatch) {
       await deleteMatch(existingMatch.id);
-      addToast('success', 'Match deleted successfully');
+      addToast(TOAST_TYPES.SUCCESS, 'Match deleted successfully');
     }
   };
 
@@ -128,9 +129,9 @@ const handleSaveMetadata = async (key: string, value: string) => {
     const offeringId = entity.type === 'offering' ? entity.id : matchedEntityId;
     try {
       await addMatch(requirementId, offeringId);
-      addToast('success', 'Match report queued for processing');
+      addToast(TOAST_TYPES.SUCCESS, 'Match report queued for processing');
     } catch (error) {
-      addToast('error', 'Failed to queue match report');
+      addToast(TOAST_TYPES.ERROR, 'Failed to queue match report');
     }
   };
 
@@ -252,7 +253,7 @@ const handleSaveMetadata = async (key: string, value: string) => {
                 await entityApi.openFolder(entity.id);
               } catch (error) {
                 console.error('Failed to open folder:', error);
-                addToast('error', 'Failed to open folder on the server.');
+                addToast(TOAST_TYPES.ERROR, 'Failed to open folder on the server.');
               }
             }}
           />

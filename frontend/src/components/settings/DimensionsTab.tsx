@@ -11,6 +11,7 @@ import { CreateButton } from '@/components/ui/CreateButton';
 import { SaveButton } from '@/components/ui/SaveButton';
 import { EditButton } from '@/components/ui/EditButton';
 import { DeleteAction } from '@/components/ui/DeleteAction';
+import { TOAST_TYPES } from '@/lib/constants';
 
 export interface DimensionFormData {
   name: string;
@@ -42,22 +43,22 @@ export function DimensionsTab({ isCreating, setIsCreating }: { isCreating: boole
 
   const handleCreate = async () => {
     if (!formData.name.trim() || !formData.displayName.trim()) {
-      addToast('error', 'Name and display name are required');
+      addToast(TOAST_TYPES.ERROR, 'Name and display name are required');
       return;
     }
     try {
       await addDimension(formData);
       setFormData(initialFormData);
       setIsCreating(false);
-      addToast('success', 'Dimension created successfully');
+      addToast(TOAST_TYPES.SUCCESS, 'Dimension created successfully');
     } catch (err) {
-      addToast('error', 'Failed to create dimension');
+      addToast(TOAST_TYPES.ERROR, 'Failed to create dimension');
     }
   };
 
   const handleUpdate = async (id: number) => {
     if (!editFormData.displayName.trim()) {
-      addToast('error', 'Display name is required');
+      addToast(TOAST_TYPES.ERROR, 'Display name is required');
       return;
     }
     try {
@@ -69,18 +70,18 @@ export function DimensionsTab({ isCreating, setIsCreating }: { isCreating: boole
       });
       setEditingId(null);
       setEditFormData(initialFormData);
-      addToast('success', 'Dimension updated successfully');
+      addToast(TOAST_TYPES.SUCCESS, 'Dimension updated successfully');
     } catch (err) {
-      addToast('error', 'Failed to update dimension');
+      addToast(TOAST_TYPES.ERROR, 'Failed to update dimension');
     }
   };
 
   const handleDelete = async (id: number) => {
     try {
       await deleteDimension(id);
-      addToast('success', 'Dimension deleted');
+      addToast(TOAST_TYPES.SUCCESS, 'Dimension deleted');
     } catch (err) {
-      addToast('error', 'Failed to delete dimension');
+      addToast(TOAST_TYPES.ERROR, 'Failed to delete dimension');
     }
   };
 

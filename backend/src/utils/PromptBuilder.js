@@ -10,6 +10,7 @@
  */
 
 const promptRepo = require('../repositories/PromptRepo');
+const { ENTITY_ROLES, PROMPT_SYSTEM_NAMES } = require('../config/constants');
 
 class PromptBuilder {
     _inject(template, vars) {
@@ -21,7 +22,7 @@ class PromptBuilder {
     }
 
     buildMarkdownExtractionMessages(rawText) {
-        const template = promptRepo.getPromptBySystemName('markdown_extraction').prompt;
+        const template = promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.MARKDOWN_EXTRACTION).prompt;
         return [
             { role: 'system', content: template },
             { role: 'user', content: rawText }
@@ -52,7 +53,7 @@ class PromptBuilder {
             return `- ${field.fieldName} (${field.fieldType})${required}: ${field.description}`;
         }).join('\n');
 
-        const template = promptRepo.getPromptBySystemName('entity_metadata').prompt;
+        const template = promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.ENTITY_METADATA).prompt;
         const systemPrompt = this._inject(template, {
             blueprintName,
             fieldsList
@@ -83,13 +84,13 @@ class PromptBuilder {
      * ];
      * const messages = PromptBuilder.buildDynamicExtractionMessages(text, activeDimensions, 'source');
      */
-    buildDynamicExtractionMessages(rawText, activeDimensions, entityRole = 'offering') {
+    buildDynamicExtractionMessages(rawText, activeDimensions, entityRole = ENTITY_ROLES.OFFERING) {
         if (!Array.isArray(activeDimensions) || activeDimensions.length === 0) {
             throw new Error('Active dimensions array is required and must not be empty.');
         }
 
         const getInstruction = (dim) => {
-            return entityRole === 'requirement' ? dim.requirementInstruction : dim.offeringInstruction;
+            return entityRole === ENTITY_ROLES.REQUIREMENT ? dim.requirementInstruction : dim.offeringInstruction;
         };
 
         const dimensionList = activeDimensions.map((dim, index) => {
@@ -105,9 +106,9 @@ class PromptBuilder {
         }
         const exampleJsonString = JSON.stringify(exampleOutput, null, 2);
 
-        const roleLabel = entityRole === 'requirement' ? 'requirement document (defines criteria and needs)' : 'offering profile (possesses skills and attributes)';
+        const roleLabel = entityRole === ENTITY_ROLES.REQUIREMENT ? 'requirement document (defines criteria and needs)' : 'offering profile (possesses skills and attributes)';
 
-        const template = promptRepo.getPromptBySystemName('dynamic_extraction').prompt;
+        const template = promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.DYNAMIC_EXTRACTION).prompt;
         const systemPrompt = this._inject(template, {
             roleLabel,
             dimensionCount: activeDimensions.length,
@@ -142,7 +143,7 @@ class PromptBuilder {
     buildExecutiveSummaryMessages(dimensionalSummariesMap, requirementName, offeringName) {
         const dimensionNames = Object.keys(dimensionalSummariesMap).join(', ');
 
-        const template = promptRepo.getPromptBySystemName('executive_summary').prompt;
+        const template = promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.EXECUTIVE_SUMMARY).prompt;
         const systemPrompt = this._inject(template, {
             requirementName,
             offeringName,
@@ -167,7 +168,7 @@ class PromptBuilder {
      * @returns {Array<Object>} Array of message objects for the LLM.
      */
     buildMatchSummaryMessages(reportJson) {
-        const template = promptRepo.getPromptBySystemName('match_summary').prompt;
+        const template = promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.MATCH_SUMMARY).prompt;
         return [
             { role: 'system', content: template },
             { role: 'user', content: JSON.stringify(reportJson, null, 2) }

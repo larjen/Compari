@@ -11,21 +11,24 @@
  * - ❌ MUST NOT contain business logic.
  * - ❌ MUST NOT interact with Services directly; expects entities and buffers as input.
  * - ✅ Operates purely at the HTTP transport layer.
+ * 
+ * @deps
+ * - Relies on centralized HTTP_HEADERS and MIME_TYPES constants from config/constants.js
  */
 
 const path = require('path');
 const fileService = require('../services/FileService');
+const { HTTP_HEADERS, MIME_TYPES } = require('../config/constants');
 
-const mimeTypes = {
-    '.pdf': 'application/pdf',
-    '.txt': 'text/plain',
-    '.md': 'text/markdown',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.json': 'application/json',
-    '.jsonl': 'application/json'
-
+const mimeTypeMap = {
+    '.pdf': MIME_TYPES.PDF,
+    '.txt': MIME_TYPES.TXT,
+    '.md': MIME_TYPES.MD,
+    '.png': MIME_TYPES.PNG,
+    '.jpg': MIME_TYPES.JPG,
+    '.jpeg': MIME_TYPES.JPEG,
+    '.json': MIME_TYPES.JSON,
+    '.jsonl': MIME_TYPES.JSONL
 };
 
 function handleFileDownload(res, entity, fileName, folderPathKey = 'folderPath') {
@@ -41,10 +44,10 @@ function handleFileDownload(res, entity, fileName, folderPathKey = 'folderPath')
     }
 
     const ext = path.extname(fileName).toLowerCase();
-    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    const contentType = mimeTypeMap[ext] || MIME_TYPES.OCTET_STREAM;
 
-    res.set('Content-Type', contentType);
-    res.set('Content-Disposition', 'inline');
+    res.set(HTTP_HEADERS.CONTENT_TYPE, contentType);
+    res.set(HTTP_HEADERS.CONTENT_DISPOSITION, 'inline');
     res.send(buffer);
 }
 

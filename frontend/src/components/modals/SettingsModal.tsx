@@ -14,6 +14,7 @@
  */
 import { useState, useEffect } from 'react';
 import { Settings, AiModel } from '@/lib/types';
+import { SETTING_KEYS } from '@/lib/constants';
 import { settingsApi } from '@/lib/api/settingsApi';
 import { aiModelApi } from '@/lib/api/aiModelApi';
 import { EntityDetailLayout } from '@/components/shared/EntityDetailLayout';
@@ -179,7 +180,7 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
    * @param {string} value - The threshold value as string
    */
   const handleAutoSaveThreshold = async (value: string) => {
-    await handleAutoSaveSlider('auto_merge_threshold', value, 'Threshold updated');
+    await handleAutoSaveSlider(SETTING_KEYS.AUTO_MERGE_THRESHOLD, value, 'Threshold updated');
   };
 
 /**
@@ -193,7 +194,7 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
   const handleAutoSaveLogAi = async (newValue: boolean) => {
     setSaving(true);
     try {
-      await settingsApi.updateSetting('log_ai_interactions', newValue.toString());
+      await settingsApi.updateSetting(SETTING_KEYS.LOG_AI_INTERACTIONS, newValue.toString());
       await loadSettings();
       onSuccess('Logging settings updated successfully');
     } catch (err) {
@@ -206,7 +207,7 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
   const handleAutoSaveVerifyMerges = async (newValue: boolean) => {
     setSaving(true);
     try {
-      await settingsApi.updateSetting('ai_verify_merges', newValue.toString());
+      await settingsApi.updateSetting(SETTING_KEYS.AI_VERIFY_MERGES, newValue.toString());
       await loadSettings();
       onSuccess('AI merge verification setting updated successfully');
     } catch (err) {
@@ -219,7 +220,7 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
   const handleAutoSaveConcurrentAi = async (newValue: boolean) => {
     setSaving(true);
     try {
-      await settingsApi.updateSetting('allow_concurrent_ai', newValue.toString());
+      await settingsApi.updateSetting(SETTING_KEYS.ALLOW_CONCURRENT_AI, newValue.toString());
       await loadSettings();
       onSuccess('Concurrency setting updated successfully');
     } catch (err) {
@@ -394,8 +395,8 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
                   step="1"
                   value={minFloorInput}
                   onChange={(e) => setMinFloorInput(e.target.value)}
-                  onMouseUp={(e) => handleAutoSaveSlider('minimum_match_floor', (e.target as HTMLInputElement).value, 'Minimum floor updated')}
-                  onKeyUp={(e) => handleAutoSaveSlider('minimum_match_floor', (e.target as HTMLInputElement).value, 'Minimum floor updated')}
+                  onMouseUp={(e) => handleAutoSaveSlider(SETTING_KEYS.MINIMUM_MATCH_FLOOR, (e.target as HTMLInputElement).value, 'Minimum floor updated')}
+                  onKeyUp={(e) => handleAutoSaveSlider(SETTING_KEYS.MINIMUM_MATCH_FLOOR, (e.target as HTMLInputElement).value, 'Minimum floor updated')}
                   className="w-full h-2 bg-themed-input-border rounded-lg appearance-none cursor-pointer accent-accent-sage"
                 />
               </div>
@@ -419,8 +420,8 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
                   step="1"
                   value={perfectScoreInput}
                   onChange={(e) => setPerfectScoreInput(e.target.value)}
-                  onMouseUp={(e) => handleAutoSaveSlider('perfect_match_score', (e.target as HTMLInputElement).value, 'Perfect score updated')}
-                  onKeyUp={(e) => handleAutoSaveSlider('perfect_match_score', (e.target as HTMLInputElement).value, 'Perfect score updated')}
+                  onMouseUp={(e) => handleAutoSaveSlider(SETTING_KEYS.PERFECT_MATCH_SCORE, (e.target as HTMLInputElement).value, 'Perfect score updated')}
+                  onKeyUp={(e) => handleAutoSaveSlider(SETTING_KEYS.PERFECT_MATCH_SCORE, (e.target as HTMLInputElement).value, 'Perfect score updated')}
                   className="w-full h-2 bg-themed-input-border rounded-lg appearance-none cursor-pointer accent-accent-sage"
                 />
               </div>

@@ -13,16 +13,15 @@ import { useSSE } from '@/hooks/useSSE';
 import { useModal } from '@/hooks/useModal';
 import { useBlueprints } from '@/hooks/useBlueprints';
 import { entityApi } from '@/lib/api/entityApi';
-import { Entity } from '@/lib/types';
+import { Entity, ToastType } from '@/lib/types';
 import { CreateEntityData } from '@/lib/api/entityApi';
 import { getEntityDisplayNames } from '@/lib/utils';
-import { ENTITY_STATUS } from '@/lib/constants';
+import { ENTITY_STATUS, ENTITY_ROLES, TOAST_TYPES, MODAL_TYPES, UI_CONFIG } from '@/lib/constants';
 import { Loader2, Weight } from 'lucide-react';
 import { EmptyState, ContentLoader } from '@/components/shared/PageStates';
 import { Pagination } from '@/components/shared/Pagination';
 import { FilterBar } from '@/components/shared/FilterBar';
 import { AnimatedDataGrid } from '@/components/shared/AnimatedDataGrid';
-import { ITEMS_PER_PAGE } from '@/lib/ui-configs';
 
 function OfferingsPageContent() {
   const router = useRouter();
@@ -42,9 +41,9 @@ function OfferingsPageContent() {
     refetch,
     totalPages,
   } = useEntities({
-    type: 'offering',
+    type: ENTITY_ROLES.OFFERING,
     page,
-    limit: ITEMS_PER_PAGE,
+    limit: UI_CONFIG.PAGINATION.ITEMS_PER_PAGE,
     search: debouncedSearch,
     status,
   });
@@ -99,7 +98,7 @@ function OfferingsPageContent() {
   const selectedEntityData = localEntity || deepLinkedEntity;
 
   useEffect(() => {
-    if (activeModal === 'create-offering') {
+    if (activeModal === MODAL_TYPES.CREATE_OFFERING) {
       setCreateEntityOpen(true);
       closeModal();
     }
@@ -135,10 +134,10 @@ function OfferingsPageContent() {
       }
 
       if (successCount > 0) {
-        addToast('success', `Successfully created ${successCount} ${offeringLabelPlural.toLowerCase()}`);
+        addToast(TOAST_TYPES.SUCCESS, `Successfully created ${successCount} ${offeringLabelPlural.toLowerCase()}`);
       }
       if (failCount > 0) {
-        addToast('error', `Failed to create ${failCount} ${offeringLabelPlural.toLowerCase()}`);
+        addToast(TOAST_TYPES.ERROR, `Failed to create ${failCount} ${offeringLabelPlural.toLowerCase()}`);
       }
 
       refetch();
@@ -156,11 +155,11 @@ function OfferingsPageContent() {
   const handleRetryProcessing = async (entityId: number) => {
     try {
       await entityApi.retryProcessing(entityId);
-      addToast('success', 'Task queued for retry');
+      addToast(TOAST_TYPES.SUCCESS, 'Task queued for retry');
       refetch();
     } catch (err) {
       console.error('Failed to retry:', err);
-      addToast('error', 'Failed to retry task');
+      addToast(TOAST_TYPES.ERROR, 'Failed to retry task');
     }
   };
 
@@ -170,16 +169,16 @@ function OfferingsPageContent() {
   const handleDeleteEntity = async (id: number) => {
     try {
       await deleteEntity(id);
-      addToast('success', 'Entity deleted successfully');
+      addToast(TOAST_TYPES.SUCCESS, 'Entity deleted successfully');
     } catch (err) {
-      addToast('error', 'Failed to delete entity');
+      addToast(TOAST_TYPES.ERROR, 'Failed to delete entity');
     }
   };
 
   const handleNotification = useCallback(
-    (data: { type: 'error' | 'success' | 'info'; message: string }) => {
+    (data: { type: ToastType; message: string }) => {
       addToast(data.type, data.message);
-      if (data.type === 'success' || data.type === 'error') {
+      if (data.type === TOAST_TYPES.SUCCESS || data.type === TOAST_TYPES.ERROR) {
         refetch();
       }
     },

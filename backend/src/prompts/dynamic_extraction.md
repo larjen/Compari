@@ -11,8 +11,10 @@ CRITICAL RULES:
    - BAD: "React.js developer", "P&L", "5+ years Java"
    - GOOD: "React", "Profit & Loss Management", "Java"
 4. Exclusions: Ignore generic filler adjectives (e.g., "motivated", "dynamic environment", "passionate") unless specifically requested by the dimension.
+5. Chain of Thought: You MUST output the "analysis" key FIRST in your JSON to explain your reasoning before listing the arrays.
 
 EXAMPLE EXPECTED OUTPUT:
 {{exampleJsonString}}
 
-You must return ONLY valid JSON. Start your response with { and end with }.
+OUTPUT FORMAT:
+You must return ONLY valid, raw JSON. Do NOT wrap the response in markdown code blocks (```json). Do NOT include any greetings or explanations outside the JSON object. Start your response exactly with { and end exactly with }.

@@ -23,6 +23,7 @@
 
 const EventEmitter = require('events');
 const logService = require('./LogService');
+const { LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 class EventService extends EventEmitter {
     constructor() {
@@ -43,7 +44,7 @@ class EventService extends EventEmitter {
             try {
                 clientCallback(eventName, data);
             } catch (err) {
-                logService.logTerminal('ERROR', 'ERROR', 'EventService', `Error broadcasting to client: ${err.message}`);
+                logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'EventService', `Error broadcasting to client: ${err.message}`);
             }
         }
     }

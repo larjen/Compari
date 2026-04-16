@@ -8,6 +8,7 @@ import { useBlueprints } from '@/hooks/useBlueprints';
 import { useMatchFiles, useMatchReport } from '@/hooks/useMatchData';
 import { useToast } from '@/hooks/useToast';
 import { matchApi } from '@/lib/api/matchApi';
+import { TOAST_TYPES } from '@/lib/constants';
 import { Scale, Weight, Clock, AlertCircle, CheckCircle, FileText, Files, Info } from 'lucide-react';
 import { FileViewer } from '@/components/shared/FileViewer';
 import { FilesTabContent } from '@/components/shared/FilesTabContent';
@@ -97,7 +98,7 @@ export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: Mat
       document.body.removeChild(a);
     } catch (error) {
       console.error(error);
-      addToast('error', error instanceof Error ? error.message : "There was an error downloading the PDF.");
+      addToast(TOAST_TYPES.ERROR, error instanceof Error ? error.message : "There was an error downloading the PDF.");
     }
   };
 

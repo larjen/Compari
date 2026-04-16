@@ -16,6 +16,7 @@
  */
 
 const logService = require('../services/LogService');
+const { LOG_LEVELS, LOG_SYMBOLS, PROMPT_SYSTEM_NAMES } = require('../config/constants');
 
 const MIN_TEXT_LENGTH = 50;
 
@@ -42,19 +43,19 @@ const MIN_TEXT_LENGTH = 50;
  */
 function validateInputText(text, context) {
     if (!text || typeof text !== 'string') {
-        logService.logTerminal('WARN', 'WARNING', 'AiValidator', `${context}: Input text is null or not a string`);
+        logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiValidator', `${context}: Input text is null or not a string`);
         return false;
     }
 
     const trimmed = text.trim();
 
     if (trimmed.length === 0) {
-        logService.logTerminal('WARN', 'WARNING', 'AiValidator', `${context}: Input text is empty or whitespace only`);
+        logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiValidator', `${context}: Input text is empty or whitespace only`);
         return false;
     }
 
     if (trimmed.length < MIN_TEXT_LENGTH) {
-        logService.logTerminal('WARN', 'WARNING', 'AiValidator', `${context}: Input text too short (${trimmed.length} chars). Minimum ${MIN_TEXT_LENGTH} chars required for meaningful extraction.`);
+        logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiValidator', `${context}: Input text too short (${trimmed.length} chars). Minimum ${MIN_TEXT_LENGTH} chars required for meaningful extraction.`);
         return false;
     }
 
@@ -113,7 +114,7 @@ async function areCriteriaSynonyms(criterionA, criterionB) {
     const AiService = require('../services/AiService');
     const promptRepo = require('../repositories/PromptRepo');
     
-    const synonymPrompt = promptRepo.getPromptBySystemName('synonym_validator').prompt;
+    const synonymPrompt = promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.SYNONYM_VALIDATOR).prompt;
     
     const messages = [
         { 
@@ -132,8 +133,9 @@ async function areCriteriaSynonyms(criterionA, criterionB) {
             isSynonym: content.trim().toUpperCase().includes('YES')
         };
     } catch (error) {
-        const logService = require('../services/LogService');
-        logService.logTerminal('WARN', 'WARNING', 'AiValidator', `Synonym verification failed, defaulting to false: ${error.message}`);
+const logService = require('../services/LogService');
+const { LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
+        logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiValidator', `Synonym verification failed, defaulting to false: ${error.message}`);
         return { isSynonym: false };
     }
 }

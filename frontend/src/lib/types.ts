@@ -2,9 +2,30 @@
  * @module types
  * @description Central TypeScript type definitions for the Compari frontend.
  * Consolidates all domain types for entities, matches, queues, and criteria.
+ * Uses centralized constants from ./constants.ts for type safety and DRY principle.
  */
 
-export type EntityType = 'requirement' | 'offering';
+import { ENTITY_ROLES, AI_MODEL_ROLES, FIELD_TYPES, TOAST_TYPES } from './constants';
+
+/**
+ * Entity Type derived from centralized constants.
+ * Uses ENTITY_ROLES to ensure runtime type safety and prevent typo-induced bugs.
+ */
+export type EntityType = typeof ENTITY_ROLES[keyof typeof ENTITY_ROLES];
+
+/**
+ * AI Model Role derived from centralized constants.
+ * Ensures consistent typing across the application.
+ */
+export type AiModelRole = typeof AI_MODEL_ROLES[keyof typeof AI_MODEL_ROLES];
+
+/**
+ * Blueprint Field Type derived from centralized constants.
+ * Prevents magic string errors in field type definitions.
+ */
+export type FieldType = typeof FIELD_TYPES[keyof typeof FIELD_TYPES];
+
+export type ToastType = typeof TOAST_TYPES[keyof typeof TOAST_TYPES];
 
 /**
  * Unified Entity interface replacing separate User and JobListing types.
@@ -96,7 +117,7 @@ export interface Settings {
 
 export interface Toast {
   id: string;
-  type: 'error' | 'success' | 'info';
+  type: ToastType;
   message: string;
 }
 
@@ -105,7 +126,7 @@ export interface SSEEntityUpdate {
 }
 
 export interface SSENotification {
-  type: 'error' | 'success' | 'info';
+  type: ToastType;
   message: string;
 }
 
@@ -179,7 +200,7 @@ export interface AiModel {
   modelIdentifier: string;
   apiUrl: string | null;
   apiKey: string | null;
-  role: 'chat' | 'embedding';
+  role: AiModelRole;
   /**
    * Controls response randomness (0.0 to 2.0).
    * Lower values produce more deterministic responses, higher values increase creativity.
@@ -219,10 +240,10 @@ export interface BlueprintField {
   id: number;
   blueprint_id: number;
   field_name: string;
-  field_type: 'string' | 'number' | 'date' | 'boolean';
+  field_type: FieldType;
   description: string;
   is_required: boolean;
-  entity_role: 'requirement' | 'offering';
+  entity_role: EntityType;
 }
 
 /**

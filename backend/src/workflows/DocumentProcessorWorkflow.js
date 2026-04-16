@@ -32,7 +32,7 @@ const criteriaManagerWorkflow = require('./CriteriaManagerWorkflow');
 const blueprintRepo = require('../repositories/BlueprintRepo');
 const entityRepo = require('../repositories/EntityRepo');
 const SettingsManager = require('../config/SettingsManager');
-const { DOCUMENT_TYPES, QUEUE_TASKS, ENTITY_STATUS } = require('../config/constants');
+const { DOCUMENT_TYPES, QUEUE_TASKS, ENTITY_STATUS, ENTITY_ROLES, AI_TASK_TYPES, APP_EVENTS, LOG_LEVELS, LOG_SYMBOLS, SETTING_KEYS } = require('../config/constants');
 const path = require('path');
 
 class DocumentProcessorWorkflow {
@@ -70,7 +70,7 @@ class DocumentProcessorWorkflow {
        * Accepts entityType to correctly route files to OFFERINGS_DIR (offerings) or REQUIREMENTS_DIR (requirements).
        * Prevents requirement documents from polluting the offering pool.
       */
-    async initiateDocumentUpload(file, entityType = 'offering') {
+    async initiateDocumentUpload(file, entityType = ENTITY_ROLES.OFFERING) {
         // 1. Validate AI health BEFORE creating any DB records or moving files
         try {
             await AiService.isHealthy();
@@ -100,7 +100,7 @@ class DocumentProcessorWorkflow {
             fileName
         });
 
-        logService.addActivityLog('Entity', entityId, 'INFO', `Document uploaded: ${fileName}. Queued for AI processing.`, tempFolderPath);
+        logService.addActivityLog('Entity', entityId, LOG_LEVELS.INFO, `Document uploaded: ${fileName}. Queued for AI processing.`, tempFolderPath);
 
         return entityId;
     }
@@ -172,7 +172,7 @@ class DocumentProcessorWorkflow {
             throw new Error(`Entity #${entityId} not found.`);
         }
 
-        const entityRole = entity.type || 'offering';
+        const entityRole = entity.type || ENTITY_ROLES.OFFERING;
 
         let blueprintFields = [];
         let blueprintName = 'Entity';
@@ -180,20 +180,19 @@ class DocumentProcessorWorkflow {
         if (entity.blueprintId) {
             const blueprint = blueprintRepo.getBlueprintById(entity.blueprintId);
             if (blueprint) {
-                blueprintName = entityRole === 'requirement' ? blueprint.requirementLabelSingular : blueprint.offeringLabelSingular;
+                blueprintName = entityRole === ENTITY_ROLES.REQUIREMENT ? blueprint.requirementLabelSingular : blueprint.offeringLabelSingular;
                 // Filter fields by entity role (requirement or offering)
                 blueprintFields = blueprintRepo.getBlueprintFields(entity.blueprintId, entityRole);
             }
         }
 
         if (blueprintFields.length === 0) {
-            logService.logTerminal('WARN', 'WARNING', 'DocumentProcessorWorkflow', 'No blueprint fields found for this entity role, using fallback extraction.');
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'DocumentProcessorWorkflow', 'No blueprint fields found for this entity role, using fallback extraction.');
         }
 
         entityService.updateProcessingStep(entityId, 'Extracting Profile & Metadata');
 
-        await AiService.warmUpModel('general');
-        await AiService.warmUpModel('metadata');
+        await AiService.warmUpModels([AI_TASK_TYPES.GENERAL, AI_TASK_TYPES.METADATA]);
 
         const dynamicMetadata = {};
         const tasks = [];
@@ -210,7 +209,7 @@ class DocumentProcessorWorkflow {
 
                     const { content: responseString } = await AiService.generateChatResponse(
                         metadataMessages,
-                        { format: metadataSchema, logFolderPath: folderPath, taskType: 'metadata', temperature: 0.1, logAction: `Extracted field '${fieldName}' for Entity #${entityId}.` },
+                        { format: metadataSchema, logFolderPath: folderPath, taskType: AI_TASK_TYPES.METADATA, temperature: 0.1, logAction: `Extracted field '${fieldName}' for Entity #${entityId}.` },
                         undefined, undefined, signal
                     );
 
@@ -224,8 +223,9 @@ class DocumentProcessorWorkflow {
                     if (err.name === 'AbortError' || err.message === 'Task cancelled') {
                         throw err;
                     }
+                    if (err.isConnectionError) throw err; // Let the retry helper handle Ollama crashes
 
-                    logService.logTerminal('ERROR', 'ERROR', 'DocumentProcessorWorkflow', `Failed to extract field '${fieldName}' for Entity #${entityId}: ${err.message}`);
+                    logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'DocumentProcessorWorkflow', `Failed to extract field '${fieldName}' for Entity #${entityId}: ${err.message}`);
                     logService.logErrorFile('DocumentProcessorWorkflow', `Failed to extract field '${fieldName}' for Entity #${entityId}`, err);
                     dynamicMetadata[fieldName] = field.isRequired ? 'Unknown' : null;
                 }
@@ -250,8 +250,9 @@ class DocumentProcessorWorkflow {
                 if (err.name === 'AbortError' || err.message === 'Task cancelled') {
                     throw err;
                 }
+                if (err.isConnectionError) throw err; // Let the retry helper handle Ollama crashes
 
-                logService.logTerminal('ERROR', 'ERROR', 'DocumentProcessorWorkflow', `Failed to extract verbatim profile for Entity #${entityId}: ${err.message}`);
+                logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'DocumentProcessorWorkflow', `Failed to extract verbatim profile for Entity #${entityId}: ${err.message}`);
                 logService.logErrorFile('DocumentProcessorWorkflow', `Failed to extract verbatim profile for Entity #${entityId}`, err);
                 verbatimPosting = "Failed to extract profile content.";
                 criticalAiError = err;
@@ -260,7 +261,7 @@ class DocumentProcessorWorkflow {
         tasks.push(verbatimTask);
 
         // Execute all chunked metadata requests and markdown formatting based on concurrency setting
-        const allowConcurrent = SettingsManager.get('allow_concurrent_ai') === 'true';
+        const allowConcurrent = SettingsManager.get(SETTING_KEYS.ALLOW_CONCURRENT_AI) === 'true';
         if (allowConcurrent) {
             await Promise.all(tasks.map(t => t()));
         } else {
@@ -272,7 +273,7 @@ class DocumentProcessorWorkflow {
         // Use entity's existing name and description for fallback
         const entityTitle = entity.name || 'Unknown Title';
         const entityDescription = entity.description || 'Unknown Organization';
-        const entityRoleForPath = entity.type || 'offering';
+        const entityRoleForPath = entity.type || ENTITY_ROLES.OFFERING;
 
         const extractedDetails = {
             rawText,
@@ -310,7 +311,7 @@ class DocumentProcessorWorkflow {
         if (typeof entityService.updateEntityFolderPath === 'function') {
             entityService.updateEntityFolderPath(entityId, finalFolderPath);
         } else {
-            logService.logTerminal('WARN', 'WARNING', 'DocumentProcessorWorkflow', 'entityService.updateEntityFolderPath is missing. Database path is stale.');
+            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'DocumentProcessorWorkflow', 'entityService.updateEntityFolderPath is missing. Database path is stale.');
         }
 
         entityService.registerDocumentRecord(entityId, DOCUMENT_TYPES.ENTITY_PROFILE, fileName, finalFilePath);
@@ -336,9 +337,9 @@ class DocumentProcessorWorkflow {
         const seconds = Math.floor((durationMs % 60000) / 1000);
         const durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 
-        logService.addActivityLog('Entity', entityId, 'INFO', `AI successfully extracted details for ${entityTitle}. Processing took ${durationStr}.`, finalFolderPath);
+        logService.addActivityLog('Entity', entityId, LOG_LEVELS.INFO, `AI successfully extracted details for ${entityTitle}. Processing took ${durationStr}.`, finalFolderPath);
 
-        eventService.emit('notification', { type: 'success', message: `AI extracted: ${entityTitle}` });
+        eventService.emit(APP_EVENTS.NOTIFICATION, { type: 'success', message: `AI extracted: ${entityTitle}` });
         return entityId;
     }
 }
