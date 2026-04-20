@@ -63,7 +63,6 @@
  */
 import {
   Target,             // REQUIREMENT
-  BowArrow,           // OFFERING
   Trophy,             // MATCH
   Layout,             // BLUEPRINT
   Blocks,             // DIMENSION

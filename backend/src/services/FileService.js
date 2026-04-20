@@ -238,6 +238,7 @@ class FileService {
             const content = fs.readFileSync(filePath, 'utf8');
             return JSON.parse(content);
         } catch (error) {
+            console.error(`FileService failed to read/parse file at ${filePath}:`, error.stack || error);
             return null;
         }
     }
@@ -274,6 +275,7 @@ class FileService {
             }
             return results;
         } catch (error) {
+            console.error(`FileService failed to read/parse file at ${filePath}:`, error.stack || error);
             return null;
         }
     }

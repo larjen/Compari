@@ -61,6 +61,7 @@ function evaluateCriteriaPair(reqVector, offVector) {
         const similarity = cosineSimilarity(reqVector, offVector);
         return Math.max(0, Math.min(1, similarity));
     } catch (err) {
+        console.error('MatchingEngine evaluation error:', err.stack || err);
         return 0;
     }
 }

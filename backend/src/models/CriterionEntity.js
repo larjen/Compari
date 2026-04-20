@@ -27,6 +27,7 @@ class CriterionEntity extends require('./BaseEntity') {
             try {
                 return JSON.parse(embedding);
             } catch (e) {
+                console.error('Failed to parse embedding array:', e.stack || e);
                 return null;
             }
         }

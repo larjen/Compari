@@ -122,6 +122,7 @@ class AiService {
                 cleanBaseURL = urlObj.toString().replace(/\/$/, '');
             }
         } catch (error) {
+            console.error('Invalid Base URL provided to AiService:', error.stack || error);
             cleanBaseURL = baseURL;
         }
 

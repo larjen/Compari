@@ -109,7 +109,10 @@ class CriteriaService {
             try {
                 const sim = cosineSimilarity(target.embedding, c.embedding);
                 similarities.push({ criterion: c, score: Number(Math.max(0, sim).toFixed(4)) });
-            } catch (e) { continue; }
+            } catch (e) {
+                console.error(`Failed to fetch similar criteria for ID ${criterionId}:`, e.stack || e);
+                continue;
+            }
         }
 
         return similarities.sort((a, b) => b.score - a.score).slice(0, limit);

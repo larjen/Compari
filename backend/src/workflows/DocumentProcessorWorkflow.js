@@ -22,7 +22,7 @@
 const MarkdownGenerator = require('../utils/MarkdownGenerator');
 const NameGenerator = require('../utils/NameGenerator');
 const { processAiTasks } = require('../utils/asyncHandler');
-const { DOCUMENT_TYPES, QUEUE_TASKS, ENTITY_STATUS, ENTITY_ROLES, AI_TASK_TYPES, LOG_LEVELS, LOG_SYMBOLS, SETTING_KEYS } = require('../config/constants');
+const { DOCUMENT_TYPES, ENTITY_STATUS, ENTITY_ROLES, AI_TASK_TYPES, LOG_LEVELS, LOG_SYMBOLS, SETTING_KEYS } = require('../config/constants');
 const path = require('path');
 
 class DocumentProcessorWorkflow {

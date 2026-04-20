@@ -23,6 +23,7 @@ class EntityFactory {
             try {
                 parsedMetadata = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
             } catch (e) {
+                console.error('EntityFactory parsing error:', e.stack || e);
                 parsedMetadata = null;
             }
         }
@@ -32,6 +33,7 @@ class EntityFactory {
             try {
                 parsedEmbedding = typeof row.embedding === 'string' ? JSON.parse(row.embedding) : row.embedding;
             } catch (e) {
+                console.error('EntityFactory parsing error:', e.stack || e);
                 parsedEmbedding = null;
             }
         }

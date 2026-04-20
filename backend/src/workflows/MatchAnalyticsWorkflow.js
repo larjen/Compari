@@ -214,6 +214,7 @@ class MatchAnalyticsWorkflow {
                     existingMatchStatus: existingMatch ? existingMatch.status : null
                 });
             } catch(e) {
+                console.error(`MatchAnalyticsWorkflow chunk evaluation failed for entity ${entityId}:`, e.stack || e);
                 continue;
             }
         }

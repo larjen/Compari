@@ -433,7 +433,9 @@ class QueueService {
                         controller.abort();
                     }
                 }
-            } catch (_e) { /* ignored intentionally */ }
+            } catch (error) {
+                console.error('QueueService abort check failed:', error.stack || error);
+            }
         }
     }
 
