@@ -1,15 +1,16 @@
 'use client';
 
-import { Plus, Loader2 } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Button } from './Button';
 import { ButtonHTMLAttributes } from 'react';
+import { ButtonSize } from '@/lib/types';
 
 interface CreateButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** The name of the entity being created (e.g., "Match", "Blueprint") */
   entityName: string;
   /** Toggles the loading spinner and disables the button */
   isCreating?: boolean;
-  size?: 'sm' | 'md' | 'lg' | 'icon';
+  size?: ButtonSize;
 }
 
 /**
@@ -36,9 +37,9 @@ export function CreateButton({
       {...props}
     >
       {isCreating ? (
-        <Loader2 className="w-4 h-4 mr-2 shrink-0 animate-spin" />
+        <DOMAIN_ICONS.LOADING className="w-4 h-4 mr-2 shrink-0 animate-spin" />
       ) : (
-        <Plus className="w-4 h-4 mr-2 shrink-0" />
+        <DOMAIN_ICONS.ADD className="w-4 h-4 mr-2 shrink-0" />
       )}
       <span className="pr-1 truncate">
         {isCreating ? `Creating...` : `Create ${formattedEntity}`}

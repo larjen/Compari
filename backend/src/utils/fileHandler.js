@@ -12,13 +12,17 @@
  * - ❌ MUST NOT interact with Services directly; expects entities and buffers as input.
  * - ✅ Operates purely at the HTTP transport layer.
  * 
+ * @dependency_injection
+ * Enforces constructor injection per ARCHITECTURE.md Section 2.
+ * fileService must be passed as a parameter from the caller.
+ * 
  * @deps
  * - Relies on centralized HTTP_HEADERS and MIME_TYPES constants from config/constants.js
  */
 
 const path = require('path');
-const fileService = require('../services/FileService');
-const { HTTP_HEADERS, MIME_TYPES } = require('../config/constants');
+const AppError = require('./AppError');
+const { HTTP_HEADERS, MIME_TYPES, HTTP_STATUS } = require('../config/constants');
 
 const mimeTypeMap = {
     '.pdf': MIME_TYPES.PDF,
@@ -31,16 +35,27 @@ const mimeTypeMap = {
     '.jsonl': MIME_TYPES.JSONL
 };
 
-function handleFileDownload(res, entity, fileName, folderPathKey = 'folderPath') {
+/**
+ * Handles file download by streaming a file from the fileService to the HTTP response.
+ * 
+ * @param {Object} dto - Data Transfer Object containing all required parameters
+ * @param {Object} dto.fileService - The file service instance for file operations
+ * @param {Object} dto.res - Express response object
+ * @param {Object} dto.entity - The entity object containing the folder path
+ * @param {string} dto.fileName - The name of the file to download
+ * @param {string} [dto.folderPathKey='folderPath'] - The key to retrieve folder path from entity
+ * @throws {AppError} If folder or file is not found
+ */
+function handleFileDownload({ fileService, res, entity, fileName, folderPathKey = 'folderPath' }) {
     const folderPath = entity[folderPathKey];
 
     if (!entity || !folderPath) {
-        return res.status(404).json({ error: 'Folder not found.' });
+        throw new AppError('Folder not found.', HTTP_STATUS.NOT_FOUND);
     }
 
     const buffer = fileService.getFileBuffer(folderPath, fileName);
     if (!buffer) {
-        return res.status(404).json({ error: 'File not found on disk.' });
+        throw new AppError('File not found on disk.', HTTP_STATUS.NOT_FOUND);
     }
 
     const ext = path.extname(fileName).toLowerCase();

@@ -1,11 +1,10 @@
 import type { Metadata } from 'next';
 import '@/app/globals.css';
-import { Navbar, ToastContainer, GlobalFooter } from '@/components/layout';
+import { Navbar, ToastContainer, GlobalFooter, GlobalModals } from '@/components/layout';
 import { ModalProvider } from '@/hooks/useModal';
 import { ToastProvider } from '@/hooks/useToast';
 import { BlueprintProvider } from '@/hooks/useBlueprints';
 import { DimensionProvider } from '@/hooks/useDimensions';
-import { GlobalModals } from '@/components/layout/GlobalModals';
 
 export const metadata: Metadata = {
   title: 'Compari',

@@ -9,6 +9,7 @@
  * - All requests go through the REST API endpoints.
  */
 import { Criterion, Entity } from '../types';
+import { HTTP_METHODS } from '../constants';
 import { fetchWrapper } from './apiClient';
 
 /**
@@ -84,7 +85,7 @@ export const criteriaApi = {
    * @returns {Promise<void>}
    */
   async deleteCriterion(id: number): Promise<void> {
-    return fetchWrapper(`/criteria/${id}`, { method: 'DELETE' });
+    return fetchWrapper(`/criteria/${id}`, { method: HTTP_METHODS.DELETE });
   },
 
   async getSimilarCriteria(id: number): Promise<{ criterion: Criterion, score: number }[]> {
@@ -94,8 +95,7 @@ export const criteriaApi = {
 
   async mergeCriteria(keepId: number, removeId: number): Promise<void> {
     return fetchWrapper(`/criteria/${keepId}/merge`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: HTTP_METHODS.POST,
       body: JSON.stringify({ removeId })
     });
   },
@@ -103,5 +103,16 @@ export const criteriaApi = {
   async getMergeHistory(id: number): Promise<{ id: number; keep_id: number; merged_display_name: string; merged_at: string }[]> {
     const data = await fetchWrapper<{ history: { id: number; keep_id: number; merged_display_name: string; merged_at: string }[] }>(`/criteria/${id}/history`);
     return data.history;
+  },
+
+  /**
+   * Retrieves a single criterion by ID.
+   * @param {number} id - The criterion ID.
+   * @returns {Promise<Criterion>} The criterion object.
+   * @throws {Error} If the request fails.
+   */
+  async getCriterion(id: number): Promise<Criterion> {
+    const data = await fetchWrapper<{ criterion: Criterion }>(`/criteria/${id}`);
+    return data.criterion;
   },
 };

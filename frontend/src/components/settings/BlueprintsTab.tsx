@@ -4,22 +4,18 @@ import { useBlueprints } from '@/hooks/useBlueprints';
 import { useDimensions } from '@/hooks/useDimensions';
 import { useToast } from '@/hooks/useToast';
 import { useBlueprintForm } from '@/hooks/useBlueprintForm';
-import { Layout, Loader2, Plus, Trash2, Check, Scale, Weight } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { EmptyState } from '@/components/shared/PageStates';
-import { Button } from '@/components/ui/Button';
-import { CreateButton } from '@/components/ui/CreateButton';
-import { SaveButton } from '@/components/ui/SaveButton';
-import { EditButton } from '@/components/ui/EditButton';
-import { DeleteAction } from '@/components/ui/DeleteAction';
-import { Dimension } from '@/lib/types';
+import { Button, CreateButton, SaveButton, EditButton, DeleteAction, ModalFooter, FormLabel, FormInput, FormSelect, FormTextarea, MicroBadge } from '@/components/ui';
+import { Dimension, FieldType, EntityType } from '@/lib/types';
 import { TOAST_TYPES } from '@/lib/constants';
 
 export interface FieldFormData {
   fieldName: string;
-  fieldType: 'string' | 'number' | 'date' | 'boolean';
+  fieldType: FieldType;
   description: string;
   isRequired: boolean;
-  entityRole: 'requirement' | 'offering';
+  entityRole: EntityType;
 }
 
 export interface BlueprintFormData {
@@ -35,9 +31,6 @@ export interface BlueprintFormData {
   dimensionIds: number[];
   isActive: boolean;
 }
-
-const inputClass = "w-full px-3 py-2 border border-themed-input-border rounded-lg bg-themed-input-bg text-themed-fg-main focus:ring-2 focus:ring-accent-sage/50 outline-none text-sm";
-const labelClass = "block text-xs font-bold text-themed-fg-muted uppercase mb-1";
 
 export function BlueprintsTab({ isCreating, setIsCreating }: { isCreating: boolean, setIsCreating: (val: boolean) => void }) {
   const { blueprints, loading: loadingBlueprints, addBlueprint, updateBlueprint, deleteBlueprint, setActiveBlueprint } = useBlueprints();
@@ -103,7 +96,7 @@ export function BlueprintsTab({ isCreating, setIsCreating }: { isCreating: boole
   if (loadingBlueprints || loadingDimensions) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-accent-sage" />
+        <DOMAIN_ICONS.LOADING className="w-8 h-8 animate-spin text-accent-sage" />
       </div>
     );
   }
@@ -123,16 +116,16 @@ export function BlueprintsTab({ isCreating, setIsCreating }: { isCreating: boole
             onRemoveField={(i: number) => removeField(i, false)}
             onToggleDimension={(id: number) => toggleDimension(id, false)}
           />
-          <div className="flex justify-end gap-3 pt-4 border-t border-themed-border">
+          <ModalFooter>
             <Button variant="ghost" onClick={() => setIsCreating(false)}>Cancel</Button>
             <CreateButton entityName="Blueprint" size="md" onClick={handleCreate} />
-          </div>
+          </ModalFooter>
         </div>
       )}
 
       {/* LIST */}
       {blueprints.length === 0 ? (
-        <EmptyState icon={Layout} title="No blueprints" subtitle="Create blueprints to define entity templates." />
+        <EmptyState icon="BLUEPRINT" title="No blueprints" subtitle="Create blueprints to define entity templates." />
       ) : (
         <div className="space-y-6">
           {blueprints.map((bp) => {
@@ -148,9 +141,9 @@ export function BlueprintsTab({ isCreating, setIsCreating }: { isCreating: boole
                     <div className="flex items-center gap-3">
                       <h3 className="text-lg font-bold text-themed-fg-main">{bp.name}</h3>
                       {isActive && (
-                        <span className="px-2 py-0.5 text-[10px] uppercase tracking-wider font-bold bg-accent-sage/20 text-accent-forest rounded-full">
+                        <MicroBadge variant="sage">
                           Active
-                        </span>
+                        </MicroBadge>
                       )}
                     </div>
                     <p className="text-sm text-themed-fg-muted mt-1">{bp.description || 'No description'}</p>
@@ -174,24 +167,24 @@ export function BlueprintsTab({ isCreating, setIsCreating }: { isCreating: boole
                       onRemoveField={(i: number) => removeField(i, true)}
                       onToggleDimension={(id: number) => toggleDimension(id, true)}
                     />
-                    <div className="flex justify-end items-center gap-3 pt-4 border-t border-themed-border">
+                    <ModalFooter>
                       <DeleteAction onDelete={() => handleDelete(bp.id)} buttonText="Delete Blueprint" />
                       <Button variant="ghost" onClick={cancelEditing}>Cancel</Button>
                       <SaveButton size="md" onClick={() => handleUpdate(bp.id)} saveText="Save Changes" />
-                    </div>
+                    </ModalFooter>
                   </div>
                 ) : (
                   /* READ-ONLY MODE */
                   <div className="space-y-6">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className={labelClass}>Requirement Details ({bp.requirementLabelSingular})</label>
+                        <FormLabel>Requirement Details ({bp.requirementLabelSingular})</FormLabel>
                         <div className="font-mono text-sm text-themed-fg-main whitespace-pre-wrap bg-themed-inner p-4 rounded-md border border-themed-border">
                           {bp.requirementDocTypeLabel || <span className="text-themed-fg-muted italic">No instruction provided.</span>}
                         </div>
                       </div>
                       <div>
-                        <label className={labelClass}>Offering Details ({bp.offeringLabelSingular})</label>
+                        <FormLabel>Offering Details ({bp.offeringLabelSingular})</FormLabel>
                         <div className="font-mono text-sm text-themed-fg-main whitespace-pre-wrap bg-themed-inner p-4 rounded-md border border-themed-border">
                           {bp.offeringDocTypeLabel || <span className="text-themed-fg-muted italic">No instruction provided.</span>}
                         </div>
@@ -201,7 +194,7 @@ export function BlueprintsTab({ isCreating, setIsCreating }: { isCreating: boole
                     <div className="grid grid-cols-2 gap-6">
                       <div className="bg-themed-inner border border-themed-input-border rounded-lg p-4">
                         <div className="flex items-center gap-2 mb-3">
-                          <Scale className="w-4 h-4 text-themed-fg-muted" />
+                          <DOMAIN_ICONS.REQUIREMENT className="w-4 h-4 text-themed-fg-muted" />
                           <span className="text-sm font-medium text-themed-fg-muted">Requirement Fields</span>
                         </div>
                         {requirementFields.length > 0 ? (
@@ -221,7 +214,7 @@ export function BlueprintsTab({ isCreating, setIsCreating }: { isCreating: boole
 
                       <div className="bg-themed-inner border border-themed-input-border rounded-lg p-4">
                         <div className="flex items-center gap-2 mb-3">
-                          <Weight className="w-4 h-4 text-themed-fg-muted" />
+                          <DOMAIN_ICONS.OFFERING className="w-4 h-4 text-themed-fg-muted" />
                           <span className="text-sm font-medium text-themed-fg-muted">Offering Fields</span>
                         </div>
                         {offeringFields.length > 0 ? (
@@ -242,7 +235,7 @@ export function BlueprintsTab({ isCreating, setIsCreating }: { isCreating: boole
 
                     {bp.dimensions && bp.dimensions.length > 0 && (
                       <div>
-                        <label className={labelClass}>AI Extraction Dimensions</label>
+                        <FormLabel>AI Extraction Dimensions</FormLabel>
                         <div className="flex flex-wrap gap-2 mt-2">
                           {bp.dimensions.map((dim) => (
                             <span key={dim.id} className="px-3 py-1 text-sm rounded-full bg-themed-inner border border-themed-border text-themed-fg-main">
@@ -273,47 +266,47 @@ function BlueprintEditor({ data, setData, dimensions, onAddField, onUpdateField,
   return (
     <div className="space-y-4">
       <div>
-        <label className={labelClass}>Name</label>
-        <input type="text" value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} placeholder="e.g., Employment Match" className={inputClass} />
+        <FormLabel>Name</FormLabel>
+        <FormInput type="text" value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} placeholder="e.g., Employment Match" />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className={labelClass}>Requirement Singular</label>
-          <input type="text" value={data.requirementLabelSingular} onChange={(e) => setData({ ...data, requirementLabelSingular: e.target.value })} placeholder="e.g., Job Listing" className={inputClass} />
+          <FormLabel>Requirement Singular</FormLabel>
+          <FormInput type="text" value={data.requirementLabelSingular} onChange={(e) => setData({ ...data, requirementLabelSingular: e.target.value })} placeholder="e.g., Job Listing" />
         </div>
         <div>
-          <label className={labelClass}>Requirement Plural</label>
-          <input type="text" value={data.requirementLabelPlural} onChange={(e) => setData({ ...data, requirementLabelPlural: e.target.value })} placeholder="e.g., Job Listings" className={inputClass} />
+          <FormLabel>Requirement Plural</FormLabel>
+          <FormInput type="text" value={data.requirementLabelPlural} onChange={(e) => setData({ ...data, requirementLabelPlural: e.target.value })} placeholder="e.g., Job Listings" />
         </div>
         <div>
-          <label className={labelClass}>Offering Singular</label>
-          <input type="text" value={data.offeringLabelSingular} onChange={(e) => setData({ ...data, offeringLabelSingular: e.target.value })} placeholder="e.g., Candidate" className={inputClass} />
+          <FormLabel>Offering Singular</FormLabel>
+          <FormInput type="text" value={data.offeringLabelSingular} onChange={(e) => setData({ ...data, offeringLabelSingular: e.target.value })} placeholder="e.g., Candidate" />
         </div>
         <div>
-          <label className={labelClass}>Offering Plural</label>
-          <input type="text" value={data.offeringLabelPlural} onChange={(e) => setData({ ...data, offeringLabelPlural: e.target.value })} placeholder="e.g., Candidates" className={inputClass} />
+          <FormLabel>Offering Plural</FormLabel>
+          <FormInput type="text" value={data.offeringLabelPlural} onChange={(e) => setData({ ...data, offeringLabelPlural: e.target.value })} placeholder="e.g., Candidates" />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className={labelClass}>Requirement Document Guidance</label>
-          <textarea value={data.requirementDocTypeLabel} onChange={(e) => setData({ ...data, requirementDocTypeLabel: e.target.value })} placeholder="e.g., Upload a PDF of the Job Listing..." rows={3} className={`${inputClass} resize-none`} />
+          <FormLabel>Requirement Document Guidance</FormLabel>
+          <FormTextarea value={data.requirementDocTypeLabel} onChange={(e) => setData({ ...data, requirementDocTypeLabel: e.target.value })} placeholder="e.g., Upload a PDF of the Job Listing..." rows={3} className="resize-none" />
         </div>
         <div>
-          <label className={labelClass}>Offering Document Guidance</label>
-          <textarea value={data.offeringDocTypeLabel} onChange={(e) => setData({ ...data, offeringDocTypeLabel: e.target.value })} placeholder="e.g., Upload a PDF of the Resume..." rows={3} className={`${inputClass} resize-none`} />
+          <FormLabel>Offering Document Guidance</FormLabel>
+          <FormTextarea value={data.offeringDocTypeLabel} onChange={(e) => setData({ ...data, offeringDocTypeLabel: e.target.value })} placeholder="e.g., Upload a PDF of the Resume..." rows={3} className="resize-none" />
         </div>
       </div>
 
       <div>
-        <label className={labelClass}>Description</label>
-        <textarea value={data.description} onChange={(e) => setData({ ...data, description: e.target.value })} placeholder="Optional description..." rows={2} className={`${inputClass} resize-none`} />
+        <FormLabel>Description</FormLabel>
+        <FormTextarea value={data.description} onChange={(e) => setData({ ...data, description: e.target.value })} placeholder="Optional description..." rows={2} className="resize-none" />
       </div>
 
       <div>
-        <label className={labelClass}>Metadata Fields</label>
+        <FormLabel>Metadata Fields</FormLabel>
         {data.fields.length > 0 && (
           <div className="space-y-2 mb-3">
             {data.fields.map((field: any, index: number) => (
@@ -321,23 +314,23 @@ function BlueprintEditor({ data, setData, dimensions, onAddField, onUpdateField,
                 <div className="flex items-end gap-3 mb-3">
                   <div className="flex-1">
                     <label className="block text-[10px] font-bold text-themed-fg-muted uppercase mb-1">Field Name</label>
-                    <input type="text" value={field.fieldName} onChange={(e) => onUpdateField(index, { ...field, fieldName: e.target.value })} placeholder="e.g., email" className={inputClass} />
+                    <FormInput type="text" value={field.fieldName} onChange={(e) => onUpdateField(index, { ...field, fieldName: e.target.value })} placeholder="e.g., email" />
                   </div>
                   <div className="w-32">
                     <label className="block text-[10px] font-bold text-themed-fg-muted uppercase mb-1">Type</label>
-                    <select value={field.fieldType} onChange={(e) => onUpdateField(index, { ...field, fieldType: e.target.value })} className={inputClass}>
+                    <FormSelect value={field.fieldType} onChange={(e) => onUpdateField(index, { ...field, fieldType: e.target.value })}>
                       <option value="string">String</option>
                       <option value="number">Number</option>
                       <option value="date">Date</option>
                       <option value="boolean">Boolean</option>
-                    </select>
+                    </FormSelect>
                   </div>
                   <div className="w-32">
                     <label className="block text-[10px] font-bold text-themed-fg-muted uppercase mb-1">Role</label>
-                    <select value={field.entityRole} onChange={(e) => onUpdateField(index, { ...field, entityRole: e.target.value })} className={inputClass}>
+                    <FormSelect value={field.entityRole} onChange={(e) => onUpdateField(index, { ...field, entityRole: e.target.value })}>
                       <option value="requirement">Requirement</option>
                       <option value="offering">Offering</option>
-                    </select>
+                    </FormSelect>
                   </div>
                   <div className="pb-2">
                     <label className="flex items-center gap-2 text-sm text-themed-fg-muted whitespace-nowrap cursor-pointer">
@@ -347,25 +340,25 @@ function BlueprintEditor({ data, setData, dimensions, onAddField, onUpdateField,
                   </div>
                   <div className="pb-2">
                     <button type="button" onClick={() => onRemoveField(index)} className="text-red-400 opacity-70 hover:opacity-100 hover:bg-red-400/10 p-1 rounded">
-                      <Trash2 className="w-4 h-4" />
+                      <DOMAIN_ICONS.DELETE className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-themed-fg-muted uppercase mb-1">AI Extraction Instruction</label>
-                  <textarea value={field.description} onChange={(e) => onUpdateField(index, { ...field, description: e.target.value })} placeholder="Prompt instruction for extracting this field..." rows={3} className={`${inputClass} resize-none font-mono`} />
+                  <FormTextarea value={field.description} onChange={(e) => onUpdateField(index, { ...field, description: e.target.value })} placeholder="Prompt instruction for extracting this field..." rows={3} className="resize-none font-mono" />
                 </div>
               </div>
             ))}
           </div>
         )}
         <Button variant="secondary" size="sm" onClick={onAddField}>
-          <Plus className="w-4 h-4 mr-1" /> Add Field
+          <DOMAIN_ICONS.ADD className="w-4 h-4 mr-1" /> Add Field
         </Button>
       </div>
 
       <div>
-        <label className={labelClass}>AI Extraction Dimensions</label>
+        <FormLabel>AI Extraction Dimensions</FormLabel>
         <div className="flex flex-wrap gap-2">
           {dimensions.map((dim: any) => {
             const isSelected = data.dimensionIds.includes(dim.id);
@@ -377,7 +370,7 @@ function BlueprintEditor({ data, setData, dimensions, onAddField, onUpdateField,
                 className={`flex items-center px-3 py-1.5 rounded-full text-sm transition-colors ${isSelected ? 'bg-accent-sage text-accent-forest' : 'bg-themed-inner text-themed-fg-muted border border-themed-border hover:bg-themed-border'
                   }`}
               >
-                {isSelected && <Check className="w-3.5 h-3.5 mr-1.5" />}
+                {isSelected && <DOMAIN_ICONS.CHECK className="w-3.5 h-3.5 mr-1.5" />}
                 {dim.displayName}
               </button>
             );

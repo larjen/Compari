@@ -1,19 +1,20 @@
 /**
  * @module AiService
  * @description Infrastructure Service for interacting with LLMs using the OpenAI SDK.
- * 
+ *
  * @responsibility
- * - Connects to OpenAI-compatible APIs (cloud and local) using the OpenAI SDK.
+ * - Connects to OpenAI-compatible APIs using the OpenAI SDK.
+ * - Assumes OpenAI SDK compatibility for all connected providers.
  * - Provides generic chat generation and embedding without domain-specific knowledge.
  * - Automatically resolves connection settings (model, api_url, api_key) from AiModelRepo.
  * - Supports role-based models: one active 'chat' model and one active 'embedding' model.
- * 
+ *
  * @role_based_models
  * - This service now supports distinct active models for 'chat' and 'embedding' roles.
  * - Chat models are used for text generation, conversation, and structured output.
  * - Embedding models are used for vectorization and similarity calculations.
  * - Each role can have its own active model, allowing optimization (e.g., fast chat model + powerful embedding model).
- * 
+ *
  * @socexplanation
  * - This service now autonomously resolves its connection settings via AiModelRepo,
  *   adhering to Separation of Concerns (SoC). Domain workflows no longer need to manage
@@ -22,46 +23,125 @@
  *   delegates configuration to the Infrastructure layer where it belongs.
  * - Logging model usage in the Infrastructure layer (AiService) follows SoC principles:
  *   This is a technical concern (which model was used), not a business domain concern.
- * 
+ *
  * @boundary_rules
  * - ✅ MAY call other Utility/Infrastructure services (LogService, AiModelRepo).
  * - ❌ MUST NOT call Domain Services (e.g., JobService, WorkflowService).
  * - ❌ MUST NOT contain business logic or construct business-specific paths.
  * - ❌ MUST NOT use SettingsManager for AI configuration (now database-driven).
- * 
+ * - ❌ MUST NOT contain provider-specific branching (assumes OpenAI SDK compatibility).
+ *
  * @separation_of_concerns
  * - AI generation success: Use logTerminal() for feedback. Use logSystemFile() for milestones.
  * - AI generation errors: Use logTerminal() with 'ERROR' + logErrorFile() for audit.
+ *
+ * @dependency_injection
+ * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
  */
 
+const crypto = require('crypto');
+const path = require('path');
 const { OpenAI } = require('openai');
-const logService = require('./LogService');
-const aiModelRepo = require('../repositories/AiModelRepo');
-const { AI_MODEL_ROLES, AI_TASK_TYPES, LOG_LEVELS, LOG_SYMBOLS, SETTING_KEYS } = require('../config/constants');
-
-const DEFAULT_CHAT_MODEL = 'gemma4:e4b';
-const DEFAULT_EMBEDDING_MODEL = 'nomic-embed-text';
-const DEFAULT_API_URL = 'http://127.0.0.1:11434/v1';
+const { AI_MODEL_ROLES, AI_TASK_TYPES, LOG_LEVELS, LOG_SYMBOLS, SETTING_KEYS, AI_CACHE_DIR } = require('../config/constants');
 
 class AiService {
     /**
-     * Retrieves the model configuration for a given role (chat or embedding).
-     * Abstracts the database lookup, object mapping, and fallback logic to keep the service DRY.
-     * @private
-     * @param {string} role - The role to get config for ('chat' or 'embedding').
-     * @param {string} defaultModelIdentifier - The default model identifier to use if no active model is found.
-     * @returns {Object} Model configuration object with modelIdentifier, apiUrl, apiKey, role.
+     * @constructor
+     * @param {Object} deps - Dependencies object
+     * @param {Object} deps.settingsManager - The SettingsManager instance
+     * @param {Object} deps.aiModelRepo - The AiModelRepo instance
+     * @param {Object} deps.logService - The LogService instance
+     * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
      */
+    constructor({ settingsManager, aiModelRepo, logService, fileService }) {
+        this._settingsManager = settingsManager;
+        this._aiModelRepo = aiModelRepo;
+        this._logService = logService;
+        this._fileService = fileService;
+        this.clientCache = new Map();
+        this.isTestingConnection = false;
+    }
+
+    _generateCacheKey(prefix, payload) {
+        const hash = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+        return `${prefix}_${hash}.json`;
+    }
+
+    /**
+     * @private
+     * Checks the file system cache for a previously generated AI response.
+     * Enforces DRY principles across chat and embedding generations.
+     * @param {string} cacheKey - The generated cache key filename.
+     * @param {string} logAction - Description of the action for logging.
+     * @returns {Object|null} The cached data, or null if miss/disabled.
+     */
+    _checkCache(cacheKey, logAction) {
+        if (this._settingsManager.get(SETTING_KEYS.USE_AI_CACHE) !== 'true') return null;
+
+        const cachePath = path.join(AI_CACHE_DIR, cacheKey);
+        const cachedData = this._fileService.readJsonFile(cachePath);
+
+        if (cachedData) {
+            this._logService.logTerminal({
+                status: LOG_LEVELS.INFO,
+                symbolKey: LOG_SYMBOLS.LIGHTNING,
+                origin: 'AiService',
+                message: `[VCR CACHE HIT] Returning mocked AI response for: ${logAction}`
+            });
+            return cachedData;
+        }
+        return null;
+    }
+
+    /**
+     * @private
+     * Writes data to the AI cache if caching is enabled.
+     */
+    _writeCache(cacheKey, data) {
+        if (this._settingsManager.get(SETTING_KEYS.USE_AI_CACHE) !== 'true') return;
+        const cachePath = path.join(AI_CACHE_DIR, cacheKey);
+        this._fileService.writeJsonFile(cachePath, data);
+    }
+
+    /**
+     * @private
+     * @description Provider Strategy Factory. Standardizes connection options for the OpenAI SDK.
+     * Sanitizes inputs to prevent "Multiple authentication credentials" errors.
+     * * @responsibility Infrastructure - Connection string normalization.
+     * @boundary_rules No provider-specific branching allowed. Assumes OpenAI compatibility.
+     * * @param {string} baseURL - The API base URL from the database.
+     * @param {string} apiKey - The API key from the database.
+     * @returns {Object} Configured options for the OpenAI client.
+     */
+    _buildClientOptions(baseURL, apiKey) {
+        let cleanBaseURL = baseURL;
+        try {
+            if (baseURL) {
+                const urlObj = new URL(baseURL);
+                urlObj.search = '';
+                cleanBaseURL = urlObj.toString().replace(/\/$/, '');
+            }
+        } catch (error) {
+            cleanBaseURL = baseURL;
+        }
+
+        return {
+            baseURL: cleanBaseURL,
+            apiKey: apiKey || 'dummy-key'
+        };
+    }
+
     /**
      * Retrieves the model configuration for a given role.
+     * STRICT MODE: Throws an error instead of falling back to default identifiers.
      * Uses AI_MODEL_ROLES constants to enforce type safety and prevent typo-induced bugs.
      * @private
      * @param {string} role - The role to get config for (from AI_MODEL_ROLES).
-     * @param {string} defaultModelIdentifier - The default model identifier to use if no active model is found.
      * @returns {Object} Model configuration object with modelIdentifier, apiUrl, apiKey, role.
+     * @throws {Error} If no active model is configured for the requested role.
      */
-    _getModelConfigByRole(role, defaultModelIdentifier) {
-        const activeModel = aiModelRepo.getActiveModelByRole(role);
+    _getModelConfigByRole(role) {
+        const activeModel = this._aiModelRepo.getActiveModelByRole(role);
 
         if (activeModel) {
             return {
@@ -76,23 +156,16 @@ class AiService {
             };
         }
 
-        return {
-            name: defaultModelIdentifier,
-            modelIdentifier: defaultModelIdentifier,
-            apiUrl: DEFAULT_API_URL,
-            apiKey: null,
-            role: role,
-            temperature: 0.1,
-            contextWindow: 8192,
-            id: null
-        };
+        const err = new Error(`Strict Mode: No active AI model configured for role '${role}'. Please set an active model in settings.`);
+        err.isAiError = true;
+        throw err;
     }
 
     _getModelConfigById(id) {
         if (!id) {
             return null;
         }
-        const model = aiModelRepo.getModelById(id);
+        const model = this._aiModelRepo.getModelById(id);
         if (!model) {
             return null;
         }
@@ -111,53 +184,52 @@ class AiService {
     /**
      * @private
      * @description Resolves model configuration based on specific task types.
-     * @note This method uses deferred requiring for SettingsManager to break a 
-     * circular dependency chain during application bootstrap.
+     * STRICT MODE: Throws an error if routing settings are missing, invalid, or unmapped.
+     * @param {string} taskType - The specific AI task type defined in AI_TASK_TYPES.
+     * @returns {Object} Model configuration object.
+     * @throws {Error} If taskType is unknown or model configuration is missing.
+     * * @socexplanation
+     * - Enforces fail-fast domain configuration. Task routing is explicit.
+     * - Uses explicit dependency injection to eliminate circular dependencies.
      */
-    _getModelConfigForTask(taskType, defaultConfig) {
-        // DEFERRED REQUIRE: Breaks circular dependency with SettingsManager
-        const settingsManager = require('../config/SettingsManager');
-
+    _getModelConfigForTask(taskType) {
         let settingKey = null;
-        let fallbackRole = null;
 
         switch (taskType) {
             case AI_TASK_TYPES.GENERAL:
                 settingKey = SETTING_KEYS.MODEL_ROUTING_GENERAL;
-                fallbackRole = AI_MODEL_ROLES.CHAT;
                 break;
             case AI_TASK_TYPES.VERIFICATION:
                 settingKey = SETTING_KEYS.MODEL_ROUTING_VERIFICATION;
-                fallbackRole = AI_MODEL_ROLES.CHAT;
                 break;
             case AI_TASK_TYPES.EMBEDDING:
                 settingKey = SETTING_KEYS.MODEL_ROUTING_EMBEDDING;
-                fallbackRole = AI_MODEL_ROLES.EMBEDDING;
                 break;
             case AI_TASK_TYPES.METADATA:
                 settingKey = SETTING_KEYS.MODEL_ROUTING_METADATA;
-                fallbackRole = AI_MODEL_ROLES.CHAT;
                 break;
-            default:
-                return defaultConfig;
+            default: {
+                // Scoped block {} fixes the ESLint no-case-declarations error
+                const err = new Error(`Strict Mode: Unmapped task type '${taskType}'. No fallback model allowed.`);
+                err.isAiError = true;
+                throw err;
+            }
         }
 
-        if (!settingKey) {
-            return defaultConfig;
-        }
-
-        const modelId = settingsManager.get(settingKey);
+        const modelId = this._settingsManager.get(settingKey);
 
         if (!modelId) {
-            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiService.js', `No model configured for task '${taskType}', falling back to active ${fallbackRole} model.`);
-            return this._getModelConfigByRole(fallbackRole, defaultConfig.modelIdentifier);
+            const err = new Error(`Strict Mode: No model configured for task routing '${taskType}'. Please configure task routing in settings.`);
+            err.isAiError = true;
+            throw err;
         }
 
         const config = this._getModelConfigById(modelId);
 
         if (!config) {
-            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiService.js', `Model ID '${modelId}' not found for task '${taskType}', falling back to active ${fallbackRole} model.`);
-            return this._getModelConfigByRole(fallbackRole, defaultConfig.modelIdentifier);
+            const err = new Error(`Strict Mode: Model ID '${modelId}' configured for task '${taskType}' could not be found. It may have been deleted.`);
+            err.isAiError = true;
+            throw err;
         }
 
         return config;
@@ -165,112 +237,163 @@ class AiService {
 
     /**
      * Retrieves the active chat model configuration from the database.
-     * Falls back to default settings if no active model is found.
+     * STRICT MODE: Throws if no active model is configured.
      * @private
      * @returns {Object} Model configuration object with modelIdentifier, apiUrl, apiKey, role.
+     * @throws {Error} If no active chat model is configured.
      */
     _getChatModelConfig() {
-        return this._getModelConfigByRole(AI_MODEL_ROLES.CHAT, DEFAULT_CHAT_MODEL);
+        return this._getModelConfigByRole(AI_MODEL_ROLES.CHAT);
     }
 
     /**
      * Retrieves the active embedding model configuration from the database.
-     * Falls back to default settings if no active model is found.
+     * STRICT MODE: Throws if no active model is configured.
      * @private
      * @returns {Object} Model configuration object with modelIdentifier, apiUrl, apiKey, role.
+     * @throws {Error} If no active embedding model is configured.
      */
     _getEmbeddingModelConfig() {
-        return this._getModelConfigByRole(AI_MODEL_ROLES.EMBEDDING, DEFAULT_EMBEDDING_MODEL);
+        return this._getModelConfigByRole(AI_MODEL_ROLES.EMBEDDING);
     }
 
     /**
-     * Gets the appropriate client based on the model configuration.
-     * Directly instantiates the OpenAI client with the configured baseURL and apiKey.
+     * Gets or creates the appropriate client based on the model configuration.
+     * Optimized for the hot path using instance caching.
      * @private
-     * @param {Object} [overrideConfig] - Optional override configuration.
+     * @param {Object} config - Required model configuration.
      * @returns {Object} Client object with openai instance and model name.
+     * @throws {Error} If config is not provided.
      */
-    _getClient(overrideConfig) {
-        const config = overrideConfig || this._getChatModelConfig();
+    _getClient(config) {
+        if (!config) throw new Error("Strict Mode: Model configuration is required to initialize AI client.");
 
         const baseURL = config.apiUrl || 'https://api.openai.com/v1';
         const apiKey = config.apiKey || 'dummy-key';
 
+        const cacheKey = `${baseURL}|${apiKey}`;
+
+        if (!this.clientCache.has(cacheKey)) {
+            const clientOptions = this._buildClientOptions(baseURL, apiKey);
+            this.clientCache.set(cacheKey, new OpenAI(clientOptions));
+        }
+
         return {
-            client: new OpenAI({ baseURL, apiKey }),
+            client: this.clientCache.get(cacheKey),
             model: config.modelIdentifier
         };
+}
+
+    /**
+     * Determines if an error from the OpenAI SDK is fundamentally fatal and should never be retried.
+     * All 4xx errors are considered fatal (no retry) EXCEPT 429 (Rate Limit) and 408 (Timeout).
+     * Relies on standard HTTP status codes rather than brittle string matching.
+     * @private
+     * @param {Error} error - The error thrown by the AI client.
+     * @returns {Error|null} Returns a formatted fatal error if true, or null if the error is transient.
+     */
+    _checkFatalError(error) {
+        const status = error.status || error.statusCode;
+
+        if (status >= 400 && status < 500 && status !== 429 && status !== 408) {
+            const fatalErr = new Error(`${error.message}`);
+            fatalErr.isFatalClientError = true;
+            return fatalErr;
+        }
+
+        if (error.code === 'unauthenticated' || error.code === 'permission_denied') {
+            const fatalErr = new Error(`${error.message}`);
+            fatalErr.isFatalClientError = true;
+            return fatalErr;
+        }
+
+        return null;
     }
 
     /**
-     * Checks if the active AI provider is healthy/available.
-     * @param {string} [role] - The role to check ('chat' or 'embedding'). Defaults to 'chat'.
-     * @param {Object} [overrideConfig] - Optional override configuration.
-     * @returns {Promise<boolean>} True if healthy, throws error if not.
-     * @throws {Error} If the AI provider is offline or unreachable.
+     * @private
+     * @description Centralized error handler for AI API errors.
+     * Absorbs duplicated error-catching logic across generateChatResponse and generateEmbedding.
+     * Handles connection timeouts, validation errors, and logs appropriately.
+     * @param {Error} error - The error thrown by the AI client.
+     * @param {Object} logContext - Context object for error logging (e.g., { messages: '...' } or { text: '...' }).
+     * @throws {Error} Re-throws classified connection errors or the original error after logging.
      */
-    async isHealthy(role = AI_MODEL_ROLES.CHAT, overrideConfig) {
-        let config;
-        if (overrideConfig) {
-            config = overrideConfig;
-        } else if (role === AI_MODEL_ROLES.EMBEDDING) {
-            config = this._getEmbeddingModelConfig();
-        } else {
-            config = this._getChatModelConfig();
+    _handleAiApiError(error, logContext) {
+        const fatalError = this._checkFatalError(error);
+        if (fatalError) throw fatalError;
+
+        if (error.name === 'TimeoutError' || error.message.includes('Timeout')) {
+            const timeoutErr = new Error('Connection error.');
+            timeoutErr.isConnectionError = true;
+            throw timeoutErr;
         }
 
-        const { client } = this._getClient(config);
-
-        try {
-            await client.models.list();
-            return true;
-        } catch (error) {
-            const e = new Error(`AI is offline. Details: ${error.message}`);
-            e.isAiError = true;
-            e.isConnectionError = true;
-            throw e;
+        if (error.code === 'ECONNREFUSED' || error.message.includes('ECONNREFUSED') || error.message.includes('fetch failed')) {
+            const connErr = new Error('Connection error.');
+            connErr.isConnectionError = true;
+            throw connErr;
         }
+
+        this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'AiService', message: `Error during AI generation: ${error.message}` });
+        this._logService.logErrorFile({ origin: 'AiService', message: 'Error during AI generation', errorObj: error, details: logContext });
+        throw error;
     }
 
     /**
      * Generates a chat response using the active chat model.
      * Automatically resolves model from the database.
      * @param {Array} messages - Array of message objects with role and content.
-     * @param {Object} options - Optional settings (e.g., temperature, format).
-     * @param {Object} [overrideConfig] - Optional override configuration (for testing/flexibility).
-     * @param {AbortSignal} [signal] - Optional signal to abort the AI generation.
+     * @param {Object} [optionsDto={}] - DTO containing configuration, overrideConfig, and signal.
+     * @param {Object} [optionsDto.taskType] - The task type for model routing.
+     * @param {string} [optionsDto.format] - Output format ('json' or schema object).
+     * @param {string} [optionsDto.logFolderPath] - Folder path for logging AI traffic.
+     * @param {string} [optionsDto.logAction] - Action description for logging.
+     * @param {string} [optionsDto.logSymbol] - Symbol for logging.
+     * @param {number} [optionsDto.temperature] - Sampling temperature.
+     * @param {Object} [optionsDto.overrideConfig] - Optional override configuration (for testing/flexibility).
+     * @param {AbortSignal} [optionsDto.signal] - Optional signal to abort the AI generation.
      * @returns {Promise<string>} The assistant's response content.
-     * 
+     *
      * @socexplanation
+     * - DTO pattern consolidates all optional parameters into a single options object, eliminating parameter creep.
      * - Logs model usage after successful AI generation for observability.
      * - This is infrastructure-level logging (which technical component handled the request).
      * - Protected by try-catch to prevent logging failures from affecting AI functionality.
      * - Automatically strips markdown backticks from JSON responses when format is specified,
      *   ensuring clean output for structured data consumers (Repositories, Workflows).
      * - Resolves model from AiModelRepo using role 'chat'.
-     * 
+     *
      * @options_support
-     * - options.format: Can be 'json' for basic JSON mode, or a JSON Schema object for structured outputs.
+     * - optionsDto.format: Can be 'json' for basic JSON mode, or a JSON Schema object for structured outputs.
      * - When a JSON Schema object is passed, it is passed directly to the provider's format parameter.
      * - When format is provided, markdown backticks are automatically stripped from the response.
      */
-    async generateChatResponse(messages, options = {}, overrideConfig, signal) {
+    async generateChatResponse(messages, optionsDto = {}) {
+        const { overrideConfig, signal, ...options } = optionsDto;
         const startTime = Date.now();
         let config = overrideConfig;
 
         if (!config && options.taskType) {
-            config = this._getModelConfigForTask(options.taskType, this._getChatModelConfig());
+            config = this._getModelConfigForTask(options.taskType);
         }
 
-        if (!config) {
+if (!config) {
             config = this._getChatModelConfig();
         }
-        const { client, model: selectedModel } = this._getClient(config);
-
-        await this.isHealthy(AI_MODEL_ROLES.CHAT, config);
-
         const requestOptions = { ...options };
         const isJsonFormat = options.format === 'json' || (options.format && typeof options.format === 'object');
+
+        const { client, model: selectedModel } = this._getClient(config);
+
+        const cacheKey = this._generateCacheKey('chat', {
+            model: selectedModel,
+            messages,
+            format: options.format
+        });
+
+        const cachedData = this._checkCache(cacheKey, options.logAction || 'Chat');
+        if (cachedData) return cachedData;
 
         const chatParams = {
             model: selectedModel,
@@ -302,40 +425,33 @@ class AiService {
 
             var response = await client.chat.completions.create(chatParams, { signal: combinedSignal });
         } catch (error) {
-            if (error.name === 'TimeoutError' || error.message.includes('Timeout')) {
-                const timeoutErr = new Error(`Connection error.`);
-                timeoutErr.isConnectionError = true;
-                throw timeoutErr;
-            }
-
-            if (error.code === 'ECONNREFUSED' || error.message.includes('ECONNREFUSED') || error.message.includes('fetch failed')) {
-                const connErr = new Error(`Connection error.`);
-                connErr.isConnectionError = true;
-                throw connErr;
-            }
-
-            logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'AiService.js', `Error during AI generation: ${error.message}`);
-            logService.logErrorFile('AiService.js', 'Error during AI generation', error, { messages: messages ? 'Query sent (omitted for brevity)' : null });
-            throw error;
+            this._handleAiApiError(error, { messages: messages ? 'Query sent (omitted for brevity)' : null });
         }
 
         let content = response.choices[0].message.content.trim();
 
         if (options.logFolderPath) {
             try {
-                logService.logAiTraffic(options.logFolderPath, messages, content, config);
+                const shouldLogAi = this._settingsManager.get('log_ai_interactions') === 'true';
+                this._logService.logAiTraffic({
+                    entityFolderPath: options.logFolderPath,
+                    requestMessages: messages,
+                    responseContent: content,
+                    config,
+                    shouldLog: shouldLogAi
+                });
             } catch (err) {
-                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiService.js', `Failed to log AI traffic: ${err.message}`);
+                this._logService.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'AiService.js', message: `Failed to log AI traffic: ${err.message}` });
             }
         }
 
         const durationMs = Date.now() - startTime;
 
         if (options.logAction) {
-            const timeStr = durationMs < 1000 ? `${durationMs}ms` : logService.formatDuration(durationMs);
+            const timeStr = durationMs < 1000 ? `${durationMs}ms` : this._logService.formatDuration(durationMs);
             const origin = 'AiService';
             const symbol = options.logSymbol || LOG_SYMBOLS.LIGHTNING;
-            logService.logTerminal(LOG_LEVELS.INFO, symbol, origin, `[Model: ${selectedModel}] [Time: ${timeStr}] ${options.logAction}`);
+            this._logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: symbol, origin: origin, message: `[Model: ${selectedModel}] [Time: ${timeStr}] ${options.logAction}` });
         }
 
         if (isJsonFormat) {
@@ -347,184 +463,138 @@ class AiService {
             }
         }
 
-        return {
-            content,
-            model: selectedModel,
-            durationMs
-        };
+        const result = { content, model: selectedModel, durationMs };
+        this._writeCache(cacheKey, result);
+        return result;
     }
 
     /**
      * Generates a vector embedding for the given text using the active embedding model.
      * Automatically resolves model from the database using role 'embedding'.
      * @param {string} text - The text to embed.
-     * @param {Object} [overrideConfig] - Optional override configuration.
-     * @param {string} [embeddingModel] - Embedding model name (default: nomic-embed-text).
-     * @param {AbortSignal} [signal] - Optional signal to abort the AI generation.
+     * @param {Object} [optionsDto={}] - Optional settings object.
+     * @param {Object} [optionsDto.overrideConfig] - Optional override configuration.
+     * @param {string} [optionsDto.embeddingModel] - Embedding model name.
+     * @param {AbortSignal} [optionsDto.signal] - Optional signal to abort the AI generation.
+     * @param {string} [optionsDto.logFolderPath] - Optional folder path for logging AI traffic.
      * @returns {Promise<number[]>} Array of floating point numbers representing the embedding.
      */
-    async generateEmbedding(text, overrideConfig, embeddingModel, _signal, options = {}) {
-        let config = overrideConfig;
+    async generateEmbedding(text, optionsDto = {}) {
+        const { overrideConfig, embeddingModel, signal, logFolderPath } = optionsDto;
+        const config = overrideConfig || this._getEmbeddingModelConfig();
+        const { client, model } = this._getClient(config);
+        const modelName = embeddingModel || model;
 
-        if (!config) {
-            config = this._getModelConfigForTask(AI_TASK_TYPES.EMBEDDING, this._getEmbeddingModelConfig());
-        }
+        const cacheKey = this._generateCacheKey('embed', { model: modelName, text });
 
-        if (!config) {
-            config = this._getEmbeddingModelConfig();
-        }
-
-        await this.isHealthy(AI_MODEL_ROLES.EMBEDDING, config);
-
-        const { client } = this._getClient(config);
-        const model = embeddingModel || config.modelIdentifier || DEFAULT_EMBEDDING_MODEL;
+        const cachedData = this._checkCache(cacheKey, 'Embedding');
+        if (cachedData) return cachedData.embedding;
 
         let response;
         try {
             const timeoutSignal = AbortSignal.timeout(120000);
-            const combinedSignal = _signal ? AbortSignal.any([_signal, timeoutSignal]) : timeoutSignal;
+            const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
             response = await client.embeddings.create({
-                model: model,
+                model: modelName,
                 input: text
             }, { signal: combinedSignal });
         } catch (error) {
-            if (error.name === 'TimeoutError' || error.message.includes('Timeout')) {
-                const timeoutErr = new Error(`Connection error.`);
-                timeoutErr.isConnectionError = true;
-                throw timeoutErr;
-            }
-
-            if (error.code === 'ECONNREFUSED' || error.message.includes('ECONNREFUSED') || error.message.includes('fetch failed')) {
-                const connErr = new Error(`Connection error.`);
-                connErr.isConnectionError = true;
-                throw connErr;
-            }
-
-            logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'AiService.js', `Error during AI generation: ${error.message}`);
-            logService.logErrorFile('AiService.js', 'Error during AI generation', error, { text: text ? 'Query sent (omitted for brevity)' : null });
-            throw error;
+            this._handleAiApiError(error, { text: text ? 'Query sent (omitted for brevity)' : null });
         }
 
-        logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.LIGHTNING, 'AiService', `[Model: ${model}] Embedding Prompt: "${text}"`);
-        
-        if (options.logFolderPath) {
+        this._logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.LIGHTNING, origin: 'AiService', message: `[Model: ${modelName}] Embedding Prompt: "${text}"` });
+
+        if (logFolderPath) {
             try {
-                logService.logAiTraffic(options.logFolderPath, { task: AI_TASK_TYPES.EMBEDDING, text }, '[Vector Array Omitted for Brevity]', config);
+                const shouldLogAi = this._settingsManager.get('log_ai_interactions') === 'true';
+                this._logService.logAiTraffic({
+                    entityFolderPath: logFolderPath,
+                    requestMessages: { task: AI_TASK_TYPES.EMBEDDING, text },
+                    responseContent: '[Vector Array Omitted for Brevity]',
+                    config: { modelIdentifier: modelName },
+                    shouldLog: shouldLogAi
+                });
             } catch (err) {
-                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiService.js', `Failed to log AI traffic: ${err.message}`);
+                this._logService.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'AiService', message: `Failed to log AI traffic: ${err.message}` });
             }
         }
 
-        return response.data[0].embedding;
+        /**
+         * @socexplanation
+         * The OpenAI SDK returns embeddings inside a data array: response.data[].embedding.
+         * We strictly validate the presence of this array to prevent propagating undefined 
+         * values to the cache layer or the domain layer (which results in NULL database vectors).
+         */
+        const result = response?.data?.[0]?.embedding;
+
+        if (!result || !Array.isArray(result) || result.length === 0) {
+            const err = new Error(`Failed to extract valid embedding vector from AI provider using model ${modelName}.`);
+            err.isAiError = true;
+            throw err;
+        }
+
+        this._writeCache(cacheKey, { embedding: result });
+        return result;
     }
 
     /**
-     * Pre-warms the AI model by sending a minimal payload to load it into memory.
-     * Logs the spin-up time to the terminal.
-     * @param {string} [taskType='general'] - The task type (e.g., 'general', 'metadata', 'embedding').
-     * @param {Object} [overrideConfig] - Optional override configuration.
-     * @returns {Promise<{model: string, durationMs: number}>}
+     * Executes a true 1-token end-to-end test to verify model availability and VRAM loading.
+     * This replaces the flawed isHealthy pre-flight check by invoking a real prompt to the model.
+     * 
+     * @param {string} [role] - The role to test ('chat' or 'embedding'). Defaults to AI_MODEL_ROLES.CHAT.
+     * @param {Object} [overrideConfig] - Optional override configuration (modelIdentifier, apiUrl, apiKey).
+     * @returns {Promise<Object>} The response object containing model and result.
+     * @throws {Error} If the test fails or a fatal error is detected.
+     * 
+     * @responsibility
+     * - Executes a real prompt to the model to prove it successfully loads into VRAM and executes.
+     * - Handles both 'chat' and 'embedding' roles correctly.
+     * - Throws properly classified fatal errors for unrecoverable failures.
+     * 
+     * @socexplanation
+     * - This method performs the actual execution in the Service layer.
+     * - Error classification (_checkFatalError) happens here.
+     * - Logging is handled by the Controller layer (AiModelController).
      */
-    async warmUpModel(taskType = 'general', overrideConfig) {
-        let config = overrideConfig;
-
-        if (!config) {
-            const defaultRole = taskType === AI_TASK_TYPES.EMBEDDING ? AI_MODEL_ROLES.EMBEDDING : AI_MODEL_ROLES.CHAT;
-            const defaultConfig = defaultRole === AI_MODEL_ROLES.EMBEDDING ? this._getEmbeddingModelConfig() : this._getChatModelConfig();
-            config = this._getModelConfigForTask(taskType, defaultConfig);
+    async testEndToEnd(role = AI_MODEL_ROLES.CHAT, overrideConfig) {
+        if (this.isTestingConnection) {
+            const err = new Error('A connection test is already in progress. Please wait.');
+            err.status = 409;
+            throw err;
         }
 
-        const safeApiUrl = config.apiUrl || 'default local endpoint';
+        this.isTestingConnection = true;
 
-        logService.logTerminal(LOG_LEVELS.INFO, LOG_LEVELS.INFO, 'AiService', `Spinning up model ${config.name} (${config.modelIdentifier}) at ${safeApiUrl}`);
+        let config = overrideConfig;
+        if (!config) {
+            config = role === AI_MODEL_ROLES.EMBEDDING ? this._getEmbeddingModelConfig() : this._getChatModelConfig();
+        }
+        const { client, model } = this._getClient(config);
 
         try {
-            await this.isHealthy(config.role, config);
-            const { client } = this._getClient(config);
-
-            const startTime = Date.now();
-
-            if (config.role === AI_MODEL_ROLES.EMBEDDING) {
+            if (role === AI_MODEL_ROLES.EMBEDDING) {
                 await client.embeddings.create({
-                    model: config.modelIdentifier,
-                    input: 'warmup'
+                    model: model,
+                    input: 'Ping'
                 });
             } else {
                 await client.chat.completions.create({
-                    model: config.modelIdentifier,
-                    messages: [{ role: 'user', content: 'warmup' }],
-                    max_tokens: 1
+                    model: model,
+                    messages: [{ role: 'user', content: 'Ping. Reply with exactly one word: Pong.' }],
+                    max_tokens: 5
                 });
             }
-
-            const durationMs = Date.now() - startTime;
-            const timeStr = durationMs < 1000 ? `${durationMs}ms` : logService.formatDuration(durationMs);
-
-            logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.LIGHTNING, 'AiService', `Model ${config.name} (${config.modelIdentifier}) at ${safeApiUrl} spun up in ${timeStr}.`);
-
-            return { model: config.modelIdentifier, durationMs };
+            return { model, role };
         } catch (error) {
-            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiService', `Failed to warm up model ${config.name}: ${error.message}`);
-            return { model: config.modelIdentifier || 'unknown', durationMs: 0 };
-        }
-    }
-
-    /**
-     * Pre-warms AI models required for a list of tasks.
-     * Deduplicates configurations so the exact same model isn't spun up multiple times.
-     * @param {Array<string>} taskTypes - Array of task types from AI_TASK_TYPES.
-     * @returns {Promise<Array<{model: string, durationMs: number}>>}
-     */
-    async warmUpModels(taskTypes = []) {
-        const uniqueConfigs = new Map();
-
-        for (const taskType of taskTypes) {
-            const defaultRole = taskType === AI_TASK_TYPES.EMBEDDING ? AI_MODEL_ROLES.EMBEDDING : AI_MODEL_ROLES.CHAT;
-            const defaultConfig = defaultRole === AI_MODEL_ROLES.EMBEDDING ? this._getEmbeddingModelConfig() : this._getChatModelConfig();
-            const config = this._getModelConfigForTask(taskType, defaultConfig);
-            
-            if (config && config.modelIdentifier) {
-                uniqueConfigs.set(config.modelIdentifier, config);
+            const fatalError = this._checkFatalError(error);
+            if (fatalError) {
+                throw fatalError;
             }
+            throw error;
+        } finally {
+            this.isTestingConnection = false;
         }
-
-        const results = [];
-
-        for (const config of uniqueConfigs.values()) {
-            const safeApiUrl = config.apiUrl || 'default local endpoint';
-            logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.LIGHTNING, 'AiService', `Spinning up model ${config.name} (${config.modelIdentifier}) at ${safeApiUrl}`);
-
-            try {
-                await this.isHealthy(config.role, config);
-                const { client } = this._getClient(config);
-                const startTime = Date.now();
-
-                if (config.role === AI_MODEL_ROLES.EMBEDDING) {
-                    await client.embeddings.create({
-                        model: config.modelIdentifier,
-                        input: 'warmup'
-                    });
-                } else {
-                    await client.chat.completions.create({
-                        model: config.modelIdentifier,
-                        messages: [{ role: 'user', content: 'warmup' }],
-                        max_tokens: 1
-                    });
-                }
-
-                const durationMs = Date.now() - startTime;
-                const timeStr = durationMs < 1000 ? `${durationMs}ms` : logService.formatDuration(durationMs);
-
-                logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'AiService', `Model ${config.name} (${config.modelIdentifier}) spun up in ${timeStr}.`);
-                results.push({ model: config.modelIdentifier, durationMs });
-            } catch (error) {
-                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'AiService', `Failed to warm up model ${config.name}: ${error.message}`);
-                results.push({ model: config.modelIdentifier || 'unknown', durationMs: 0 });
-            }
-        }
-
-        return results;
     }
 
     /**
@@ -536,6 +606,14 @@ class AiService {
      * @throws {Error} If the AI connection fails.
      */
     async testChat(message, role = AI_MODEL_ROLES.CHAT, overrideConfig) {
+        if (this.isTestingConnection) {
+            const err = new Error('A connection test is already in progress. Please wait.');
+            err.status = 409;
+            throw err;
+        }
+
+        this.isTestingConnection = true;
+
         let config;
         if (overrideConfig) {
             config = overrideConfig;
@@ -547,14 +625,22 @@ class AiService {
 
         const { client, model: selectedModel } = this._getClient(config);
 
-        await this.isHealthy(role, config);
-
-        const response = await client.chat.completions.create({
-            model: selectedModel,
-            messages: [{ role: 'user', content: message }]
-        });
-        return response.choices[0].message.content;
+        try {
+            const response = await client.chat.completions.create({
+                model: selectedModel,
+                messages: [{ role: 'user', content: message }]
+            });
+            return response.choices[0].message.content;
+        } finally {
+            this.isTestingConnection = false;
+        }
     }
 }
 
-module.exports = new AiService();
+/**
+ * @dependency_injection
+ * AiService exports the class constructor rather than an instance.
+ * This enables DI container to instantiate with dependencies.
+ * Reasoning: Allows runtime configuration and testing via injection.
+ */
+module.exports = AiService;

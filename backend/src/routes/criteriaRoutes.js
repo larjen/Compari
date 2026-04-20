@@ -14,17 +14,17 @@
 const express = require('express');
 const router = express.Router();
 
-const CriteriaController = require('../controllers/CriteriaController');
+const { criteriaController } = require('../config/container').getContainer();
 
-router.get('/', CriteriaController.getAll);
-router.get('/:id', CriteriaController.getById);
+router.get('/', criteriaController.getAll);
+router.get('/:id', criteriaController.getById);
 
-router.get('/:id/associations', CriteriaController.getAssociations);
+router.get('/:id/associations', criteriaController.getAssociations);
 
-router.delete('/:id', CriteriaController.delete);
+router.delete('/:id', criteriaController.delete);
 
-router.get('/:id/similar', CriteriaController.getSimilar);
-router.post('/:id/merge', CriteriaController.merge);
-router.get('/:id/history', CriteriaController.getHistory);
+router.get('/:id/similar', criteriaController.getSimilar);
+router.post('/:id/merge', criteriaController.merge);
+router.get('/:id/history', criteriaController.getHistory);
 
 module.exports = router;

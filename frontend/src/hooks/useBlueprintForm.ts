@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { BlueprintFormData, FieldFormData } from '@/components/settings/BlueprintsTab';
+import { FIELD_TYPES, ENTITY_ROLES } from '@/lib/constants';
 
 const initialFormData: BlueprintFormData = {
   name: '',
@@ -17,7 +18,7 @@ const initialFormData: BlueprintFormData = {
   isActive: false,
 };
 
-export interface UseBlueprintFormReturn {
+interface UseBlueprintFormReturn {
   formData: BlueprintFormData;
   setFormData: React.Dispatch<React.SetStateAction<BlueprintFormData>>;
   editingId: number | null;
@@ -50,10 +51,10 @@ export function useBlueprintForm() {
       description: bp.description || '',
       fields: bp.fields?.map((f: any) => ({
         fieldName: f.field_name || f.fieldName,
-        fieldType: f.field_type || f.fieldType,
+        fieldType: f.field_type || f.fieldType || FIELD_TYPES.STRING,
         description: f.description || '',
         isRequired: f.is_required || f.isRequired || false,
-        entityRole: f.entity_role || f.entityRole || 'requirement'
+        entityRole: f.entity_role || f.entityRole || ENTITY_ROLES.REQUIREMENT
       })) || [],
       dimensionIds: bp.dimensions?.map((d: any) => d.id) || [],
       isActive: bp.is_active || bp.isActive || false,
@@ -66,7 +67,7 @@ export function useBlueprintForm() {
   };
 
   const addField = (isEditing: boolean) => {
-    const newField: FieldFormData = { fieldName: '', fieldType: 'string', description: '', isRequired: false, entityRole: 'requirement' };
+    const newField: FieldFormData = { fieldName: '', fieldType: FIELD_TYPES.STRING, description: '', isRequired: false, entityRole: ENTITY_ROLES.REQUIREMENT };
     if (isEditing) {
       setEditFormData({ ...editFormData, fields: [...editFormData.fields, newField] });
     } else {

@@ -1,13 +1,13 @@
 /**
  * @module EntityController
  * @description HTTP Controller responsible for handling HTTP requests related to generic entities.
- * 
+ *
  * @responsibility
  * - Extract HTTP parameters and body from incoming requests (req).
  * - Delegate actual business logic to Services (EntityService, MatchService, CriteriaService).
  * - Format and return HTTP responses (res) with appropriate status codes and JSON payloads.
  * - Handle error catching by delegating to global error middleware via next(error).
- * 
+ *
  * @boundary_rules
  * - ❌ MUST NOT contain business rules.
  * - ❌ MUST NOT interact directly with Repositories.
@@ -16,19 +16,12 @@
  * - ✅ All business logic MUST be delegated to Services.
  * - ✅ All data access MUST go through Services.
  * - ✅ All errors MUST be passed to next(error) for centralized handling.
- * 
- * @socexplanation
- * - Uses asyncHandler middleware to eliminate try/catch boilerplate.
- * - All methods are wrapped with asyncHandler for automatic error catching.
- * - Controllers focus purely on HTTP transport (parameter extraction, response formatting).
- * - Errors are automatically forwarded to global error middleware via next(error).
+ *
+ * @dependency_injection
+ * All services (entityService, criteriaService, matchService, queueService, logService, fileService)
+ * are injected via constructor. No global service locator is used - dependencies are explicitly provided.
  */
 
-const entityService = require('../services/EntityService');
-const criteriaService = require('../services/CriteriaService');
-const matchService = require('../services/MatchService');
-const queueService = require('../services/QueueService');
-const logService = require('../services/LogService');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const { handleFileDownload } = require('../utils/fileHandler');
@@ -36,32 +29,67 @@ const { QUEUE_TASKS, ENTITY_STATUS, LOG_LEVELS, HTTP_STATUS } = require('../conf
 
 class EntityController {
     /**
-     * GET /api/entities
-     * Retrieves all entities, optionally filtered by type, with pagination, search, and status filtering.
-     * @param {Object} req - Express request object (req.query.type, req.query.page, req.query.limit, req.query.search, req.query.status)
-     * @param {Object} res - Express response object
-     * @param {Function} next - Express next function for error handling
+     * @param {Object} dependencies
+     * @param {Object} dependencies.entityService - Entity service instance
+     * @param {Object} dependencies.criteriaService - Criteria service instance
+     * @param {Object} dependencies.matchService - Match service instance
+     * @param {Object} dependencies.queueService - Queue service instance
+     * @param {Object} dependencies.logService - Logging service instance
+     * @param {Object} dependencies.fileService - File service instance
+     * @param {Object} dependencies.matchAnalyticsWorkflow - MatchAnalyticsWorkflow instance
      */
-    static getAll = asyncHandler(async (req, res) => {
+    constructor({ entityService, criteriaService, matchService, queueService, logService, fileService, matchAnalyticsWorkflow }) {
+        this._entityService = entityService;
+        this._criteriaService = criteriaService;
+        this._matchService = matchService;
+        this._queueService = queueService;
+        this._logService = logService;
+        this._fileService = fileService;
+        this._matchAnalyticsWorkflow = matchAnalyticsWorkflow;
+    }
+
+    /**
+     * GET /api/entities
+     * Retrieves all entities with pagination, search, and status filtering.
+     */
+    getAll = asyncHandler(async (req, res) => {
         const type = req.query.type || null;
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 12;
         const search = req.query.search || null;
         const status = req.query.status || null;
 
-        const result = entityService.getAllEntities({ type, page, limit, search, status });
+        const result = this._entityService.getAllEntities({ type, page, limit, search, status });
         res.json(result);
     });
 
     /**
-     * GET /api/entities/:id
-     * Retrieves a single entity by ID.
-     * @param {Object} req - Express request object (req.params.id)
+     * POST /api/entities
+     * Creates a new entity.
+     * @param {Object} req - Express request object
      * @param {Object} res - Express response object
-     * @param {Function} next - Express next function for error handling
+     * @socexplanation Enforces DTO mapping to prevent raw req.body from leaking into Service layer.
      */
-    static getById = asyncHandler(async (req, res) => {
-        const entity = entityService.getEntityById(req.params.id);
+    create = asyncHandler(async (req, res) => {
+        const dto = {
+            entityType: req.body.type || req.body.entityType || req.body.entity_type,
+            nicename: req.body.name || req.body.nicename,
+            niceNameLine1: req.body.niceNameLine1,
+            niceNameLine2: req.body.niceNameLine2,
+            folderPath: req.body.folderPath,
+            metadata: req.body.metadata,
+            blueprintId: req.body.blueprintId
+        };
+
+        const id = this._entityService.createEntity(dto);
+        res.status(HTTP_STATUS.CREATED).json({ success: true, entityId: id });
+    });
+
+    /**
+     * GET /api/entities/:id
+     */
+    getById = asyncHandler(async (req, res) => {
+        const entity = this._entityService.getEntityById(req.params.id);
         if (!entity) {
             throw new AppError('Entity not found', HTTP_STATUS.NOT_FOUND);
         }
@@ -69,16 +97,20 @@ class EntityController {
     });
 
     /**
-     * POST /api/entities
-     * Creates a new entity.
-     * @param {Object} req - Express request object (req.body.type, req.body.name, req.body.description, req.body.blueprintId)
+     * DELETE /api/entities/:id
+     * Deletes an entity by ID.
+     * @param {Object} req - Express request object (req.params.id)
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
+     *
+     * @socexplanation
+     * - Cancels pending queue tasks before deletion to prevent zombie tasks.
+     * - Delegates queue orchestration to the Controller to maintain strict domain isolation in the Service layer.
      */
-    static create = asyncHandler(async (req, res) => {
-        const { type, name, description, folderPath, metadata, blueprintId } = req.body;
-        const entityId = entityService.createEntity(type, name, description, folderPath, metadata, blueprintId);
-        res.json({ success: true, entityId });
+    delete = asyncHandler(async (req, res) => {
+        this._queueService.cancelEntityExtractionTasks(parseInt(req.params.id));
+        this._entityService.deleteEntity(parseInt(req.params.id));
+        res.json({ success: true, message: 'Entity deleted successfully' });
     });
 
     /**
@@ -88,23 +120,11 @@ class EntityController {
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
      */
-    static update = asyncHandler(async (req, res) => {
+    update = asyncHandler(async (req, res) => {
         const id = parseInt(req.params.id);
         const { metadata } = req.body;
-        entityService.updateEntityMetadata(id, metadata);
+        this._entityService.updateMetadata(id, metadata);
         res.json({ success: true, message: 'Entity updated' });
-    });
-
-    /**
-     * DELETE /api/entities/:id
-     * Deletes an entity by ID.
-     * @param {Object} req - Express request object (req.params.id)
-     * @param {Object} res - Express response object
-     * @param {Function} next - Express next function for error handling
-     */
-    static delete = asyncHandler(async (req, res) => {
-        entityService.deleteEntity(parseInt(req.params.id));
-        res.json({ success: true, message: 'Entity deleted successfully' });
     });
 
     /**
@@ -113,8 +133,11 @@ class EntityController {
      * @param {Object} req - Express request object (req.file, req.params.id)
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
+     *
+     * @socexplanation
+     * Delegates to the atomized pipeline starting with PARSE_DOCUMENT_CONTENT.
      */
-    static uploadFile = asyncHandler(async (req, res) => {
+    uploadFile = asyncHandler(async (req, res) => {
         if (!req.file) {
             throw new AppError('No document was uploaded.', HTTP_STATUS.BAD_REQUEST);
         }
@@ -123,22 +146,29 @@ class EntityController {
         if (!entityId) {
             throw new AppError('Entity ID is required', HTTP_STATUS.BAD_REQUEST);
         }
-        
-        const movedPath = entityService.uploadEntityFile(entityId, req.file);
-        const entity = entityService.getEntityById(entityId);
-        
-        // Explicitly mark the entity as pending so the UI can reflect the queued state via SSE.
-        entityService.updateEntityStatus(entityId, ENTITY_STATUS.PENDING);
-        
-        queueService.enqueue(QUEUE_TASKS.PROCESS_ENTITY_DOCUMENT, { 
-            entityId: parseInt(entityId), 
+
+        const movedPath = this._entityService.uploadEntityFile(entityId, req.file);
+        const entity = this._entityService.getEntityById(entityId);
+
+        this._entityService.updateState(entityId, { status: ENTITY_STATUS.PENDING });
+
+        const safeFileName = require('path').basename(req.file.originalname);
+
+        this._queueService.enqueue(QUEUE_TASKS.PROCESS_DOCUMENT, {
+            entityId: parseInt(entityId),
             folderPath: entity?.folderPath,
-            fileName: req.file.filename
+            fileName: safeFileName
         });
+
+        this._logService.addActivityLog({
+                entityType: 'Entity',
+                entityId,
+                logType: LOG_LEVELS.INFO,
+                message: `Document uploaded: ${safeFileName}. Queued for processing.`,
+                folderPath: entity?.folderPath
+            });
         
-        logService.addActivityLog('Entity', entityId, LOG_LEVELS.INFO, `Document uploaded: ${req.file.filename}. Queued for AI processing.`, entity?.folderPath);
-        
-        res.json({ success: true, message: 'File uploaded successfully. AI criteria extraction has been queued.', path: movedPath });
+        res.json({ success: true, message: 'File uploaded successfully. Document has been queued for processing.', path: movedPath });
     });
 
     /**
@@ -148,7 +178,7 @@ class EntityController {
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
      */
-    static uploadFiles = asyncHandler(async (req, res) => {
+    uploadFiles = asyncHandler(async (req, res) => {
         if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
             throw new AppError('No documents were uploaded.', HTTP_STATUS.BAD_REQUEST);
         }
@@ -158,20 +188,26 @@ class EntityController {
             throw new AppError('Entity ID is required', HTTP_STATUS.BAD_REQUEST);
         }
         
-        const movedPaths = entityService.uploadEntityFiles(entityId, req.files);
-        const entity = entityService.getEntityById(entityId);
+        const movedPaths = this._entityService.uploadEntityFiles(entityId, req.files);
+        const entity = this._entityService.getEntityById(entityId);
         
-        // Setting pending state guarantees real-time visual feedback of the queue.
-        entityService.updateEntityStatus(entityId, ENTITY_STATUS.PENDING);
-        
+        this._entityService.updateState(entityId, { status: ENTITY_STATUS.PENDING });
+
         for (const file of req.files) {
-            queueService.enqueue(QUEUE_TASKS.PROCESS_ENTITY_DOCUMENT, { 
-                entityId: parseInt(entityId), 
+            const safeFileName = require('path').basename(file.originalname);
+            this._queueService.enqueue(QUEUE_TASKS.PROCESS_DOCUMENT, {
+                entityId: parseInt(entityId),
                 folderPath: entity?.folderPath,
-                fileName: file.filename
+                fileName: safeFileName
             });
             
-            logService.addActivityLog('Entity', entityId, LOG_LEVELS.INFO, `Document uploaded: ${file.filename}. Queued for AI processing.`, entity?.folderPath);
+            this._logService.addActivityLog({
+                entityType: 'Entity',
+                entityId,
+                logType: LOG_LEVELS.INFO,
+                message: `Document uploaded: ${safeFileName}. Queued for AI processing.`,
+                folderPath: entity?.folderPath
+            });
         }
         
         res.json({ success: true, message: 'Files uploaded successfully. AI criteria extraction has been queued.', paths: movedPaths });
@@ -184,9 +220,9 @@ class EntityController {
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
      */
-    static getFiles = asyncHandler(async (req, res) => {
+    getFiles = asyncHandler(async (req, res) => {
         const entityId = req.params.id;
-        const files = entityService.getEntityFiles(entityId);
+        const files = this._entityService.getEntityFiles(entityId);
         res.json({ files });
     });
 
@@ -197,12 +233,17 @@ class EntityController {
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
      */
-    static downloadFile = asyncHandler(async (req, res) => {
-        const entity = entityService.getEntityById(req.params.id);
+    downloadFile = asyncHandler(async (req, res) => {
+        const entity = this._entityService.getEntityById(req.params.id);
         if (!entity) {
             throw new AppError('Entity not found', HTTP_STATUS.NOT_FOUND);
         }
-        return handleFileDownload(res, entity, req.params.filename);
+        return handleFileDownload({
+            fileService: this._fileService,
+            res,
+            entity,
+            fileName: req.params.filename
+        });
     });
 
     /**
@@ -212,10 +253,10 @@ class EntityController {
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
      */
-    static getMatches = asyncHandler(async (req, res) => {
+    getMatches = asyncHandler(async (req, res) => {
         const entityId = parseInt(req.params.id);
         const role = req.query.role;
-        const matches = matchService.getMatchesForEntity(entityId, role);
+        const matches = this._matchService.getMatchesForEntity(entityId, role);
         res.json({ matches });
     });
 
@@ -226,8 +267,8 @@ class EntityController {
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
      */
-    static getCriteria = asyncHandler(async (req, res) => {
-        const criteria = criteriaService.getCriteriaForEntity(req.params.id);
+    getCriteria = asyncHandler(async (req, res) => {
+        const criteria = this._criteriaService.getCriteriaForEntity(req.params.id);
         res.json({ criteria });
     });
 
@@ -240,16 +281,18 @@ class EntityController {
      * 
      * @socexplanation
      * - Delegates business validation to EntityService.triggerCriteriaExtraction.
-     * - Controller only handles HTTP transport: parameter extraction and response formatting.
+     * - Controller handles HTTP transport: parameter extraction and response formatting.
+     * - Delegates queue orchestration to the Controller to maintain strict domain isolation in the Service layer.
      */
-    static triggerExtraction = asyncHandler(async (req, res) => {
+    triggerExtraction = asyncHandler(async (req, res) => {
         const entityId = parseInt(req.params.id);
         const { fileName } = req.body;
         
-        // Controller updates HTTP-driven status; Service handles domain-specific extraction.
-        entityService.updateEntityStatus(entityId, ENTITY_STATUS.PENDING);
+        this._entityService.updateState(entityId, { status: ENTITY_STATUS.PENDING });
         
-        await entityService.triggerCriteriaExtraction(entityId, fileName);
+        await this._entityService.triggerCriteriaExtraction(entityId, fileName);
+        
+        this._queueService.enqueue(QUEUE_TASKS.EXTRACT_ENTITY_CRITERIA, { entityId, fileName });
 
         res.json({ 
             success: true, 
@@ -269,9 +312,9 @@ class EntityController {
      * Delegates the actual OS interaction to EntityService.openEntityFolder which in turn uses FileService
      * to maintain separation of concerns.
      */
-    static openFolder = asyncHandler(async (req, res) => {
+    openFolder = asyncHandler(async (req, res) => {
         const entityId = parseInt(req.params.id);
-        entityService.openEntityFolder(entityId);
+        this._entityService.openEntityFolder(entityId);
         res.json({ success: true });
     });
 
@@ -281,10 +324,15 @@ class EntityController {
      * @param {Object} req - Express request object (req.params.id)
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
+     * 
+     * @socexplanation
+     * - Cancels pending queue tasks before updating entity status.
+     * - Delegates queue orchestration to the Controller to maintain strict domain isolation in the Service layer.
      */
-    static cancelExtraction = asyncHandler(async (req, res) => {
+    cancelExtraction = asyncHandler(async (req, res) => {
         const entityId = parseInt(req.params.id);
-        entityService.cancelExtraction(entityId);
+        this._queueService.cancelEntityExtractionTasks(entityId);
+        this._entityService.cancelExtraction(entityId);
         res.json({ success: true });
     });
 
@@ -302,12 +350,12 @@ class EntityController {
      * - Returns evaluatedChunk and totalOpposites to enable frontend to track progress
      *   and recursively fetch subsequent chunks.
      */
-    static getTopMatches = asyncHandler(async (req, res) => {
+    getTopMatches = asyncHandler(async (req, res) => {
         const entityId = parseInt(req.params.id);
         const offset = parseInt(req.query.offset) || 0;
         const limit = parseInt(req.query.limit) || 20;
 
-        const result = matchService.evaluateMatchesChunk(entityId, offset, limit);
+        const result = this._matchAnalyticsWorkflow.evaluateMatchesChunk(entityId, offset, limit);
         res.json(result);
     });
 
@@ -318,48 +366,48 @@ class EntityController {
      * @param {Object} req - Express request object (req.params.id)
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
+     *
+     * @responsibility
+     * - Sets macro status to PENDING to signal the entity is queued.
+     * - Clears previous error state.
+     * - Re-enqueues the document processing task.
+     *
+     * @socexplanation
+     * - Setting status to PENDING ensures the UI reflects a queued state until the worker claims the task.
+     * - The DocumentProcessorWorkflow.parseDocumentContent method handles the transition to PARSING_DOCUMENT when processing begins.
+     * - Delegates file name resolution to EntityService.getOriginalUploadedFileName.
+     * - Controller only handles HTTP transport: parameter extraction and response formatting.
      */
-    static retryProcessing = asyncHandler(async (req, res, next) => {
+    retryProcessing = asyncHandler(async (req, res, next) => {
         const id = parseInt(req.params.id);
-        
-        const entity = entityService.getEntityById(id);
+
+        const entity = this._entityService.getEntityById(id);
         if (!entity) {
             throw new AppError('Entity not found', HTTP_STATUS.NOT_FOUND);
         }
 
-        let fileName = entity.metadata?.processingFileName;
+        const fileName = this._entityService.getOriginalUploadedFileName(id);
         const folderPath = entity.folderPath;
-
-        // Fallback: If metadata was wiped, physically scan the directory for the original file
-        if (!fileName && folderPath) {
-            const fs = require('fs');
-            if (fs.existsSync(folderPath)) {
-                const files = fs.readdirSync(folderPath);
-                const uploadedFile = files.find(f => 
-                    !f.endsWith('.md') && 
-                    f !== 'raw-extraction.txt' && 
-                    f !== '.DS_Store'
-                );
-                if (uploadedFile) {
-                    fileName = uploadedFile;
-                }
-            }
-        }
 
         if (!fileName || !folderPath) {
             throw new AppError('No processing file name found for retry. The file may have been deleted from the disk.', HTTP_STATUS.BAD_REQUEST);
         }
 
-        entityService.updateEntityStatus(id, ENTITY_STATUS.PENDING);
-        entityService.updateEntityError(id, null);
+        this._entityService.updateState(id, { status: ENTITY_STATUS.PENDING, error: null });
 
-        queueService.enqueue(QUEUE_TASKS.PROCESS_ENTITY_DOCUMENT, { 
-            entityId: id, 
-            folderPath, 
-            fileName 
+        this._queueService.enqueue(QUEUE_TASKS.PROCESS_DOCUMENT, {
+            entityId: id,
+            folderPath,
+            fileName
         });
 
-        logService.addActivityLog('Entity', id, LOG_LEVELS.INFO, `Retrying AI extraction for: ${fileName}.`, folderPath);
+        this._logService.addActivityLog({
+                entityType: 'Entity',
+                entityId: id,
+                logType: LOG_LEVELS.INFO,
+                message: `Retrying AI extraction for: ${fileName}.`,
+                folderPath
+            });
 
         res.json({ message: 'Queued for retry' });
     });

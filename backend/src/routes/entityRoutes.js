@@ -15,41 +15,41 @@
 const express = require('express');
 const router = express.Router();
 
-const EntityController = require('../controllers/EntityController');
-const { uploadEntityDocument } = require('../middlewares/uploadMiddleware');
+const { entityController } = require('../config/container').getContainer();
+const { uploadDocument } = require('../middlewares/uploadMiddleware');
 const { validate } = require('../middlewares/validateZod');
 const { entitySchema, extractSchema } = require('../validators/schemas');
 
-router.get('/', EntityController.getAll);
+router.get('/', entityController.getAll);
 
-router.post('/', validate(entitySchema), EntityController.create);
+router.post('/', validate(entitySchema), entityController.create);
 
-router.get('/:id', EntityController.getById);
+router.get('/:id', entityController.getById);
 
-router.put('/:id', EntityController.update);
+router.put('/:id', entityController.update);
 
-router.delete('/:id', EntityController.delete);
+router.delete('/:id', entityController.delete);
 
-router.post('/:id/upload', uploadEntityDocument.single('document'), EntityController.uploadFile);
+router.post('/:id/upload', uploadDocument.single('document'), entityController.uploadFile);
 
-router.post('/:id/upload-multiple', uploadEntityDocument.array('documents'), EntityController.uploadFiles);
+router.post('/:id/upload-multiple', uploadDocument.array('documents'), entityController.uploadFiles);
 
-router.get('/:id/files', EntityController.getFiles);
+router.get('/:id/files', entityController.getFiles);
 
-router.get('/:id/files/:filename', EntityController.downloadFile);
+router.get('/:id/files/:filename', entityController.downloadFile);
 
-router.get('/:id/matches', EntityController.getMatches);
+router.get('/:id/matches', entityController.getMatches);
 
-router.get('/:id/criteria', EntityController.getCriteria);
+router.get('/:id/criteria', entityController.getCriteria);
 
-router.post('/:id/extract', validate(extractSchema), EntityController.triggerExtraction);
+router.post('/:id/extract', validate(extractSchema), entityController.triggerExtraction);
 
-router.delete('/:id/extract', EntityController.cancelExtraction);
+router.delete('/:id/extract', entityController.cancelExtraction);
 
-router.post('/:id/folder/open', EntityController.openFolder);
+router.post('/:id/folder/open', entityController.openFolder);
 
-router.get('/:id/top-matches', EntityController.getTopMatches);
+router.get('/:id/top-matches', entityController.getTopMatches);
 
-router.post('/:id/retry', EntityController.retryProcessing);
+router.post('/:id/retry', entityController.retryProcessing);
 
 module.exports = router;

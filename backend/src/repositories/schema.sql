@@ -1,117 +1,91 @@
 /**
  * @file schema.sql
  * @description Database schema initialization SQL.
- * 
+ *
  * This file contains all CREATE TABLE statements required to initialize the
  * SQLite database schema. It is loaded by Database.js during server startup.
- * 
- * Tables include: entities, entity_matches, criteria, entity_criteria,
- * activity_logs, system_logs, documents, job_queue, ai_models, dimensions,
- * entity_blueprints, blueprint_metadata_fields, blueprint_dimensions,
- * criterion_merge_history, and settings.
- * 
- * Note: The 'status' column in 'entities' and 'entity_matches' tables maps to ENTITY_STATUS constants.
- * The legacy 'queue_status' column has been removed - use 'status' for all entity and match states.
+ *
+ * Uses Class Table Inheritance (CTI) pattern:
+ * - entities_base: Shared attributes for all entity types
+ * - entities_requirement: Specific attributes for requirement entities
+ * - entities_offering: Specific attributes for offering entities
+ * - entities_criterion: Specific attributes for criterion entities
+ * - entities_match: Match relationship table
+ *
+ * Note: The 'status' column in 'entities_base' and 'entities_match' tables maps to ENTITY_STATUS constants.
  */
 
-CREATE TABLE IF NOT EXISTS entities (
+CREATE TABLE IF NOT EXISTS entities_base (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT,
-    folder_path TEXT,
+    entity_type TEXT NOT NULL CHECK(entity_type IN ({{ENTITY_TYPE_LIST}})),
+    nicename TEXT NOT NULL,
+    normalized_name TEXT NOT NULL,
+    nice_name_line_1 TEXT DEFAULT 'Unknown',
+    nice_name_line_2 TEXT DEFAULT 'Unknown',
+    folder_path TEXT UNIQUE,
+    master_file TEXT,
+    status TEXT DEFAULT 'pending' CHECK(status IN ({{ENTITY_STATUS_LIST}})),
+    is_busy INTEGER DEFAULT 0 CHECK(is_busy IN (0, 1)),
     metadata TEXT,
-    -- status column: single source of truth for entity processing state
-    -- Must conform to ENTITY_STATUS constants (pending, processing, completed, failed)
-    -- CHECK constraint mirrors ENTITY_STATUS in application code
-    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
     error TEXT,
     blueprint_id INTEGER,
+    hash TEXT UNIQUE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (blueprint_id) REFERENCES entity_blueprints(id) ON DELETE SET NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);
-CREATE INDEX IF NOT EXISTS idx_entities_status ON entities(status);
+CREATE INDEX IF NOT EXISTS idx_base_entities_type ON entities_base(entity_type);
+CREATE INDEX IF NOT EXISTS idx_base_entities_status ON entities_base(status);
+CREATE INDEX IF NOT EXISTS idx_base_entities_hash ON entities_base(hash);
 
-CREATE TABLE IF NOT EXISTS entity_matches (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+CREATE TABLE IF NOT EXISTS entities_criterion (
+    entity_id INTEGER PRIMARY KEY,
+    dimension TEXT NOT NULL DEFAULT 'Uncategorized',
+    embedding TEXT,
+    FOREIGN KEY (entity_id) REFERENCES entities_base(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS entities_match (
+    entity_id INTEGER PRIMARY KEY,
     requirement_id INTEGER NOT NULL,
     offering_id INTEGER NOT NULL,
     match_score REAL,
     report_path TEXT,
-    folder_path TEXT,
-    -- status column: single source of truth for match processing state
-    -- Must conform to ENTITY_STATUS constants (pending, processing, completed, failed)
-    -- CHECK constraint mirrors ENTITY_STATUS in application code
-    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
-    error TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (requirement_id) REFERENCES entities(id) ON DELETE CASCADE,
-    FOREIGN KEY (offering_id) REFERENCES entities(id) ON DELETE CASCADE
+    FOREIGN KEY (entity_id) REFERENCES entities_base(id) ON DELETE CASCADE,
+    FOREIGN KEY (requirement_id) REFERENCES entities_base(id) ON DELETE CASCADE,
+    FOREIGN KEY (offering_id) REFERENCES entities_base(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_entity_matches_requirement ON entity_matches(requirement_id);
-CREATE INDEX IF NOT EXISTS idx_entity_matches_offering ON entity_matches(offering_id);
-
-CREATE TABLE IF NOT EXISTS criteria (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    normalized_name TEXT NOT NULL UNIQUE,
-    display_name TEXT NOT NULL,
-    dimension TEXT NOT NULL DEFAULT 'Uncategorized',
-    embedding TEXT NOT NULL
-);
+CREATE INDEX IF NOT EXISTS idx_matches_requirement ON entities_match(requirement_id);
+CREATE INDEX IF NOT EXISTS idx_matches_offering ON entities_match(offering_id);
 
 CREATE TABLE IF NOT EXISTS entity_criteria (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_id INTEGER NOT NULL,
     criterion_id INTEGER NOT NULL,
     is_required BOOLEAN DEFAULT 1,
-    FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE,
-    FOREIGN KEY (criterion_id) REFERENCES criteria(id) ON DELETE CASCADE,
+    FOREIGN KEY (entity_id) REFERENCES entities_base(id) ON DELETE CASCADE,
+    FOREIGN KEY (criterion_id) REFERENCES entities_base(id) ON DELETE CASCADE,
     UNIQUE(entity_id, criterion_id)
 );
 
+CREATE TABLE IF NOT EXISTS criterion_merge_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    keep_id INTEGER NOT NULL,
+    merged_display_name TEXT NOT NULL,
+    merged_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (keep_id) REFERENCES entities_base(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_entity_criteria_entity ON entity_criteria(entity_id);
-
-CREATE TABLE IF NOT EXISTS activity_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entity_type TEXT NOT NULL,
-    entity_id INTEGER NOT NULL,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    log_type TEXT NOT NULL,
-    message TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_activity_logs_entity ON activity_logs(entity_type, entity_id);
-
-CREATE TABLE IF NOT EXISTS system_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    log_type TEXT NOT NULL,
-    message TEXT NOT NULL,
-    link_url TEXT,
-    link_name TEXT
-);
 
 CREATE TABLE IF NOT EXISTS documents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_id INTEGER NOT NULL,
     doc_type TEXT NOT NULL,
     file_name TEXT NOT NULL,
-    file_path TEXT NOT NULL,
-    FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS match_documents (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    match_id INTEGER NOT NULL,
-    doc_type TEXT NOT NULL,
-    file_name TEXT NOT NULL,
-    file_path TEXT NOT NULL,
-    FOREIGN KEY (match_id) REFERENCES entity_matches(id) ON DELETE CASCADE
+    FOREIGN KEY (entity_id) REFERENCES entities_base(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS job_queue (
@@ -120,6 +94,8 @@ CREATE TABLE IF NOT EXISTS job_queue (
     payload TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     error TEXT,
+    attempts INTEGER DEFAULT 0,
+    available_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     started_at DATETIME
 );
@@ -181,14 +157,6 @@ CREATE TABLE IF NOT EXISTS blueprint_dimensions (
     FOREIGN KEY (blueprint_id) REFERENCES entity_blueprints(id) ON DELETE CASCADE,
     FOREIGN KEY (dimension_id) REFERENCES dimensions(id) ON DELETE CASCADE,
     UNIQUE(blueprint_id, dimension_id)
-);
-
-CREATE TABLE IF NOT EXISTS criterion_merge_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    keep_id INTEGER NOT NULL,
-    merged_display_name TEXT NOT NULL,
-    merged_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (keep_id) REFERENCES criteria(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS settings (

@@ -10,12 +10,11 @@
         "lint": "eslint src/ server.js"
     },
     "dependencies": {
-        "all": "^0.0.0",
-        "better-sqlite3": "^11.0.0",
+        "better-sqlite3": "^12.9.0",
         "dotenv": "^17.3.1",
         "express": "^4.19.2",
-        "multer": "^1.4.5-lts.1",
-        "openai": "^4.77.0",
+        "multer": "^2.1.1",
+        "openai": "^6.34.0",
         "pdf-parse": "^1.1.1",
         "puppeteer": "^24.40.0",
         "zod": "^3.25.76"
@@ -23,8 +22,9 @@
     "devDependencies": {
         "@types/express": "^5.0.6",
         "@types/node": "^25.6.0",
-        "eslint": "^8.57.1",
-        "eslint-plugin-node": "^11.1.0",
+        "eslint": "^9.10.0",
+        "eslint-plugin-n": "^17.10.0",
+        "globals": "^15.9.0",
         "nodemon": "^3.1.14"
     }
 }

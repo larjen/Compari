@@ -1,39 +1,28 @@
 /**
  * @module uploadMiddleware
- * @description Middleware for handling file uploads.
- * @responsibility
- * - Configures multer for document and archive uploads.
- * - Ensures required directories exist at startup.
- * @boundary_rules
- * - ✅ Delegates directory creation to FileService.
- * - ❌ MUST NOT use raw `fs` module for directory operations.
+ * @description Refactored middleware for Multer 2.x.
+ * @responsibility Handles secure file uploads to UPLOADS_DIR.
+ * @reasoning Upgraded from 1.x to 2.x to resolve CVE-2026-3304. 
+ * Note: Multer 2.x enforces stricter stream handling.
  */
 
 const multer = require('multer');
 const path = require('path');
-const FileService = require('../services/FileService');
+const crypto = require('crypto');
+const { UPLOADS_DIR } = require('../config/constants');
 
-const { UPLOADS_DIR, DATA_DIR } = require('../config/constants');
-
-FileService.createDirectory(UPLOADS_DIR);
-FileService.createDirectory(DATA_DIR);
-
-// Middleware for Document job applications
-const uploadDocument = multer({
-    storage: multer.diskStorage({
-        destination: (req, file, cb) => cb(null, UPLOADS_DIR),
-        filename: (req, file, cb) => {
-            const ext = path.extname(file.originalname);
-            const baseName = path.basename(file.originalname, ext);
-            const now = new Date();
-            const timestamp = now.toISOString().replace(/T/, '_').replace(/:/g, '-').split('.');
-            const newFileName = `${baseName} (uploaded ${timestamp[0]})${ext}`;
-            cb(null, newFileName);
-        }
-    })
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname);
+        const randomName = crypto.randomBytes(16).toString('hex');
+        cb(null, `${randomName}${ext}`);
+    }
 });
 
-module.exports = {
-    uploadDocument,
-    uploadEntityDocument: uploadDocument
-};
+const uploadDocument = multer({
+    storage,
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit for safety
+});
+
+module.exports = { uploadDocument };

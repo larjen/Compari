@@ -1,23 +1,27 @@
 /**
  * @module repositories/Seeder
  * @description Database Seeding Utilities.
- * 
+ *
  * This module contains idempotent seed functions for populating the database
  * with initial reference data. Seeding is meant for initial workspace setup
  * and should only be called once after schema initialization.
- * 
+ *
  * @responsibility
  * - Seeds default AI models (chat + embedding)
  * - Seeds default matching dimensions
  * - Seeds default entity blueprints with metadata fields
- * 
+ *
  * @boundary_rules
  * - MUST NOT contain schema initialization logic
  * - MUST NOT be called more than once per database lifetime
  * - Functions are idempotent: calling multiple times produces same result
+ *
+ * @dependency_injection
+ * Logger is passed as a parameter to seed functions to avoid top-level require
+ * of LogService before DI container is initialized. This enables testing
+ * and follows the DTO pattern for dependency injection.
  */
 
-const logService = require('../services/LogService');
 const { AI_MODEL_ROLES, ENTITY_ROLES, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 const fs = require('fs');
 const path = require('path');
@@ -25,11 +29,11 @@ const path = require('path');
 /**
  * Seeds default AI models into the database.
  * Creates Ollama chat and embedding models if they don't exist.
- * 
  * @param {Database} db - The active database connection instance.
  * @returns {void}
+ * @public
  */
-function seedAiModels(db) {
+function seedAiModels(db, logger) {
     const existing = db.prepare('SELECT COUNT(*) as count FROM ai_models').get();
     if (existing.count > 0) {
         return;
@@ -68,6 +72,72 @@ function seedAiModels(db) {
             is_system: 1,
             temperature: 0.1,
             context_window: 8192
+        },
+        {
+            name: 'Claude Sonnet 4.6',
+            model_identifier: 'claude-sonnet-4-6',
+            api_url: 'https://api.anthropic.com/v1',
+            api_key: null,
+            role: AI_MODEL_ROLES.CHAT,
+            is_active: 1,
+            is_system: 0,
+            temperature: 0.1,
+            context_window: 200000
+        },
+        {
+            name: 'Claude Opus 4.6',
+            model_identifier: 'claude-opus-4-6',
+            api_url: 'https://api.anthropic.com/v1',
+            api_key: null,
+            role: AI_MODEL_ROLES.CHAT,
+            is_active: 1,
+            is_system: 0,
+            temperature: 0.1,
+            context_window: 200000
+        },
+        {
+            name: 'Claude Haiku 4.5',
+            model_identifier: 'claude-haiku-4-5-20251001',
+            api_url: 'https://api.anthropic.com/v1',
+            api_key: null,
+            role: AI_MODEL_ROLES.CHAT,
+            is_active: 1,
+            is_system: 0,
+            temperature: 0.1,
+            context_window: 200000
+        },
+        {
+            name: 'Gemini 1.5 Pro',
+            model_identifier: 'gemini-1.5-pro',
+            api_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+            api_key: null,
+            role: AI_MODEL_ROLES.CHAT,
+            is_active: 0,
+            is_system: 0,
+            temperature: 0.1,
+            context_window: 2000000
+        },
+        {
+            name: 'Gemini 1.5 Flash',
+            model_identifier: 'gemini-1.5-flash',
+            api_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+            api_key: null,
+            role: AI_MODEL_ROLES.CHAT,
+            is_active: 0,
+            is_system: 0,
+            temperature: 0.1,
+            context_window: 1000000
+        },
+        {
+            name: 'Gemini Text Embedding 004',
+            model_identifier: 'text-embedding-004',
+            api_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+            api_key: null,
+            role: AI_MODEL_ROLES.EMBEDDING,
+            is_active: 0,
+            is_system: 0,
+            temperature: 0.1,
+            context_window: 2048
         }
     ];
 
@@ -90,17 +160,17 @@ function seedAiModels(db) {
         );
     }
 
-    logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'Seeder', 'Seeded default Ollama models (chat + embedding) in ai_models table.');
+    logger.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'Seeder', message: 'Seeded default AI models (Ollama, Claude, Gemini) in ai_models table.' });
 }
 
 /**
  * Seeds default matching dimensions into the database.
  * Creates 5 default dimensions: core_competencies, experience, soft_skills, domain_knowledge, cultural_fit.
- * 
+ * @public
  * @param {Database} db - The active database connection instance.
  * @returns {void}
  */
-function seedDimensions(db) {
+function seedDimensions(db, logger) {
     const existing = db.prepare('SELECT COUNT(*) as count FROM dimensions').get();
     if (existing.count > 0) {
         return;
@@ -165,18 +235,18 @@ function seedDimensions(db) {
         );
     }
 
-    logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'Seeder', 'Seeded default 5 dimensions in dimensions table.');
+    logger.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'Seeder', message: 'Seeded default 5 dimensions in dimensions table.' });
 }
 
 /**
  * Seeds default blueprints into the database.
  * Creates "Employment Match" blueprint with singular/plural labels.
  * Links to all 5 dimensions.
- * 
+ * @public
  * @param {Database} db - The active database connection instance.
  * @returns {void}
  */
-function seedBlueprints(db) {
+function seedBlueprints(db, logger) {
     const existing = db.prepare('SELECT COUNT(*) as count FROM entity_blueprints').get();
     if (existing.count > 0) {
         return;
@@ -184,7 +254,7 @@ function seedBlueprints(db) {
 
     const dimensions = db.prepare('SELECT id FROM dimensions').all();
     if (dimensions.length === 0) {
-        logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'Seeder', 'No dimensions found, skipping blueprint seeding.');
+        logger.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'Seeder', message: 'No dimensions found, skipping blueprint seeding.' });
         return;
     }
 
@@ -242,7 +312,7 @@ function seedBlueprints(db) {
         insertDimension.run(blueprintId, dim.id);
     }
 
-    logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'Seeder', 'Seeded default blueprint (Employment Match) with Job Listing/Candidate fields.');
+    logger.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'Seeder', message: 'Seeded default blueprint (Employment Match) with Job Listing/Candidate fields.' });
 }
 
 /**
@@ -251,11 +321,11 @@ function seedBlueprints(db) {
  * The log_ai_interactions setting is disabled by default ('false') and controls whether AI prompts
  * and responses are captured in System Logs for debugging match quality.
  * This function is idempotent - calling multiple times produces the same result.
- * 
+ * @public
  * @param {Database} db - The active database connection instance.
  * @returns {void}
  */
-function seedSettings(db) {
+function seedSettings(db, logger) {
     const existing = db.prepare('SELECT COUNT(*) as count FROM settings').get();
     if (existing.count > 0) {
         return;
@@ -271,7 +341,8 @@ function seedSettings(db) {
         { key: 'model_routing_verification', value: '1' },
         { key: 'model_routing_embedding', value: '3' },
         { key: 'model_routing_metadata', value: '1' },
-        { key: 'allow_concurrent_ai', value: 'false' }
+        { key: 'allow_concurrent_ai', value: 'false' },
+        { key: 'use_ai_cache', value: 'true' }
     ];
 
     const stmt = db.prepare(`
@@ -283,10 +354,22 @@ function seedSettings(db) {
         stmt.run(setting.key, setting.value);
     }
 
-    logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'Seeder', 'Seeded default settings including model routing configuration in settings table.');
+    logger.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'Seeder', message: 'Seeded default settings including model routing configuration in settings table.' });
 }
 
-function seedPrompts(db) {
+/**
+ * Seeds default prompts into the database.
+ * Reads prompt templates from markdown files in the prompts directory.
+ * @public
+ * @param {Database} db - The active database connection instance.
+ * @returns {void}
+ */
+function seedPrompts(db, logger) {
+    const existing = db.prepare('SELECT COUNT(*) as count FROM prompts').get();
+    if (existing.count > 0) {
+        return;
+    }
+
     const promptsDir = path.join(__dirname, '../prompts');
 
     const readMarkdownFile = (filename) => {
@@ -294,7 +377,7 @@ function seedPrompts(db) {
             const filePath = path.join(promptsDir, filename);
             return fs.readFileSync(filePath, 'utf-8');
         } catch (err) {
-            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'Seeder', `Failed to read prompt file ${filename}: ${err.message}`);
+            logger.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'Seeder', message: `Failed to read prompt file ${filename}: ${err.message}` });
             return null;
         }
     };
@@ -347,7 +430,7 @@ Respond with EXACTLY and ONLY the word "YES" or "NO".`
 
     for (const promptData of defaultPrompts) {
         if (!promptData.prompt) {
-            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'Seeder', `Skipping seed for ${promptData.system_name} - empty prompt content`);
+            logger.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'Seeder', message: `Skipping seed for ${promptData.system_name} - empty prompt content` });
             continue;
         }
 
@@ -358,22 +441,22 @@ Respond with EXACTLY and ONLY the word "YES" or "NO".`
         stmt.run(promptData.system_name, promptData.title, promptData.description, promptData.prompt);
     }
 
-    logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'Seeder', 'Seeded default prompts in prompts table.');
+    logger.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'Seeder', message: 'Seeded default prompts in prompts table.' });
 }
 
 /**
  * Runs all seed functions in the correct order.
  * This function should be called AFTER initializeSchema() completes.
- * 
+ * @public
  * @param {Database} db - The active database connection instance.
  * @returns {void}
  */
-function seed(db) {
-    seedAiModels(db);
-    seedDimensions(db);
-    seedBlueprints(db);
-    seedSettings(db);
-    seedPrompts(db);
+function seed(db, logger) {
+    seedAiModels(db, logger);
+    seedDimensions(db, logger);
+    seedBlueprints(db, logger);
+    seedSettings(db, logger);
+    seedPrompts(db, logger);
 }
 
 module.exports = {

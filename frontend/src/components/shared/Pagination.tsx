@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Button } from '@/components/ui/Button';
 
 interface PaginationProps {
@@ -23,7 +23,7 @@ export function Pagination({ currentPage, totalPages, onPageChange }: Pagination
           disabled={currentPage === 1}
           className="flex items-center gap-1"
         >
-          <ChevronLeft className="w-4 h-4" />
+          <DOMAIN_ICONS.PREV className="w-4 h-4" />
         </Button>
         <Button
           variant="secondary"
@@ -32,7 +32,7 @@ export function Pagination({ currentPage, totalPages, onPageChange }: Pagination
           disabled={currentPage === totalPages}
           className="flex items-center gap-1"
         >
-          <ChevronRight className="w-4 h-4" />
+          <DOMAIN_ICONS.NEXT className="w-4 h-4" />
         </Button>
       </div>
     </div>

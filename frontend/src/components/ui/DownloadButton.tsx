@@ -1,14 +1,15 @@
 'use client';
 
-import { Download } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Button } from './Button';
 import { ButtonHTMLAttributes } from 'react';
+import { ButtonVariant, ButtonSize } from '@/lib/types';
 
 interface DownloadButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** The name of the item being downloaded (e.g., "PDF", "Report"). Defaults to "File". */
   itemName?: string;
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
-  size?: 'sm' | 'md' | 'lg' | 'icon';
+  variant?: ButtonVariant;
+  size?: ButtonSize;
 }
 
 /**
@@ -31,7 +32,7 @@ export function DownloadButton({
   
   return (
     <Button variant={variant} size={size} className={className} {...props}>
-      <Download className="w-4 h-4 mr-2 shrink-0" />
+      <DOMAIN_ICONS.DOWNLOAD className="w-4 h-4 mr-2 shrink-0" />
       <span className="pr-1 truncate">Download {formattedItem}</span>
     </Button>
   );

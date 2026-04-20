@@ -14,10 +14,10 @@
  * - ❌ MUST NOT calculate lifecycle states - delegated to BaseCard via useTaskLifecycle.
  * - Layout shell is delegated to BaseCard component.
  */
-import { Scale, Weight } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Entity } from '@/lib/types';
+import { ENTITY_ROLES, ENTITY_STATUS } from '@/lib/constants';
 import { cn, formatPercentage, getEntityDisplayNames } from '@/lib/utils';
-import { useBlueprints } from '@/hooks/useBlueprints';
 import { BaseCard } from '../shared/BaseCard';
 
 interface EntityCardProps {
@@ -46,11 +46,10 @@ export function EntityCard({
   onDelete,
   onCancel
 }: EntityCardProps) {
-  const { blueprints } = useBlueprints();
   const startTime = processingStartedAt || (entity.metadata?.processingStartedAt as string) || (entity as any).updated_at;
-  const isRequirement = entity.type === 'requirement';
+  const isRequirement = entity.type === ENTITY_ROLES.REQUIREMENT;
 
-  const { primary: primaryName, secondary: secondaryName } = getEntityDisplayNames(entity, blueprints);
+  const { primary: primaryName, secondary: secondaryName } = getEntityDisplayNames(entity);
 
   return (
     <BaseCard
@@ -59,7 +58,6 @@ export function EntityCard({
       startTime={startTime}
       taskName={isRequirement ? "extraction" : "processing"}
       errorMessage={entity.error || undefined}
-      processingStep={entity.metadata?.processingStep as string | undefined}
       onClick={onClick}
       onRetry={onRetry}
       onDelete={onDelete}
@@ -67,7 +65,7 @@ export function EntityCard({
     >
       <div className={cn(
         "mb-2 flex flex-col items-center transition-colors group-hover:text-accent-forest-light",
-        (entity.status === 'failed' || entity.status === 'error' || entity.error) ? "text-red-700" : "text-accent-forest"
+        (entity.status === ENTITY_STATUS.FAILED || entity.error) ? "text-red-700" : "text-accent-forest"
       )}>
         <h3 className="font-semibold text-base line-clamp-1">
           {primaryName}
@@ -82,12 +80,12 @@ export function EntityCard({
       <div className="flex items-center justify-center gap-1.5 text-sm text-accent-forest/60">
         {isRequirement ? (
           <>
-            <Scale className="w-3.5 h-3.5" />
+            <DOMAIN_ICONS.REQUIREMENT className="w-3.5 h-3.5" />
             <span className="truncate">{entityLabel || 'Requirement'}</span>
           </>
         ) : (
           <>
-            <Weight className="w-3.5 h-3.5" />
+            <DOMAIN_ICONS.OFFERING className="w-3.5 h-3.5" />
             <span className="truncate">{entityLabel || 'Offering'}</span>
           </>
         )}

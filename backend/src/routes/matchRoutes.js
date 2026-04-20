@@ -14,18 +14,18 @@
 const express = require('express');
 const router = express.Router();
 
-const MatchController = require('../controllers/MatchController');
+const { matchController } = require('../config/container').getContainer();
 const { validate } = require('../middlewares/validateZod');
 const { matchSchema } = require('../validators/schemas');
 
-router.get('/', MatchController.getAll);
-router.get('/:id', MatchController.getById);
-router.post('/', validate(matchSchema), MatchController.create);
-router.delete('/:id', MatchController.delete);
-router.post('/:id/folder/open', MatchController.openFolder);
-router.post('/:id/retry', MatchController.retryProcessing);
-router.get('/:id/files', MatchController.getFiles);
-router.get('/:id/files/:filename', MatchController.getFile);
-router.get('/:id/pdf', MatchController.downloadPdf);
+router.get('/', matchController.getAll);
+router.get('/:id', matchController.getById);
+router.post('/', validate(matchSchema), matchController.create);
+router.delete('/:id', matchController.delete);
+router.post('/:id/folder/open', matchController.openFolder);
+router.post('/:id/retry', matchController.retryProcessing);
+router.get('/:id/files', matchController.getFiles);
+router.get('/:id/files/:filename', matchController.getFile);
+router.get('/:id/pdf', matchController.downloadPdf);
 
 module.exports = router;

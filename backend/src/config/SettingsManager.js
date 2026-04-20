@@ -9,11 +9,15 @@
  * - Uses in-memory cache for performance optimization.
  * 
  * @boundary_rules
- * - ✅ Uses the database for all settings storage.
+ * - ✅ Uses Repository for all settings storage (via SettingsRepo).
  * - ✅ Uses in-memory cache for fast reads.
  * - ❌ MUST NOT use raw `fs` module for any file operations.
  * - ❌ MUST NOT know about the meaning of the settings (e.g., it shouldn't validate if an Ollama host URL is real).
  * - ❌ MUST NOT be heavily coupled to domain services (Services should ideally receive their settings as injected variables).
+ * 
+ * @dependency_injection
+ * - Accepts settingsRepo via constructor injection.
+ * - No direct database imports - all DB access goes through SettingsRepo.
  * 
  * @database_driven_explanation
  * All settings are now stored in the SQLite database table 'settings' to support
@@ -25,10 +29,14 @@
  * - On get(): cache is checked first; if miss, database is queried and cache is populated.
  */
 
-const db = require('../repositories/Database');
-
 class SettingsManager {
-    constructor() {
+    /**
+     * @constructor
+     * @param {Object} deps - Dependencies
+     * @param {Object} deps.settingsRepo - SettingsRepo instance for database access
+     */
+    constructor({ settingsRepo }) {
+        this._settingsRepo = settingsRepo;
         this._cache = new Map();
         this._cacheLoaded = false;
     }
@@ -41,7 +49,7 @@ class SettingsManager {
     _ensureCacheLoaded() {
         if (this._cacheLoaded) return;
         
-        const rows = db.prepare('SELECT key, value FROM settings').all();
+        const rows = this._settingsRepo.getAllSettings();
         for (const row of rows) {
             this._cache.set(row.key, row.value);
         }
@@ -104,11 +112,7 @@ class SettingsManager {
      * @returns {boolean} True if successful.
      */
     set(key, value) {
-        db.prepare(`
-            INSERT INTO settings (key, value)
-            VALUES (?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value
-        `).run(key, value);
+        this._settingsRepo.upsertSetting(key, value);
         
         this._cache.set(key, value);
         return true;
@@ -116,19 +120,34 @@ class SettingsManager {
 
     /**
      * Tests AI connectivity by sending a test message.
-     * @description Uses deferred require for AiService to prevent circular dependency crashes.
+     * @description Uses dependency injection for AiService to eliminate circular dependencies.
+     * The caller (e.g., SettingController) is responsible for wiring the AiService instance
+     * to avoid circular dependency issues between SettingsManager and AiService.
+     * 
+     * @method testAiConnection
+     * @memberof SettingsManager
      * @param {string} message - The test message to send to the AI.
+     * @param {Object} aiServiceInstance - The AiService instance to use for testing.
      * @returns {Promise<string>} The AI's response.
      * @throws {Error} If the AI connection fails.
+     * 
+     * @dependency_injection_explanation
+     * Previously used deferred require inside this method to break circular dependency
+     * with AiService. Now accepts aiServiceInstance as a parameter, following the
+     * Dependency Injection pattern. This eliminates circular dependencies and improves
+     * testability by allowing mock AiService instances to be injected.
      */
-    async testAiConnection(message) {
-        // DEFERRED REQUIRE: Breaks circular dependency with AiService
-        const AiService = require('../services/AiService');
-
+    async testAiConnection(message, aiServiceInstance) {
         const host = this.get('ollama_host');
         const model = this.get('ollama_model');
-        return await AiService.testChat(message, host, model);
+        return await aiServiceInstance.testChat(message, host, model);
     }
 }
 
-module.exports = new SettingsManager();
+/**
+ * @dependency_injection
+ * SettingsManager exports the class constructor rather than an instance.
+ * This enables DI container to instantiate with dependencies.
+ * Reasoning: Allows runtime configuration and testing via injection.
+ */
+module.exports = SettingsManager;

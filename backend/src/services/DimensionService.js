@@ -6,17 +6,29 @@
  * - Provides business logic for creating, updating, and deleting dimensions.
  * @boundary_rules
  * - ❌ MUST NOT handle HTTP request/response objects directly.
+ *
+ * @dependency_injection
+ * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
  */
-const dimensionRepo = require('../repositories/DimensionRepo');
 
 class DimensionService {
+    /**
+     * @constructor
+     * @param {Object} deps - Dependencies object
+     * @param {Object} deps.dimensionRepo - The DimensionRepo instance
+     * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
+     */
+    constructor({ dimensionRepo }) {
+        this._dimensionRepo = dimensionRepo;
+    }
+
     /**
      * Retrieves all active dimensions.
      * @method getActiveDimensions
      * @returns {Array<Object>} Array of active dimension objects.
      */
     getActiveDimensions() {
-        return dimensionRepo.getActiveDimensions();
+        return this._dimensionRepo.getActiveDimensions();
     }
 
     /**
@@ -25,7 +37,7 @@ class DimensionService {
      * @returns {Array<Object>} Array of all dimension objects.
      */
     getAllDimensions() {
-        return dimensionRepo.getAllDimensions();
+        return this._dimensionRepo.getAllDimensions();
     }
 
     /**
@@ -35,35 +47,39 @@ class DimensionService {
      * @returns {Object|null} Dimension object or null if not found.
      */
     getDimensionById(id) {
-        return dimensionRepo.getDimensionById(id);
+        return this._dimensionRepo.getDimensionById(id);
     }
 
     /**
      * Creates a new dimension.
      * @method createDimension
-     * @param {string} name - The unique dimension name (system key).
-     * @param {string} displayName - The display-friendly name.
-     * @param {string} requirementInstruction - The instruction for requirement entities.
-     * @param {string} offeringInstruction - The instruction for offering entities.
-     * @param {boolean} [isActive=true] - Whether the dimension is active.
+     * @param {Object} dimensionDto - The dimension DTO object containing all dimension properties.
+     * @param {string} dimensionDto.name - The unique dimension name (system key).
+     * @param {string} dimensionDto.displayName - The display-friendly name.
+     * @param {string} dimensionDto.requirementInstruction - The instruction for requirement entities.
+     * @param {string} dimensionDto.offeringInstruction - The instruction for offering entities.
+     * @param {boolean} [dimensionDto.isActive=true] - Whether the dimension is active.
+     * @param {number} [dimensionDto.weight=1.0] - The dimension weight.
      * @returns {number} The ID of the newly created dimension.
      */
-    createDimension(name, displayName, requirementInstruction, offeringInstruction, isActive = true, weight = 1.0) {
-        return dimensionRepo.createDimension(name, displayName, requirementInstruction, offeringInstruction, isActive, weight);
+    createDimension(dimensionDto) {
+        return this._dimensionRepo.createDimension(dimensionDto);
     }
 
     /**
      * Updates an existing dimension.
      * @method updateDimension
      * @param {number} id - The dimension ID to update.
-     * @param {Object} updates - The updates to apply.
-     * @param {string} [updates.displayName] - The new display name.
-     * @param {string} [updates.description] - The new description.
-     * @param {boolean} [updates.isActive] - The new active status.
+     * @param {Object} dimensionDto - The dimension DTO with updates.
+     * @param {string} [dimensionDto.displayName] - The new display name.
+     * @param {string} [dimensionDto.requirementInstruction] - The new requirement instruction.
+     * @param {string} [dimensionDto.offeringInstruction] - The new offering instruction.
+     * @param {boolean} [dimensionDto.isActive] - The new active status.
+     * @param {number} [dimensionDto.weight] - The new weight.
      * @returns {boolean} True if updated, false if not found.
      */
-    updateDimension(id, updates) {
-        return dimensionRepo.updateDimension(id, updates);
+    updateDimension(id, dimensionDto) {
+        return this._dimensionRepo.updateDimension(id, dimensionDto);
     }
 
     /**
@@ -73,7 +89,7 @@ class DimensionService {
      * @returns {boolean} True if deleted, false if not found.
      */
     deleteDimension(id) {
-        return dimensionRepo.deleteById(id) ? true : false;
+        return this._dimensionRepo.deleteById(id) ? true : false;
     }
 
     /**
@@ -84,8 +100,8 @@ class DimensionService {
      * @returns {boolean} True if updated, false if not found.
      */
     setDimensionActive(id, isActive) {
-        return dimensionRepo.setDimensionActive(id, isActive);
+        return this._dimensionRepo.setDimensionActive(id, isActive);
     }
 }
 
-module.exports = new DimensionService();
+module.exports = DimensionService;

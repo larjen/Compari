@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/utils';
-import { Loader2, Trash2 } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 
 interface DeleteActionProps {
   onDelete: () => Promise<void>;
@@ -47,10 +47,10 @@ export function DeleteAction({ onDelete, buttonText = 'Delete', iconOnly = false
       <>
         <Button variant="danger" size="sm" onClick={handleConfirm} disabled={isDeleting} className={className}>
           {isDeleting ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <DOMAIN_ICONS.LOADING className="w-4 h-4 animate-spin" />
           ) : (
             <>
-              <Trash2 className="w-4 h-4 mr-2" />
+              <DOMAIN_ICONS.DELETE className="w-4 h-4 mr-2" />
               {buttonText === 'Delete' ? 'Confirm' : buttonText}
             </>
           )}
@@ -71,7 +71,7 @@ export function DeleteAction({ onDelete, buttonText = 'Delete', iconOnly = false
         className={cn("text-red-500 hover:bg-red-50 p-1", className)}
         title="Delete"
       >
-        <Trash2 className="w-4 h-4" />
+        <DOMAIN_ICONS.DELETE className="w-4 h-4" />
       </Button>
     );
   }
@@ -82,7 +82,7 @@ export function DeleteAction({ onDelete, buttonText = 'Delete', iconOnly = false
       onClick={() => setShowConfirm(true)}
       className={cn("text-red-600 hover:bg-red-50", className)}
     >
-      <Trash2 className="w-4 h-4 mr-2" />
+      <DOMAIN_ICONS.DELETE className="w-4 h-4 mr-2" />
       {buttonText}
     </Button>
   );

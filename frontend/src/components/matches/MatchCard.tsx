@@ -14,14 +14,14 @@
  * - ❌ MUST NOT calculate lifecycle states - delegated to BaseCard via useTaskLifecycle.
  * - Layout shell is delegated to BaseCard component.
  */
-import { Scale, Weight } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { EntityMatch } from '@/lib/types';
 import { parseMatchEntities, formatPercentage, getEntityDisplayNames } from '@/lib/utils';
-import { useBlueprints } from '@/hooks/useBlueprints';
 import { useToast } from '@/hooks/useToast';
 import { DownloadButton } from '@/components/ui';
 import { BaseCard } from '../shared/BaseCard';
-import { TOAST_TYPES } from '@/lib/constants';
+import { matchApi } from '@/lib/api/matchApi';
+import { TOAST_TYPES, ENTITY_STATUS } from '@/lib/constants';
 
 interface MatchCardProps {
   match: EntityMatch;
@@ -38,52 +38,19 @@ interface MatchCardProps {
 }
 
 export function MatchCard({ match, onClick, onDelete, onRetry }: MatchCardProps) {
-  const { blueprints } = useBlueprints();
   const { addToast } = useToast();
-
-  const activeBlueprint = blueprints.find(b => b.is_active) || blueprints[0] || null;
-  const reqLabel = activeBlueprint?.requirementLabelPlural || 'Requirement';
-  const offLabel = activeBlueprint?.offeringLabelPlural || 'Offering';
 
   const { reqEntity, offEntity } = parseMatchEntities(match);
 
-  const { primary: reqPrimaryName } = getEntityDisplayNames(reqEntity, blueprints);
-  const { primary: offPrimaryName } = getEntityDisplayNames(offEntity, blueprints);
+  const { primary: reqPrimaryName } = getEntityDisplayNames(reqEntity);
+  const { primary: offPrimaryName } = getEntityDisplayNames(offEntity);
 
-  const isCompleted = match.status === 'completed';
+  const isCompleted = match.status === ENTITY_STATUS.COMPLETED;
 
   const handleDownloadPdf = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const response = await fetch(`/api/matches/${match.id}/pdf`);
-
-      if (!response.ok) {
-        let errorMessage = "Failed to generate PDF";
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-        } catch (e) { }
-        throw new Error(errorMessage);
-      }
-
-      const blob = await response.blob();
-      const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = `Compari_Match_Report_${match.id}.pdf`;
-      if (contentDisposition && contentDisposition.includes('filename=')) {
-        const matches = /filename="([^"]+)"/.exec(contentDisposition);
-        if (matches != null && matches) {
-          filename = matches[1];
-        }
-      }
-
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      await matchApi.downloadMatchReportPdf(match.id);
     } catch (error) {
       console.error(error);
       addToast(TOAST_TYPES.ERROR, error instanceof Error ? error.message : "There was an error downloading the PDF.");
@@ -122,11 +89,11 @@ export function MatchCard({ match, onClick, onDelete, onRetry }: MatchCardProps)
 
       <div className="flex flex-col items-center gap-2 w-full mt-1 mb-2">
         <div className="flex items-center justify-center gap-1.5 text-sm text-accent-forest/60 w-full min-w-0">
-          <Scale className="w-3.5 h-3.5 flex-shrink-0" />
+          <DOMAIN_ICONS.REQUIREMENT className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="font-medium text-accent-forest truncate whitespace-nowrap">{reqPrimaryName}</span>
         </div>
         <div className="flex items-center justify-center gap-1.5 text-sm text-accent-forest/60 w-full min-w-0">
-          <Weight className="w-3.5 h-3.5 flex-shrink-0" />
+          <DOMAIN_ICONS.OFFERING className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="truncate whitespace-nowrap">{offPrimaryName}</span>
         </div>
       </div>

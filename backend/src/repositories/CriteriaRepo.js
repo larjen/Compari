@@ -11,23 +11,28 @@
  * - ❌ MUST NOT interact with the file system or AI (except through passed data).
  */
 
-const db = require('./Database');
-const BaseRepository = require('./BaseRepository');
-const Entity = require('../models/Entity');
+const BaseEntityRepo = require('./BaseEntityRepo');
+const EntityFactory = require('../models/EntityFactory');
+const HashGenerator = require('../utils/HashGenerator');
 
 /**
  * @class CriteriaRepo
- * @extends BaseRepository
+ * @extends BaseEntityRepo
  * @description Repository for criteria and entity-criteria relationship CRUD operations.
+ * Implements Class Table Inheritance (CTI) pattern where:
+ * - Base data (id, normalized_name, nicename) lives in entities_base
+ * - Specific data (dimension, embedding) lives in entities_criterion
  */
-class CriteriaRepo extends BaseRepository {
+class CriteriaRepo extends BaseEntityRepo {
 
     /**
      * Creates a new CriteriaRepo instance.
      * @constructor
+     * @param {Object} deps - Dependencies object.
+     * @param {Object} deps.db - The database instance.
      */
-    constructor() {
-        super('criteria');
+    constructor({ db }) {
+        super({ db });
     }
     /**
      * Retrieves a criterion by its ID for deep-linking.
@@ -35,13 +40,19 @@ class CriteriaRepo extends BaseRepository {
      * @returns {Object|null} Criterion object with all fields.
      */
     getCriterionByIdForApi(id) {
-        const stmt = db.prepare('SELECT * FROM criteria WHERE id = ?');
+        const stmt = this.db.prepare(`
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, ec.embedding
+            FROM entities_base c
+            JOIN entities_criterion ec ON c.id = ec.entity_id
+            WHERE c.id = ? AND c.entity_type = 'criterion'
+        `);
         const row = stmt.get(id);
         if (!row) return null;
         return {
             id: row.id,
             normalizedName: row.normalized_name,
             displayName: row.display_name,
+            hash: row.hash,
             dimension: row.dimension,
             embedding: JSON.parse(row.embedding)
         };
@@ -50,20 +61,46 @@ class CriteriaRepo extends BaseRepository {
      * Inserts a new criterion with its vector embedding and dimension.
      * Uses INSERT OR IGNORE to handle duplicate normalized names gracefully.
      * @method insertCriterion
-     * @param {string} normalizedName - The normalized criterion name for deduplication (e.g., "react", "python").
-     * @param {string} displayName - The display-friendly criterion name for UI (e.g., "React", "Python").
-     * @param {string} dimension - The dimension/category (e.g., "core_competencies", "soft_skills", "experience", "domain_knowledge", "cultural_fit").
-     * @param {number[]} embeddingArray - Array of floats representing the criterion's embedding.
+     * @param {Object} criterionDto - The criterion data transfer object.
+     * @param {string} criterionDto.normalizedName - The normalized criterion name for deduplication (e.g., "react", "python").
+     * @param {string} criterionDto.displayName - The display-friendly criterion name for UI (e.g., "React", "Python").
+     * @param {string} criterionDto.dimension - The dimension/category (e.g., "core_competencies", "soft_skills", "experience", "domain_knowledge", "cultural_fit").
+     * @param {number[]} criterionDto.embeddingArray - Array of floats representing the criterion's embedding. Can be null for atomized extraction pipeline.
      * @returns {number} The criterion ID (existing or newly created).
+     * @socexplanation
+     * - Embedding is now optional (nullable) to support the atomized extraction pipeline
+     *   where criteria may be created before vectorization occurs.
+     * - Passing null ensures valid SQL NULL instead of undefined, preventing constraint violations.
      * @why_not_base - Custom INSERT OR IGNORE with SELECT to return ID; requires JSON.stringify for embedding.
      */
-    insertCriterion(normalizedName, displayName, dimension, embeddingArray) {
-        const embeddingStr = JSON.stringify(embeddingArray);
-        const stmt = db.prepare('INSERT OR IGNORE INTO criteria (normalized_name, display_name, dimension, embedding) VALUES (?, ?, ?, ?)');
-        stmt.run(normalizedName, displayName, dimension, embeddingStr);
+    insertCriterion({ normalizedName, displayName, dimension, embeddingArray, dimensionDisplayName }) {
+        const embeddingStr = embeddingArray ? JSON.stringify(embeddingArray) : null;
+        const hash = HashGenerator.generateDeterministicHash(`criterion:${normalizedName}`);
 
-        const existing = db.prepare('SELECT id FROM criteria WHERE normalized_name = ?').get(normalizedName);
-        return existing ? existing.id : null;
+        const transaction = this.db.transaction(() => {
+            const insertBaseStmt = this.db.prepare(`
+                INSERT OR IGNORE INTO entities_base (entity_type, normalized_name, nicename, nice_name_line_1, nice_name_line_2, hash)
+                VALUES ('criterion', ?, ?, ?, ?, ?)
+            `);
+            const line2 = dimensionDisplayName || dimension;
+            insertBaseStmt.run(normalizedName, displayName, displayName, line2, hash);
+
+            const getIdStmt = this.db.prepare(`
+                SELECT id FROM entities_base WHERE normalized_name = ? AND entity_type = 'criterion'
+            `);
+            const existing = getIdStmt.get(normalizedName);
+            if (!existing) return null;
+
+            const insertChildStmt = this.db.prepare(`
+                INSERT OR IGNORE INTO entities_criterion (entity_id, dimension, embedding)
+                VALUES (?, ?, ?)
+            `);
+            insertChildStmt.run(existing.id, dimension, embeddingStr);
+
+            return existing.id;
+        });
+
+        return transaction();
     }
 
     /**
@@ -75,7 +112,12 @@ class CriteriaRepo extends BaseRepository {
      * @why_not_base - Custom return format with JSON.parse for embedding array.
      */
     getCriterionByName(normalizedName) {
-        const stmt = db.prepare('SELECT * FROM criteria WHERE normalized_name = ?');
+        const stmt = this.db.prepare(`
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, ec.embedding
+            FROM entities_base c
+            JOIN entities_criterion ec ON c.id = ec.entity_id
+            WHERE c.normalized_name = ? AND c.entity_type = 'criterion'
+        `);
         const row = stmt.get(normalizedName);
         if (!row) return null;
 
@@ -83,6 +125,7 @@ class CriteriaRepo extends BaseRepository {
             id: row.id,
             normalizedName: row.normalized_name,
             displayName: row.display_name,
+            hash: row.hash,
             dimension: row.dimension,
             embedding: JSON.parse(row.embedding)
         };
@@ -96,13 +139,19 @@ class CriteriaRepo extends BaseRepository {
      * @returns {Array<Object>} Array of criterion objects with id, normalized_name, display_name, dimension, and embedding (array).
      */
     _getAllCriteriaWithEmbeddings() {
-        const stmt = db.prepare('SELECT * FROM criteria');
+        const stmt = this.db.prepare(`
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, ec.embedding
+            FROM entities_base c
+            JOIN entities_criterion ec ON c.id = ec.entity_id
+            WHERE c.entity_type = 'criterion'
+        `);
         const rows = stmt.all();
 
         return rows.map(row => ({
             id: row.id,
             normalizedName: row.normalized_name,
             displayName: row.display_name,
+            hash: row.hash,
             dimension: row.dimension,
             embedding: JSON.parse(row.embedding)
         }));
@@ -128,14 +177,15 @@ class CriteriaRepo extends BaseRepository {
     getPaginatedCriteria({ page = 1, limit = 200, search, dimension } = {}) {
         const params = [];
         let whereClauses = [];
+        whereClauses.push("c.entity_type = 'criterion'");
 
         if (search && search.trim()) {
-            whereClauses.push('LOWER(c.display_name) LIKE ?');
+            whereClauses.push('LOWER(c.nicename) LIKE ?');
             params.push(`%${search.toLowerCase().trim()}%`);
         }
 
         if (dimension && dimension.trim()) {
-            whereClauses.push('c.dimension = ?');
+            whereClauses.push('ec.dimension = ?');
             params.push(dimension.trim());
         }
 
@@ -143,8 +193,13 @@ class CriteriaRepo extends BaseRepository {
             ? `WHERE ${whereClauses.join(' AND ')}`
             : '';
 
-        const countSql = `SELECT COUNT(*) as total FROM criteria c ${whereClause}`;
-        const countStmt = db.prepare(countSql);
+        const countSql = `
+            SELECT COUNT(*) as total
+            FROM entities_base c
+            LEFT JOIN entities_criterion ec ON c.id = ec.entity_id
+            ${whereClause}
+        `;
+        const countStmt = this.db.prepare(countSql);
         const countResult = countStmt.get(...params);
         const totalCount = countResult.total;
 
@@ -153,27 +208,29 @@ class CriteriaRepo extends BaseRepository {
         const offset = (safePage - 1) * limit;
 
         const sql = `
-            SELECT c.id, c.normalized_name, c.display_name, c.dimension, d.id as dimension_id
-            FROM criteria c
-            LEFT JOIN dimensions d ON c.dimension = d.name
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, d.id as dimension_id
+            FROM entities_base c
+            LEFT JOIN entities_criterion ec ON c.id = ec.entity_id
+            LEFT JOIN dimensions d ON ec.dimension = d.name
             ${whereClause}
-            ORDER BY 
+            ORDER BY
                 /* 1. Push Uncategorized (NULL IDs) to the bottom */
                 CASE WHEN d.id IS NULL THEN 1 ELSE 0 END,
                 /* 2. Sort chunks numerically by their Database ID */
                 d.id ASC,
                 /* 3. Sort pills alphabetically within each chunk */
-                c.display_name ASC
+                c.nicename ASC
             LIMIT ? OFFSET ?
         `;
 
-        const stmt = db.prepare(sql);
+        const stmt = this.db.prepare(sql);
         const rows = stmt.all(...params, limit, offset);
 
         const criteria = rows.map(row => ({
             id: row.id,
             normalizedName: row.normalized_name,
             displayName: row.display_name,
+            hash: row.hash,
             dimension: row.dimension,
             dimensionId: row.dimension_id
         }));
@@ -195,7 +252,7 @@ class CriteriaRepo extends BaseRepository {
      * @why_not_base - Inserts into 'entity_criteria' junction table (not base table).
      */
     linkCriterionToEntity(entityId, criterionId, isRequired = true) {
-        const stmt = db.prepare(`
+        const stmt = this.db.prepare(`
             INSERT OR IGNORE INTO entity_criteria (entity_id, criterion_id, is_required) 
             VALUES (?, ?, ?)
         `);
@@ -208,15 +265,20 @@ class CriteriaRepo extends BaseRepository {
      * @method getCriteriaForEntity
      * @param {number} entityId - The entity ID.
      * @returns {Array<Object>} Array of criterion objects with normalized_name, display_name, dimension, and is_required flag.
-     * @why_not_base - Requires JOIN between entity_criteria and criteria tables; no embedding.
+     * @socexplanation
+     * - This method implements CTI by joining entities_base (as the base table) with entities_criterion (as the child table).
+     * - The CTI pattern is completely abstracted away from the Service layer - the Service sees only the familiar criterion object structure.
+     * - The JOIN maps nicename->displayName to maintain backward compatibility with existing service expectations.
+     * @why_not_base - Requires JOIN between entity_criteria, entities_base, and entities_criterion tables; no embedding.
      */
     getCriteriaForEntity(entityId) {
-        const stmt = db.prepare(`
-            SELECT c.id, c.normalized_name, c.display_name, c.dimension, ec.is_required, d.id as dimension_id
-            FROM entity_criteria ec
-            JOIN criteria c ON ec.criterion_id = c.id
-            LEFT JOIN dimensions d ON c.dimension = d.name
-            WHERE ec.entity_id = ?
+        const stmt = this.db.prepare(`
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, link.is_required, d.id as dimension_id
+            FROM entity_criteria link
+            JOIN entities_base c ON link.criterion_id = c.id
+            JOIN entities_criterion ec ON c.id = ec.entity_id
+            LEFT JOIN dimensions d ON ec.dimension = d.name
+            WHERE link.entity_id = ?
         `);
         const rows = stmt.all(entityId);
 
@@ -224,6 +286,7 @@ class CriteriaRepo extends BaseRepository {
             id: row.id,
             normalizedName: row.normalized_name,
             displayName: row.display_name,
+            hash: row.hash,
             dimension: row.dimension,
             dimensionId: row.dimension_id,
             isRequired: row.is_required === 1
@@ -240,12 +303,13 @@ class CriteriaRepo extends BaseRepository {
      * - It is strictly reserved for internal backend processes (like the MatchingEngine) to prevent memory/bandwidth bloat on standard HTTP API responses.
      */
     getCriteriaWithEmbeddingsForEntity(entityId) {
-        const stmt = db.prepare(`
-            SELECT c.id, c.normalized_name, c.display_name, c.dimension, c.embedding, ec.is_required, d.id as dimension_id
-            FROM entity_criteria ec
-            JOIN criteria c ON ec.criterion_id = c.id
-            LEFT JOIN dimensions d ON c.dimension = d.name
-            WHERE ec.entity_id = ?
+        const stmt = this.db.prepare(`
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, ec.embedding, link.is_required, d.id as dimension_id
+            FROM entity_criteria link
+            JOIN entities_base c ON link.criterion_id = c.id
+            JOIN entities_criterion ec ON c.id = ec.entity_id
+            LEFT JOIN dimensions d ON ec.dimension = d.name
+            WHERE link.entity_id = ?
         `);
         const rows = stmt.all(entityId);
 
@@ -253,11 +317,100 @@ class CriteriaRepo extends BaseRepository {
             id: row.id,
             normalizedName: row.normalized_name,
             displayName: row.display_name,
+            hash: row.hash,
             dimension: row.dimension,
             dimensionId: row.dimension_id,
             embedding: JSON.parse(row.embedding),
             isRequired: row.is_required === 1
         }));
+    }
+
+    /**
+     * Retrieves criteria with embeddings for multiple entities in a single query.
+     * Optimizes N+1 query patterns by fetching all criteria for all entity IDs at once.
+     * @method getCriteriaWithEmbeddingsForEntities
+     * @param {number[]} entityIds - Array of entity IDs.
+     * @returns {Object} Object with entity_id keys mapping to arrays of criterion objects.
+     * @socexplanation
+     * - Uses IN clause to fetch criteria for all entities in one SQL query.
+     * - Groups results by entity_id in memory for O(1) lookup.
+     * - Eliminates N+1 queries when evaluating matches against multiple opposite entities.
+     */
+    getCriteriaWithEmbeddingsForEntities(entityIds) {
+        if (!entityIds || entityIds.length === 0) {
+            return {};
+        }
+
+        const placeholders = entityIds.map(() => '?').join(', ');
+        const stmt = this.db.prepare(`
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, ec.embedding, link.is_required, d.id as dimension_id, link.entity_id
+            FROM entity_criteria link
+            JOIN entities_base c ON link.criterion_id = c.id
+            JOIN entities_criterion ec ON c.id = ec.entity_id
+            LEFT JOIN dimensions d ON ec.dimension = d.name
+            WHERE link.entity_id IN (${placeholders})
+        `);
+        const rows = stmt.all(...entityIds);
+
+        const grouped = {};
+        for (const row of rows) {
+            if (!grouped[row.entity_id]) {
+                grouped[row.entity_id] = [];
+            }
+            grouped[row.entity_id].push({
+                id: row.id,
+                normalizedName: row.normalized_name,
+                displayName: row.display_name,
+                hash: row.hash,
+                dimension: row.dimension,
+                dimensionId: row.dimension_id,
+                embedding: JSON.parse(row.embedding),
+                isRequired: row.is_required === 1
+            });
+        }
+
+        return grouped;
+    }
+
+    /**
+     * Retrieves criteria linked to an entity that don't have embeddings yet.
+     * Used for the vectorize criteria step in the atomized workflow.
+     * @method getCriteriaWithoutEmbeddingsForEntity
+     * @param {number} entityId - The entity ID.
+     * @returns {Array<Object>} Array of criterion objects without embeddings.
+     */
+    getCriteriaWithoutEmbeddingsForEntity(entityId) {
+        const stmt = this.db.prepare(`
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, ec.embedding, link.is_required, d.id as dimension_id
+            FROM entity_criteria link
+            JOIN entities_base c ON link.criterion_id = c.id
+            JOIN entities_criterion ec ON c.id = ec.entity_id
+            LEFT JOIN dimensions d ON ec.dimension = d.name
+            WHERE link.entity_id = ? AND (ec.embedding IS NULL OR ec.embedding = '')
+        `);
+        const rows = stmt.all(entityId);
+
+        return rows.map(row => ({
+            id: row.id,
+            normalizedName: row.normalized_name,
+            displayName: row.display_name,
+            hash: row.hash,
+            dimension: row.dimension,
+            dimensionId: row.dimension_id,
+            isRequired: row.is_required === 1
+        }));
+    }
+
+    /**
+     * Updates a criterion's embedding in the database.
+     * @method updateCriterionEmbedding
+     * @param {number} criterionId - The criterion ID.
+     * @param {number[]} embedding - The embedding array to store.
+     */
+    updateCriterionEmbedding(criterionId, embedding) {
+        const embeddingStr = JSON.stringify(embedding);
+        const stmt = this.db.prepare('UPDATE entities_criterion SET embedding = ? WHERE entity_id = ?');
+        stmt.run(embeddingStr, criterionId);
     }
 
     /**
@@ -270,38 +423,55 @@ class CriteriaRepo extends BaseRepository {
      *   - {string} normalizedName - The normalized criterion name.
      *   - {string} displayName - The display-friendly criterion name.
      *   - {string} dimension - The dimension/category.
-     *   - {number[]} embedding - Array of floats representing the embedding.
+     *   - {number[]|null} embedding - Array of floats representing the embedding, or null if not yet vectorized.
      *   - {boolean} [isRequired] - Whether the criterion is required (for sources).
      * @returns {number} The number of criteria inserted/linked.
      * 
+     * @socexplanation
+     * - This method implements CTI by inserting into both entities_base and entities_criterion within a single transaction.
+     * - The CTI pattern is completely abstracted away from the Service layer - the Service passes familiar criterion objects and receives back criterion IDs without knowing about the underlying base/child table split.
+     * - Embedding is now optional (nullable) to support the atomized extraction pipeline where criteria may be created before vectorization occurs.
+     * - Passing null ensures valid SQL NULL instead of undefined, preventing constraint violations.
+     * 
      * @performance_benefits
-     * - Uses `db.transaction()` to batch all inserts into a single atomic operation.
+     * - Uses `this.db.transaction()` to batch all inserts into a single atomic operation.
      * - Reduces disk I/O by executing multiple INSERT statements in one transaction.
      * - If any insert fails, the entire batch rolls back, ensuring data consistency.
      * - Eliminates the overhead of multiple database round-trips when processing dozens of criteria.
      * - better-sqlite3's transaction provides implicit prepared statement caching within the transaction.
      */
     _processCriteriaBatch(entityId, criteriaArray) {
-        const insertCriterionStmt = db.prepare(`
-            INSERT OR IGNORE INTO criteria (normalized_name, display_name, dimension, embedding)
-            VALUES (?, ?, ?, ?)
+        const insertBaseStmt = this.db.prepare(`
+            INSERT OR IGNORE INTO entities_base (entity_type, normalized_name, nicename, nice_name_line_1, nice_name_line_2, hash)
+            VALUES ('criterion', ?, ?, ?, ?, ?)
         `);
 
-        const getCriterionIdStmt = db.prepare('SELECT id FROM criteria WHERE normalized_name = ?');
+        const getCriterionIdStmt = this.db.prepare(`
+            SELECT id FROM entities_base WHERE normalized_name = ? AND entity_type = 'criterion'
+        `);
 
-        const linkEntityStmt = db.prepare(`
+        const insertChildStmt = this.db.prepare(`
+            INSERT OR IGNORE INTO entities_criterion (entity_id, dimension, embedding)
+            VALUES (?, ?, ?)
+        `);
+
+        const linkEntityStmt = this.db.prepare(`
             INSERT OR IGNORE INTO entity_criteria (entity_id, criterion_id, is_required)
             VALUES (?, ?, ?)
         `);
 
-        const transaction = db.transaction(() => {
+        const transaction = this.db.transaction(() => {
             let count = 0;
             for (const criteria of criteriaArray) {
-                const embeddingStr = JSON.stringify(criteria.embedding);
-                insertCriterionStmt.run(criteria.normalizedName, criteria.displayName, criteria.dimension, embeddingStr);
+                const embeddingStr = criteria.embedding ? JSON.stringify(criteria.embedding) : null;
+                const hash = HashGenerator.generateDeterministicHash(`criterion:${criteria.normalizedName}`);
+                const line2 = criteria.dimensionDisplayName || criteria.dimension;
+                insertBaseStmt.run(criteria.normalizedName, criteria.displayName, criteria.displayName, line2, hash);
 
                 const existing = getCriterionIdStmt.get(criteria.normalizedName);
                 if (existing) {
+                    insertChildStmt.run(existing.id, criteria.dimension, embeddingStr);
+
                     const isRequired = criteria.isRequired !== undefined ? criteria.isRequired : true;
                     linkEntityStmt.run(entityId, existing.id, isRequired ? 1 : 0);
                     count++;
@@ -328,7 +498,7 @@ class CriteriaRepo extends BaseRepository {
      * @returns {number} The number of criteria inserted/linked.
      * 
      * @performance_benefits
-     * - Uses `db.transaction()` to batch all inserts into a single atomic operation.
+     * - Uses `this.db.transaction()` to batch all inserts into a single atomic operation.
      * - Reduces disk I/O by executing multiple INSERT statements in one transaction.
      * - If any insert fails, the entire batch rolls back, ensuring data consistency.
      * - Eliminates the overhead of multiple database round-trips when processing dozens of criteria.
@@ -350,14 +520,14 @@ class CriteriaRepo extends BaseRepository {
      * @why_not_base - Requires JOIN between entities and entity_criteria tables; custom Entity model mapping.
      */
     getAssociatedSources(criterionId) {
-        const stmt = db.prepare(`
-            SELECT e.* FROM entities e
+        const stmt = this.db.prepare(`
+            SELECT e.* FROM entities_base e
             JOIN entity_criteria ec ON e.id = ec.entity_id
-            WHERE ec.criterion_id = ? AND e.type = 'requirement'
+            WHERE ec.criterion_id = ? AND e.entity_type = 'requirement'
             ORDER BY e.id DESC
         `);
         const rows = stmt.all(criterionId);
-        return rows.map(row => Entity.fromRow(row));
+        return rows.map(row => EntityFactory.fromRow(row));
     }
 
     /**
@@ -368,14 +538,14 @@ class CriteriaRepo extends BaseRepository {
      * @why_not_base - Requires JOIN between entities and entity_criteria tables; custom Entity model mapping.
      */
     getAssociatedTargets(criterionId) {
-        const stmt = db.prepare(`
-            SELECT e.* FROM entities e
+        const stmt = this.db.prepare(`
+            SELECT e.* FROM entities_base e
             JOIN entity_criteria ec ON e.id = ec.entity_id
-            WHERE ec.criterion_id = ? AND e.type = 'offering'
+            WHERE ec.criterion_id = ? AND e.entity_type = 'offering'
             ORDER BY e.id DESC
         `);
         const rows = stmt.all(criterionId);
-        return rows.map(row => Entity.fromRow(row));
+        return rows.map(row => EntityFactory.fromRow(row));
     }
 
     /**
@@ -386,13 +556,19 @@ class CriteriaRepo extends BaseRepository {
      * @why_not_base - Custom return format with JSON.parse for embedding array.
      */
     getCriterionById(id) {
-        const stmt = db.prepare('SELECT * FROM criteria WHERE id = ?');
+        const stmt = this.db.prepare(`
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, ec.embedding
+            FROM entities_base c
+            JOIN entities_criterion ec ON c.id = ec.entity_id
+            WHERE c.id = ? AND c.entity_type = 'criterion'
+        `);
         const row = stmt.get(id);
         if (!row) return null;
         return {
             id: row.id,
             normalizedName: row.normalized_name,
             displayName: row.display_name,
+            hash: row.hash,
             dimension: row.dimension,
             embedding: JSON.parse(row.embedding)
         };
@@ -412,20 +588,21 @@ class CriteriaRepo extends BaseRepository {
      * @historical_audit_trail - All merges are recorded in criterion_merge_history for traceability.
      */
     mergeCriteria(keepId, removeId, removeDisplayName) {
-        const transaction = db.transaction(() => {
-            const insertMergeHistoryStmt = db.prepare(`
+        const transaction = this.db.transaction(() => {
+            const insertMergeHistoryStmt = this.db.prepare(`
                 INSERT INTO criterion_merge_history (keep_id, merged_display_name)
                 VALUES (?, ?)
             `);
             insertMergeHistoryStmt.run(keepId, removeDisplayName);
 
-            db.prepare(`
+            this.db.prepare(`
                 INSERT OR IGNORE INTO entity_criteria (entity_id, criterion_id, is_required)
                 SELECT entity_id, ?, is_required FROM entity_criteria WHERE criterion_id = ?
             `).run(keepId, removeId);
 
-            db.prepare('DELETE FROM entity_criteria WHERE criterion_id = ?').run(removeId);
-            db.prepare('DELETE FROM criteria WHERE id = ?').run(removeId);
+            this.db.prepare('DELETE FROM entity_criteria WHERE criterion_id = ?').run(removeId);
+            this.db.prepare('DELETE FROM entities_criterion WHERE entity_id = ?').run(removeId);
+            this.db.prepare('DELETE FROM entities_base WHERE id = ?').run(removeId);
         });
         transaction();
     }
@@ -440,7 +617,7 @@ class CriteriaRepo extends BaseRepository {
      * @why_not_base - Queries separate 'criterion_merge_history' table (not base table).
      */
     getMergeHistory(keepId) {
-        const stmt = db.prepare(`
+        const stmt = this.db.prepare(`
             SELECT id, keep_id, merged_display_name, merged_at
             FROM criterion_merge_history
             WHERE keep_id = ?
@@ -457,9 +634,17 @@ class CriteriaRepo extends BaseRepository {
      * @why_not_base - Custom DELETE (kept for explicit control over cascade behavior).
      */
     deleteCriterion(id) {
-        const stmt = db.prepare('DELETE FROM criteria WHERE id = ?');
-        return stmt.run(id);
+        const stmt = this.db.prepare('DELETE FROM entities_base WHERE id = ? AND entity_type = ?');
+        return stmt.run(id, 'criterion');
     }
 }
 
-module.exports = new CriteriaRepo();
+/**
+ * @dependency_injection
+ * CriteriaRepo exports the class constructor rather than an instance.
+ * This enables DI container to instantiate with dependencies.
+ * @param {Object} deps - Dependencies object.
+ * @param {Object} deps.db - The database instance (injected).
+ * Reasoning: Allows runtime configuration and testing via injection.
+ */
+module.exports = CriteriaRepo;

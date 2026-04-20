@@ -1,36 +1,45 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, CheckCircle, AlertCircle, Info } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { useToast } from '@/hooks/useToast';
 import { cn } from '@/lib/utils';
+import { TOAST_TYPES } from '@/lib/constants';
 
+/**
+ * @responsibility Renders toasts with defensive fallbacks to prevent React crashes from unknown toast types.
+ * @boundary_rules - If toast.type is invalid/undefined, defaults to 'info' type
+ *                  - Never renders undefined components; always provides a valid LucideIcon
+ * @socexplanation This component handles presentation logic only. State management is delegated to useToast hook.
+ */
 export function ToastContainer() {
   const { toasts, removeToast } = useToast();
 
   const icons = {
-    success: CheckCircle,
-    error: AlertCircle,
-    info: Info,
+    [TOAST_TYPES.SUCCESS]: DOMAIN_ICONS.SUCCESS,
+    [TOAST_TYPES.ERROR]: DOMAIN_ICONS.ERROR,
+    [TOAST_TYPES.INFO]: DOMAIN_ICONS.INFO,
   };
 
   const styles = {
-    success: 'bg-green-50 border-green-200 text-green-800',
-    error: 'bg-red-50 border-red-200 text-red-800',
-    info: 'bg-blue-50 border-blue-200 text-blue-800',
+    [TOAST_TYPES.SUCCESS]: 'bg-green-50 border-green-200 text-green-800',
+    [TOAST_TYPES.ERROR]: 'bg-red-50 border-red-200 text-red-800',
+    [TOAST_TYPES.INFO]: 'bg-blue-50 border-blue-200 text-blue-800',
   };
 
   const iconStyles = {
-    success: 'text-green-500',
-    error: 'text-red-500',
-    info: 'text-blue-500',
+    [TOAST_TYPES.SUCCESS]: 'text-green-500',
+    [TOAST_TYPES.ERROR]: 'text-red-500',
+    [TOAST_TYPES.INFO]: 'text-blue-500',
   };
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2 max-w-lg">
       <AnimatePresence>
         {toasts.map((toast) => {
-          const Icon = icons[toast.type];
+          const Icon = icons[toast.type as keyof typeof icons] || DOMAIN_ICONS.INFO;
+          const styleClass = styles[toast.type as keyof typeof styles] || styles[TOAST_TYPES.INFO];
+          const iconStyleClass = iconStyles[toast.type as keyof typeof iconStyles] || iconStyles[TOAST_TYPES.INFO];
           return (
             <motion.div
               key={toast.id}
@@ -40,16 +49,16 @@ export function ToastContainer() {
               transition={{ duration: 0.2 }}
               className={cn(
                 'flex items-start gap-3 p-4 rounded-xl border shadow-lg backdrop-blur-md',
-                styles[toast.type]
+                styleClass
               )}
             >
-              <Icon className={cn('w-5 h-5 flex-shrink-0 mt-0.5', iconStyles[toast.type])} />
+              <Icon className={cn('w-5 h-5 flex-shrink-0 mt-0.5', iconStyleClass)} />
               <p className="flex-1 text-sm font-medium">{toast.message}</p>
               <button
                 onClick={() => removeToast(toast.id)}
                 className="flex-shrink-0 p-0.5 hover:bg-black/5 rounded transition-colors"
               >
-                <X className="w-4 h-4" />
+                <DOMAIN_ICONS.CLOSE className="w-4 h-4" />
               </button>
             </motion.div>
           );

@@ -14,17 +14,18 @@
 const express = require('express');
 const router = express.Router();
 
-const AiModelController = require('../controllers/AiModelController');
+const { aiModelController } = require('../config/container').getContainer();
 const { validate } = require('../middlewares/validateZod');
 const { aiModelSchema } = require('../validators/schemas');
 
-router.get('/', AiModelController.getAll);
-router.get('/active', AiModelController.getActive);
-router.get('/active/all', AiModelController.getAllActive);
-router.get('/:id', AiModelController.getById);
-router.post('/', validate(aiModelSchema), AiModelController.create);
-router.put('/:id', validate(aiModelSchema), AiModelController.update);
-router.delete('/:id', AiModelController.delete);
-router.post('/:id/set-active', AiModelController.setActive);
+router.get('/', aiModelController.getAll);
+router.get('/active', aiModelController.getActive);
+router.get('/active/all', aiModelController.getAllActive);
+router.post('/test', aiModelController.testConnection);
+router.get('/:id', aiModelController.getById);
+router.post('/', validate(aiModelSchema), aiModelController.create);
+router.put('/:id', validate(aiModelSchema), aiModelController.update);
+router.delete('/:id', aiModelController.delete);
+router.post('/:id/set-active', aiModelController.setActive);
 
 module.exports = router;

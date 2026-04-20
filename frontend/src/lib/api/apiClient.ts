@@ -76,9 +76,21 @@ export async function fetchWrapper<T = any>(
     const separator = url.includes('?') ? '&' : '?';
     url += `${separator}${searchParams.toString()}`;
   }
-  
+
+  // Automatically set Content-Type to application/json if body is a string (JSON)
+  const defaultHeaders: HeadersInit = 
+    typeof fetchOptions.body === 'string' 
+      ? { 'Content-Type': 'application/json' } 
+      : {};
+
+  const finalHeaders = {
+    ...defaultHeaders,
+    ...fetchOptions.headers,
+  };
+
   const res = await fetch(url, {
     ...fetchOptions,
+    headers: finalHeaders,
     // Set cache: 'no-store' for GET requests to prevent caching
     cache: fetchOptions.method === HTTP_METHODS.GET ? FETCH_CACHE_MODES.NO_STORE : undefined,
   });

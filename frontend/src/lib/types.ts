@@ -5,7 +5,18 @@
  * Uses centralized constants from ./constants.ts for type safety and DRY principle.
  */
 
-import { ENTITY_ROLES, AI_MODEL_ROLES, FIELD_TYPES, TOAST_TYPES } from './constants';
+import { ENTITY_ROLES, AI_MODEL_ROLES, FIELD_TYPES, TOAST_TYPES, ENTITY_STATUS, MATCH_CATEGORIES, BUTTON_VARIANTS, BUTTON_SIZES, QUEUE_TASKS } from './constants';
+
+/**
+ * @description Single Source of Truth (SSoT) for all application constants and domain types.
+ * @responsibility Prevents DRY violations and magic strings across the frontend.
+ * @boundary_rules
+ * - ❌ MUST NOT use inline string or number unions in any component or API client.
+ * - ✅ MUST export all application-wide settings, statuses, and roles from here.
+ */
+
+export type EntityStatus = typeof ENTITY_STATUS[keyof typeof ENTITY_STATUS];
+export type MatchCategory = typeof MATCH_CATEGORIES[keyof typeof MATCH_CATEGORIES];
 
 /**
  * Entity Type derived from centralized constants.
@@ -27,6 +38,9 @@ export type FieldType = typeof FIELD_TYPES[keyof typeof FIELD_TYPES];
 
 export type ToastType = typeof TOAST_TYPES[keyof typeof TOAST_TYPES];
 
+export type ButtonVariant = typeof BUTTON_VARIANTS[keyof typeof BUTTON_VARIANTS];
+export type ButtonSize = typeof BUTTON_SIZES[keyof typeof BUTTON_SIZES];
+
 /**
  * Unified Entity interface replacing separate User and JobListing types.
  * Stores type-specific attributes in the metadata JSON column.
@@ -44,6 +58,8 @@ export interface Entity {
   status: string | null;
   error: string | null;
   blueprint_id: number | null;
+  niceNameLine1?: string;
+  niceNameLine2?: string;
   created_at: string;
   updated_at: string | null;
 }
@@ -59,7 +75,7 @@ export interface EntityMatch {
   match_score: number | null;
   report_path: string | null;
   folder_path: string | null;
-  status?: 'pending' | 'processing' | 'completed' | 'failed' | null;
+  status?: EntityStatus | null;
   error: string | null;
   created_at: string | null;
   updated_at?: string | null;
@@ -69,8 +85,12 @@ export interface EntityMatch {
   offering_description?: string;
   requirement_metadata?: Record<string, unknown> | string | null;
   requirement_blueprint_id?: number | null;
+  requirement_nice_name_line_1?: string;
+  requirement_nice_name_line_2?: string;
   offering_metadata?: Record<string, unknown> | string | null;
   offering_blueprint_id?: number | null;
+  offering_nice_name_line_1?: string;
+  offering_nice_name_line_2?: string;
 }
 
 export interface Settings {
@@ -143,7 +163,7 @@ export interface QueueTask {
  * Activity Log interface for tracking entity-related activities.
  * Stores log entries for entity operations, processing events, and user actions.
  */
-export interface ActivityLog {
+interface ActivityLog {
   id: number;
   timestamp: string;
   log_type: string;
@@ -156,25 +176,14 @@ export interface QueueStatus {
   pending: QueueTask[];
 }
 
-/**
- * Queue Task Types
- * @description TypeScript union type for generic queue task constants.
- * Updated to match consolidated backend task names.
- */
-export const QUEUE_TASKS = {
-  PROCESS_ENTITY_DOCUMENT: 'PROCESS_ENTITY_DOCUMENT',
-  EXTRACT_ENTITY_CRITERIA: 'EXTRACT_ENTITY_CRITERIA',
-  ASSESS_ENTITY_MATCH: 'ASSESS_ENTITY_MATCH'
-} as const;
-
-export type QueueTaskType = typeof QUEUE_TASKS[keyof typeof QUEUE_TASKS];
+type QueueTaskType = typeof QUEUE_TASKS[keyof typeof QUEUE_TASKS];
 
 export interface SSEMatchUpdate {
   id: number;
   requirement_id: number;
   offering_id: number;
   match_score: number | null;
-  status?: 'pending' | 'processing' | 'completed' | 'failed' | null;
+  status?: EntityStatus | null;
   error: string | null;
   created_at: string;
   updated_at: string;

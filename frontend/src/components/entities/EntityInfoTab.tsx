@@ -2,7 +2,7 @@
 
 import { Entity, Blueprint } from '@/lib/types';
 import { formatDate } from '@/lib/utils';
-import { AlertCircle } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { DetailItem } from '@/components/shared/DetailItem';
 import { MetadataEditor } from './MetadataEditor';
 
@@ -34,7 +34,7 @@ export function EntityInfoTab({ entity, blueprint, onSaveMetadata }: EntityInfoT
       {entity.error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
           <div className="flex items-center gap-2 mb-2">
-            <AlertCircle className="w-4 h-4 text-red-500" />
+            <DOMAIN_ICONS.ERROR className="w-4 h-4 text-red-500" />
             <p className="text-sm font-medium text-red-700">Processing Failed</p>
           </div>
           <p className="text-xs text-red-600 mb-2">{entity.error}</p>

@@ -10,7 +10,8 @@
  * - ❌ MUST NOT make direct database calls.
  * - All requests go through the REST API endpoints.
  */
-import { Blueprint, BlueprintField } from '../types';
+import { Blueprint, BlueprintField, FieldType, EntityType } from '../types';
+import { HTTP_METHODS } from '../constants';
 import { fetchWrapper } from './apiClient';
 
 export interface CreateBlueprintData {
@@ -24,10 +25,10 @@ export interface CreateBlueprintData {
   description?: string;
   fields: Array<{
     fieldName: string;
-    fieldType: 'string' | 'number' | 'date' | 'boolean';
+    fieldType: FieldType;
     description: string;
     isRequired: boolean;
-    entityRole: 'requirement' | 'offering';
+    entityRole: EntityType;
   }>;
   dimensionIds: number[];
 }
@@ -44,10 +45,10 @@ export interface UpdateBlueprintData {
   isActive?: boolean;
   fields?: Array<{
     fieldName: string;
-    fieldType: 'string' | 'number' | 'date' | 'boolean';
+    fieldType: FieldType;
     description: string;
     isRequired: boolean;
-    entityRole: 'requirement' | 'offering';
+    entityRole: EntityType;
   }>;
   dimensionIds?: number[];
 }
@@ -85,7 +86,7 @@ export const blueprintApi = {
    */
   async createBlueprint(data: CreateBlueprintData): Promise<number> {
     const response = await fetchWrapper<{ blueprintId: number }>('/blueprints', {
-      method: 'POST',
+      method: HTTP_METHODS.POST,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
@@ -101,8 +102,7 @@ export const blueprintApi = {
    */
   async updateBlueprint(id: number, data: UpdateBlueprintData): Promise<void> {
     return fetchWrapper(`/blueprints/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      method: HTTP_METHODS.PUT,
       body: JSON.stringify(data),
     });
   },
@@ -114,7 +114,7 @@ export const blueprintApi = {
    * @throws {Error} If the request fails.
    */
   async deleteBlueprint(id: number): Promise<void> {
-    return fetchWrapper(`/blueprints/${id}`, { method: 'DELETE' });
+    return fetchWrapper(`/blueprints/${id}`, { method: HTTP_METHODS.DELETE });
   },
 
   /**
@@ -124,6 +124,6 @@ export const blueprintApi = {
    * @throws {Error} If the request fails.
    */
   async setActiveBlueprint(id: number): Promise<void> {
-    return fetchWrapper(`/blueprints/${id}/set-active`, { method: 'PATCH' });
+    return fetchWrapper(`/blueprints/${id}/set-active`, { method: HTTP_METHODS.PATCH });
   },
 };

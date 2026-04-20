@@ -34,7 +34,7 @@ const MAX_NAME_LENGTH = 200;
 
 /**
  * Generates a human-friendly display name ("nice_name") by combining values from required blueprint fields.
- * 
+ * @public
  * @param {Object} parsedMetadata - The extracted metadata object from AI processing.
  *                           Keys should match blueprint field names.
  * @param {Array<Object>} blueprintFields - Array of blueprint field definitions.
@@ -62,60 +62,50 @@ const MAX_NAME_LENGTH = 200;
  * // result.nice_name === "Senior Engineer - Acme Corp"
  */
 function injectNiceName(parsedMetadata, blueprintFields) {
+    const fallbackName = parsedMetadata?.title || parsedMetadata?.name || 'Unnamed Entity';
+
     if (!parsedMetadata || typeof parsedMetadata !== 'object') {
-        return { ...parsedMetadata, nice_name: 'Unnamed Entity' };
+        return { ...parsedMetadata, nicename: fallbackName, niceNameLine1: 'Unknown', niceNameLine2: 'Unknown' };
     }
 
     if (!Array.isArray(blueprintFields) || blueprintFields.length === 0) {
-        const fallbackName = parsedMetadata.title || parsedMetadata.name || 'Unnamed Entity';
-        return { ...parsedMetadata, nice_name: fallbackName };
+        return { ...parsedMetadata, nicename: fallbackName, niceNameLine1: 'Unknown', niceNameLine2: 'Unknown' };
     }
 
-    // Step 1: Filter for required fields
-    // Resilient check: Handles strict booleans, SQLite integers (1), and snake_case API payload variations
-    const requiredFields = blueprintFields.filter(field => 
-        field.isRequired === true || 
-        field.is_required === true || 
-        field.isRequired === 1 || 
-        field.is_required === 1
-    );
+    const requiredFields = blueprintFields
+        .filter(f => f.isRequired === true || f.is_required === true || f.isRequired === 1 || f.is_required === 1)
+        .sort((a, b) => (a.id || 0) - (b.id || 0));
 
     if (requiredFields.length === 0) {
-        const fallbackName = parsedMetadata.title || parsedMetadata.name || 'Unnamed Entity';
-        return { ...parsedMetadata, nice_name: fallbackName };
+        return { ...parsedMetadata, nicename: fallbackName, niceNameLine1: 'Unknown', niceNameLine2: 'Unknown' };
     }
 
-    // Step 2: Take up to first two required fields
-    const targetFields = requiredFields.slice(0, 2);
+    const extractValue = (field) => {
+        if (!field) return null;
+        const key = field.fieldName || field.name || field.field_name;
+        const val = parsedMetadata[key];
+        return (val != null && val !== '' && val !== 'Unknown') ? val : null;
+    };
 
-    // Step 3 & 4: Look up values and filter out missing/falsy
-    const fieldValues = targetFields
-        .map(field => {
-            // Support both 'fieldName' and 'name' property
-            const key = field.fieldName || field.name || field.field_name;
-            return parsedMetadata[key];
-        })
-        .filter(value => value != null && value !== '' && value !== 'Unknown');
+    const val1 = extractValue(requiredFields[0]);
+    const val2 = extractValue(requiredFields[1]);
 
-    // Step 5: Join values with " - "
-    let niceName = fieldValues.length > 0 
-        ? fieldValues.join(' - ') 
-        : null;
+    const line1 = val1 || 'Unknown';
+    const line2 = val2 || 'Unknown';
 
-    // Step 6: Truncation guard
-    if (niceName && niceName.length > MAX_NAME_LENGTH) {
-        niceName = niceName.substring(0, MAX_NAME_LENGTH - 3) + '...';
+    let nicename = val1 ? val1 : fallbackName;
+    if (val1 && val2) {
+        nicename = `${val1} - ${val2}`;
+        if (nicename.length > MAX_NAME_LENGTH) {
+            nicename = nicename.substring(0, MAX_NAME_LENGTH - 3) + '...';
+        }
     }
 
-    // Step 7: Fallback if no values found
-    if (!niceName) {
-        niceName = 'Unnamed Entity';
-    }
-
-    // Step 8: Return new metadata object with nice_name injected
     return {
         ...parsedMetadata,
-        nice_name: niceName
+        nicename,
+        niceNameLine1: line1,
+        niceNameLine2: line2
     };
 }
 

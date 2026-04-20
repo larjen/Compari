@@ -5,7 +5,7 @@ import { useSafeFetch } from './useSafeFetch';
 import { dimensionApi, CreateDimensionData, UpdateDimensionData } from '@/lib/api/dimensionApi';
 import { Dimension } from '@/lib/types';
 
-export interface UseDimensionsReturn {
+interface UseDimensionsReturn {
   dimensions: Dimension[];
   loading: boolean;
   error: string | null;

@@ -5,38 +5,23 @@ echo "========================================"
 echo "Installing Compari..."
 echo "========================================"
 
-# Install backend dependencies
+# Install all workspace dependencies
 echo ""
-echo "[1/3] Installing backend dependencies..."
-cd backend
-npm install
+echo "[1/2] Installing all dependencies..."
+npm run setup
 if [ $? -ne 0 ]; then
-    echo "ERROR: Backend installation failed!"
-    cd ..
-    exit 1
-fi
-cd ..
-
-# Install frontend dependencies and build
-echo ""
-echo "[2/3] Installing frontend dependencies..."
-cd frontend
-npm install
-if [ $? -ne 0 ]; then
-    echo "ERROR: Frontend installation failed!"
-    cd ..
+    echo "ERROR: Installation failed!"
     exit 1
 fi
 
+# Build the project
 echo ""
-echo "[3/3] Building frontend for production..."
+echo "[2/2] Building frontend for production..."
 npm run build
 if [ $? -ne 0 ]; then
-    echo "ERROR: Frontend build failed!"
-    cd ..
+    echo "ERROR: Build failed!"
     exit 1
 fi
-cd ..
 
 echo ""
 echo "========================================"

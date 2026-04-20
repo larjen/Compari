@@ -1,40 +1,63 @@
 /**
  * @module MatchAssessmentWorkflow
  * @description Domain Workflow for generating match reports between source and target entities.
- * 
+ *
  * @responsibility
  * - Orchestrates the match assessment process using deterministic criteria matching.
- * - Validates criteria preconditions and generates detailed match reports.
+ * - Validates criteria preconditions and generates detailed JSON match reports for frontend rendering.
  * - Coordinates with FileService, CriteriaManagerWorkflow, LogService, and EventService.
- * 
+ *
  * @boundary_rules
  * - ✅ MAY call Infrastructure Services (FileService) and Domain Services/Workflows.
  * - ❌ MUST NOT handle HTTP request/response objects directly.
  * - ❌ MUST NOT write SQL queries (use Repositories).
  * - ❌ MUST NOT perform AI-based text analysis - relies on extracted criteria.
  * - ❌ MUST NOT contain matching logic - delegates to CriteriaManagerWorkflow.
- * 
+ *
  * @socexplanation
  * - This workflow orchestrates domain logic and infrastructure I/O without performing calculations itself.
  * - The CriteriaManagerWorkflow handles the complex semantic matching logic.
  * - This workflow saves structured JSON data for the frontend to render dynamically,
  *   rather than generating static Markdown. This delegates presentation logic to React.
+ *
+ * @dependency_injection
+ * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
  */
-const FileService = require('../services/FileService');
-const logService = require('../services/LogService');
-const criteriaManagerWorkflow = require('../workflows/CriteriaManagerWorkflow');
-const matchRepo = require('../repositories/MatchRepo');
-const matchService = require('../services/MatchService');
-const entityService = require('../services/EntityService');
+
 const aiReportGenerator = require('../utils/AiReportGenerator');
-const AiService = require('../services/AiService');
-const PromptBuilder = require('../utils/PromptBuilder');
-const DimensionRepo = require('../repositories/DimensionRepo');
-const SettingsManager = require('../config/SettingsManager');
-const { LOG_LEVELS, LOG_SYMBOLS, SETTING_KEYS, DOCUMENT_TYPES } = require('../config/constants');
+const { processAiTasks } = require('../utils/asyncHandler');
+const { LOG_LEVELS, LOG_SYMBOLS, SETTING_KEYS, DOCUMENT_TYPES, ENTITY_STATUS } = require('../config/constants');
 const path = require('path');
 
 class MatchAssessmentWorkflow {
+
+    /**
+     * @constructor
+     * @param {Object} deps - Dependencies object
+     * @param {Object} deps.entityService - The EntityService instance
+     * @param {Object} deps.matchService - The MatchService instance
+     * @param {Object} deps.fileService - The FileService instance
+     * @param {Object} deps.settingsManager - The SettingsManager instance
+     * @param {Object} deps.aiService - The AiService instance
+     * @param {Object} deps.logService - The LogService instance
+     * @param {Object} deps.criteriaManagerWorkflow - The CriteriaManagerWorkflow instance
+     * @param {Object} deps.matchRepo - The MatchRepo instance
+     * @param {Object} deps.dimensionRepo - The DimensionRepo instance
+     * @param {Object} deps.promptBuilder - The PromptBuilder instance
+     * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
+     */
+    constructor({ entityService, matchService, fileService, settingsManager, aiService, logService, criteriaManagerWorkflow, matchRepo, dimensionRepo, promptBuilder }) {
+        this._entityService = entityService;
+        this._matchService = matchService;
+        this._fileService = fileService;
+        this._settingsManager = settingsManager;
+        this._aiService = aiService;
+        this._logService = logService;
+        this._criteriaManagerWorkflow = criteriaManagerWorkflow;
+        this._matchRepo = matchRepo;
+        this._dimensionRepo = dimensionRepo;
+        this._promptBuilder = promptBuilder;
+    }
 
     /**
      * Assesses a match between source and target entities using deterministic criteria matching.
@@ -53,22 +76,6 @@ class MatchAssessmentWorkflow {
      * @param {number} matchId - The match record ID.
      * @returns {Promise<void>} Resolves when assessment is complete.
      * @throws {Error} If match not found, criteria missing, or file operations fail.
-     * 
-     * @workflow_steps
-     * 1. Update match queue status to 'processing'.
-     * 2. Validate match exists; if not, throw error.
-     * 3. Ensure folder path exists using FileService.
-     * 4. Fetch source and target entity models.
-     * 5. Call criteriaManagerWorkflow.calculateCriteriaMatch() to get match data.
-     * 6. MAP PHASE: Generate dimensional AI summaries concurrently.
-     * 7. REDUCE PHASE: Generate executive summary from dimensional summaries.
-     * 8. Build single source of truth report object.
-     * 9. Save matchData as JSON file to match folder.
-     * 10. Update match record: score, report path, status 'completed', clear errors.
-     * 11. Log success via logService and emit matchUpdate event.
-     * 
-     * @error_handling
-     * - On any error: set queue status to 'error', save error message, log error, emit failure event, re-throw.
      */
     async assessMatch(sourceEntityId, targetEntityId, matchId) {
         const startTime = Date.now();
@@ -77,220 +84,316 @@ class MatchAssessmentWorkflow {
             throw new Error("matchId is required for assessment workflow");
         }
 
-        matchService.updateMatchStatus(matchId, 'processing');
-
-        const match = matchRepo.getMatchById(matchId);
+        const match = this._matchRepo.getMatchById(matchId);
         if (!match) {
-            throw new Error(`Match not found: ${matchId}`);
+            const error = new Error(`Match not found: ${matchId}`);
+            error.isFatalClientError = true;
+            throw error;
         }
 
         let matchFolderPath = match.folder_path;
         if (!matchFolderPath) {
-            matchFolderPath = FileService.generateMatchFolderPath(sourceEntityId, targetEntityId);
-            FileService.createDirectory(matchFolderPath);
-            matchRepo.updateFolderPath(matchId, matchFolderPath);
+            matchFolderPath = this._fileService.prepareStagingDirectory(`match-${sourceEntityId}-${targetEntityId}`);
+            this._matchService.updateFolderPath(matchId, matchFolderPath);
         }
 
-        const sourceEntity = entityService.getEntityById(sourceEntityId);
-        const targetEntity = entityService.getEntityById(targetEntityId);
+        const sourceEntity = this._entityService.getEntityById(sourceEntityId);
+        const targetEntity = this._entityService.getEntityById(targetEntityId);
+
+        if (!sourceEntity || !targetEntity) {
+            const error = new Error(`Source or target entity not found for match assessment.`);
+            error.isFatalClientError = true;
+            throw error;
+        }
 
         try {
-            logService.addActivityLog('Match', matchId, LOG_LEVELS.INFO, `Started match assessment for source ${sourceEntityId} against target ${targetEntityId}.`, matchFolderPath);
-
-            // 1. Calculate vector match data
-            const matchData = criteriaManagerWorkflow.calculateCriteriaMatch(sourceEntityId, targetEntityId);
-
-            // 2. Prepare AI Prompt Inputs in memory (DO NOT save these to disk)
-            const dimensionalAiReports = aiReportGenerator.generateDimensionalAiReports(matchData.rawComparison);
-
-            // 3. MAP PHASE: Pre-warm the AI model before generating dimensional summaries
-            await AiService.warmUpModel('general');
-
-            // 3. MAP PHASE: Generate Dimensional AI Summaries Concurrently (In-Memory)
-            logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.LIGHTNING, 'MatchAssessmentWorkflow', `Generating dimensional AI summaries for match ${matchId}...`);
-            const aiSummaries = { dimensional: {} };
-            const dimensionalTasks = [];
-
-            // Tasks: Dimensional Summaries
-            for (const [dimension, reportData] of Object.entries(dimensionalAiReports)) {
-                dimensionalTasks.push(async () => {
-                    const messages = PromptBuilder.buildMatchSummaryMessages(reportData);
-                    const { content } = await AiService.generateChatResponse(messages, { logFolderPath: matchFolderPath, logAction: `Generated dimensional AI summary for ${dimension}.` });
-                    aiSummaries.dimensional[dimension] = content;
-                });
-            }
-
-            const allowConcurrent = SettingsManager.get(SETTING_KEYS.ALLOW_CONCURRENT_AI) === 'true';
-            if (allowConcurrent) {
-                await Promise.all(dimensionalTasks.map(t => t()));
-            } else {
-                for (const task of dimensionalTasks) {
-                    await task();
-                }
-            }
-
-            // 5. REDUCE PHASE: Generate Executive Summary from Dimensional Summaries
-            logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.LIGHTNING, 'MatchAssessmentWorkflow', `Synthesizing executive summary for match ${matchId}...`);
-            const reqName = sourceEntity.name || 'the requirement';
-            const offName = targetEntity.name || 'the offering';
-            const executiveMessages = PromptBuilder.buildExecutiveSummaryMessages(aiSummaries.dimensional, reqName, offName);
-            const { content: executiveContent } = await AiService.generateChatResponse(executiveMessages, { logFolderPath: matchFolderPath, logAction: `Generated executive AI summary.` });
-            aiSummaries.executive = executiveContent;
-
-            // 6. Gather Metadata & Context
-            const allDimensions = DimensionRepo.getAllDimensions() || [];
-            const dimensionDisplayNames = {};
-            const dimensionIds = {}; // NEW: Create an ID map
-
-            allDimensions.forEach(dim => {
-                dimensionDisplayNames[dim.name] = dim.displayName;
-                dimensionIds[dim.name] = dim.id || dim.dimension_id; // Map name to DB ID
+            this._logService.addActivityLog({
+                entityType: 'Match',
+                entityId: matchId,
+                logType: LOG_LEVELS.INFO,
+                message: `Started match assessment for source ${sourceEntityId} against target ${targetEntityId}.`,
+                folderPath: matchFolderPath
             });
 
-            const totalChecked = matchData.rawComparison.summary ? matchData.rawComparison.summary.totalRequirementsChecked : 0;
-            const missingRequired = matchData.rawComparison.summary ? matchData.rawComparison.summary.missingRequired : 0;
+            // 0. Reset processing timer for frontend UI counter
+            this._matchService.updateMetadata(matchId, { processingStartedAt: new Date().toISOString() });
 
-            // 6. Build the ONE and ONLY output object
-            let singleSourceOfTruthReport = {
-                ...matchData.rawComparison,
-                _match_context: {
-                    requirement_id: sourceEntityId,
-                    requirement_name: sourceEntity.name || "Requirement",
-                    offering_id: targetEntityId,
-                    offering_name: targetEntity.name || "Offering",
-                    overall_match_score: matchData.score,
-                    total_requirements_checked: totalChecked,
-                    missing_required_count: missingRequired
-                },
-                _metadata: {
-                    dimension_display_names: dimensionDisplayNames,
-                    dimension_ids: dimensionIds
-                }
-            };
+            // 1. Calculate vector match data
+            this._matchService.updateState(matchId, { status: ENTITY_STATUS.CALCULATING_MATCH_SCORES });
+            const matchData = this._criteriaManagerWorkflow.calculateCriteriaMatch(sourceEntityId, targetEntityId);
 
-            // Inject the Executive Summary into the reportInfo root
-            if (singleSourceOfTruthReport.reportInfo) {
-                singleSourceOfTruthReport.reportInfo.ai_summary_executive = aiSummaries.executive || null;
-            }
+            // 2. Generate AI Summaries
+            this._matchService.updateState(matchId, { status: ENTITY_STATUS.GENERATING_MATCH_SUMMARY });
+            const dimensionalSummaries = await this._generateDimensionalSummaries(matchData, matchFolderPath);
+            const executiveSummary = await this._generateExecutiveSummary(dimensionalSummaries, sourceEntity, targetEntity, matchFolderPath);
+            const aiSummaries = { dimensional: dimensionalSummaries, executive: executiveSummary };
 
-            // Inject Dimensional Summaries directly into their respective dimension objects
-            const dimensionalSummaries = aiSummaries.dimensional || {};
-            for (const [dimKey, summaryText] of Object.entries(dimensionalSummaries)) {
-                if (singleSourceOfTruthReport[dimKey]) {
-                    singleSourceOfTruthReport[dimKey].ai_summary = summaryText;
-                }
-            }
+            // 3. Build & Save Report
+            this._matchService.updateState(matchId, { status: ENTITY_STATUS.GENERATING_MATCH_REPORT });
+            const finalReport = this._buildFinalReport(matchData, aiSummaries, sourceEntity, targetEntity);
+            const reportPath = this._saveAndRegisterReport(matchId, finalReport, matchFolderPath);
 
-            // --- RESTRUCTURE JSON FOR DOMAIN-DRIVEN COHESION ---
-            const finalReport = singleSourceOfTruthReport;
-            const restructuredReport = {
-                _document_meta: {
-                    document_type: "Semantic Match Assessment Report",
-                    purpose: "Evaluates the fit between a specific Requirement (e.g., Job Listing) and an Offering (e.g., Candidate Resume) using vector-based semantic matching.",
-                    generated_at: new Date().toISOString()
-                },
-                reportInfo: finalReport.reportInfo,
-                dimensions: {}
-            };
+            // 4. Update DB State
+            this._matchService.updateMatchScore(matchId, matchData.score);
+            this._matchService.updateReportPath(matchId, reportPath);
+            this._matchService.updateState(matchId, { error: null });
 
-            const metaIds = finalReport._metadata?.dimension_ids || {};
-            const metaNames = finalReport._metadata?.dimension_display_names || {};
+            // 5. Move to Vault
+            this._matchService.updateState(matchId, { status: ENTITY_STATUS.MOVING_TO_VAULT });
+            
+            const reqLine1 = sourceEntity.niceNameLine1 || sourceEntity.nicename || 'Unknown Requirement';
+            const offLine1 = targetEntity.niceNameLine1 || targetEntity.nicename || 'Unknown Offering';
+            
+            const finalFolderPath = this._fileService.finalizeWorkspace({
+                entityType: 'match',
+                line1: reqLine1,
+                line2: offLine1,
+                currentStagingPath: matchFolderPath
+            });
+            this._matchService.updateFolderPath(matchId, finalFolderPath);
+            matchFolderPath = finalFolderPath; // Update local variable so the final log writes to the correct path
 
-            const reservedKeys = ['reportInfo', '_metadata', '_ai_summary_executive', '_ai_summaries_dimensional', 'allDimensions', '_match_context'];
+            // 5.5 Generate dynamic master document named after the folder
+            const finalFolderName = require('path').basename(finalFolderPath);
+            const finalFileName = `${finalFolderName}.md`;
 
-            for (const [key, value] of Object.entries(finalReport)) {
-                if (!reservedKeys.includes(key) && typeof value === 'object') {
-                    restructuredReport.dimensions[key] = {
-                        ...value,
-                        id: metaIds[key] || 0,
-                        displayName: metaNames[key] || key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-                    };
-                }
-            }
+            const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+            const deeplink = `${baseUrl}/matches?matchId=${matchId}`;
+            
+            const mdContent = `# ${finalFolderName}\n\n**[View Match in Compari](${deeplink})**\n\n${aiSummaries.executive}`;
+            this._fileService.saveTextFile(finalFolderPath, finalFileName, mdContent);
 
-            if (finalReport.allDimensions) {
-                restructuredReport.allDimensions = finalReport.allDimensions;
-            }
+            this._matchService.registerDocumentRecord({
+                matchId,
+                docType: DOCUMENT_TYPES.MATCH_REPORT,
+                fileName: finalFileName
+            });
 
-            singleSourceOfTruthReport = restructuredReport;
+            this._matchService.updateMasterFile(matchId, finalFileName);
 
-            // 6. Write the SINGLE file to disk
-            const reportFileName = 'match_report.json';
-            const reportPath = path.join(matchFolderPath, reportFileName);
-            FileService.writeJsonFile(reportPath, singleSourceOfTruthReport);
-
-            // 7. Register Match Report in the Database
-            matchService.registerDocumentRecord(matchId, DOCUMENT_TYPES.MATCH_REPORT, reportFileName, reportPath);
-
-            // 7b. Register Logs if generated
-            const matchFiles = FileService.listFilesInFolder(matchFolderPath);
-            const existingDocs = matchService.getDocumentsForMatch(matchId);
-
-            if (matchFiles.includes('ai_interactions.jsonl')) {
-                const isRegistered = existingDocs.some(doc => doc.file_name === 'ai_interactions.jsonl');
-                if (!isRegistered) {
-                    matchService.registerDocumentRecord(
-                        matchId,
-                        DOCUMENT_TYPES.AI_DEBUG_LOG,
-                        'ai_interactions.jsonl',
-                        path.join(matchFolderPath, 'ai_interactions.jsonl')
-                    );
-                }
-            }
-
-            if (matchFiles.includes('activity.jsonl')) {
-                const isRegistered = existingDocs.some(doc => doc.file_name === 'activity.jsonl');
-                if (!isRegistered) {
-                    matchService.registerDocumentRecord(
-                        matchId,
-                        DOCUMENT_TYPES.ACTIVITY_LOG,
-                        'activity.jsonl',
-                        path.join(matchFolderPath, 'activity.jsonl')
-                    );
-                }
-            }
-
-            // 8. Update match record state
-            matchService.updateMatchScore(matchId, matchData.score);
-            matchService.updateReportPath(matchId, reportPath);
-            matchService.updateMatchError(matchId, null);
-            matchService.updateMatchStatus(matchId, 'completed');
+            // 6. Complete
+            this._matchService.updateState(matchId, { status: ENTITY_STATUS.COMPLETED });
 
             const durationMs = Date.now() - startTime;
-            const minutes = Math.floor(durationMs / 60000);
-            const seconds = Math.floor((durationMs % 60000) / 1000);
-            const durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+            const durationStr = this._logService.formatDuration(durationMs);
 
-            logService.addActivityLog('Match', matchId, LOG_LEVELS.INFO, `Match assessment complete. Single JSON report generated. Score: ${matchData.score}%. Processing took ${durationStr}.`, matchFolderPath);
-
-            // 9. Generate and save PDF report to disk
-            try {
-                logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.LIGHTNING, 'MatchAssessmentWorkflow', `Generating PDF report for match ${matchId}...`);
-                const PdfGeneratorService = require('../services/PdfGeneratorService');
-                const rawPdfData = await PdfGeneratorService.generateMatchReport(matchId);
-                const pdfBuffer = Buffer.from(rawPdfData);
-
-                const safeReqName = (sourceEntity.name || "Requirement").replace(/[/\\?%*:|"<>]/g, '-');
-                const safeOffName = (targetEntity.name || "Offering").replace(/[/\\?%*:|"<>]/g, '-');
-                const pdfFileName = `Match - ${safeReqName} - ${safeOffName}.pdf`;
-                const pdfPath = path.join(matchFolderPath, pdfFileName);
-
-                const fs = require('fs');
-                fs.writeFileSync(pdfPath, pdfBuffer);
-                matchService.registerDocumentRecord(matchId, DOCUMENT_TYPES.MATCH_REPORT_PDF, pdfFileName, pdfPath);
-                logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'MatchAssessmentWorkflow', `PDF report saved to ${pdfPath}`);
-            } catch (pdfError) {
-                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'MatchAssessmentWorkflow', `Failed to generate PDF during assessment: ${pdfError.message}`);
-            }
+            this._logService.addActivityLog({
+                entityType: 'Match',
+                entityId: matchId,
+                logType: LOG_LEVELS.INFO,
+                message: `Match assessment complete. Single JSON report generated. Score: ${matchData.score}%. Processing took ${durationStr}.`,
+                folderPath: matchFolderPath
+            });
         } catch (error) {
-            matchService.updateMatchError(matchId, error.message);
-            matchService.updateMatchStatus(matchId, 'failed');
+            this._matchService.updateState(matchId, { status: ENTITY_STATUS.FAILED, error: error.message });
 
-            logService.addActivityLog('Match', matchId, LOG_LEVELS.ERROR, `Match assessment failed: ${error.message}`, matchFolderPath);
+            this._logService.logTerminal({ 
+                status: LOG_LEVELS.ERROR, 
+                symbolKey: LOG_SYMBOLS.ERROR, 
+                origin: 'MatchAssessmentWorkflow', 
+                message: `Match assessment failed: ${error.message}`,
+                errorObj: error
+            });
+
+            this._logService.logErrorFile({
+                origin: 'MatchAssessmentWorkflow',
+                message: `Match assessment failed for match ${matchId}`,
+                errorObj: error,
+                details: { matchFolderPath }
+            });
 
             throw error;
         }
     }
+
+    /**
+     * @private
+     * Generates dimensional AI summaries concurrently using processAiTasks.
+     * @param {Object} matchData - The match data from criteria matching.
+     * @param {string} matchFolderPath - The match folder path for logging.
+     * @returns {Promise<Object>} Dimensional summaries object.
+     */
+    async _generateDimensionalSummaries(matchData, matchFolderPath) {
+        this._logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.LIGHTNING, origin: 'MatchAssessmentWorkflow', message: `Generating dimensional AI summaries...` });
+
+        const dimensionalAiReports = aiReportGenerator.generateDimensionalAiReports(matchData.rawComparison);
+        const dimensionalSummaries = {};
+        const dimensionalTasks = [];
+
+        for (const [dimension, reportData] of Object.entries(dimensionalAiReports)) {
+            dimensionalTasks.push(async () => {
+                const messages = this._promptBuilder.buildMatchSummaryMessages(reportData);
+                const { content } = await this._aiService.generateChatResponse(messages, { logFolderPath: matchFolderPath, logAction: `Generated dimensional AI summary for ${dimension}.` });
+                dimensionalSummaries[dimension] = content;
+            });
+        }
+
+        const allowConcurrent = this._settingsManager.get(SETTING_KEYS.ALLOW_CONCURRENT_AI) === 'true';
+
+        await processAiTasks(
+            dimensionalTasks,
+            async (task) => {
+                return await task();
+            },
+            allowConcurrent
+        );
+
+        return dimensionalSummaries;
+    }
+
+    /**
+     * @private
+     * @socexplanation REDUCE PHASE of the atomized AI pipeline. Synthesizes dimensional summaries into a single executive summary.
+     * This method is isolated from infrastructure logic - it only transforms AI output without side effects.
+     * @param {Object} dimensionalSummaries - The dimensional summaries from AI (MAP PHASE output).
+     * @param {Object} sourceEntity - The source entity model.
+     * @param {Object} targetEntity - The target entity model.
+     * @param {string} matchFolderPath - The match folder path for logging.
+     * @returns {Promise<string>} The executive summary content.
+     * @pipeline_phase REDUCE - Consolidates dimensional outputs into executive summary.
+     */
+    async _generateExecutiveSummary(dimensionalSummaries, sourceEntity, targetEntity, matchFolderPath) {
+        this._logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.LIGHTNING, origin: 'MatchAssessmentWorkflow', message: `Synthesizing executive summary...` });
+
+        const reqName = sourceEntity.nicename || 'the requirement';
+        const offName = targetEntity.nicename || 'the offering';
+        const executiveMessages = this._promptBuilder.buildExecutiveSummaryMessages(dimensionalSummaries, reqName, offName);
+        const { content: executiveContent } = await this._aiService.generateChatResponse(executiveMessages, { logFolderPath: matchFolderPath, logAction: `Generated executive AI summary.` });
+
+        return executiveContent;
+    }
+
+    /**
+     * @private
+     * Builds the final structured report object from match data and AI summaries.
+     * @param {Object} matchData - The match data from criteria matching.
+     * @param {Object} aiSummaries - The AI summaries (dimensional and executive).
+     * @param {Object} sourceEntity - The source entity model.
+     * @param {Object} targetEntity - The target entity model.
+     * @returns {Object} The final report object.
+     */
+    _buildFinalReport(matchData, aiSummaries, sourceEntity, targetEntity) {
+        const allDimensions = this._dimensionRepo.getAllDimensions() || [];
+        const dimensionDisplayNames = {};
+        const dimensionIds = {};
+
+        allDimensions.forEach(dim => {
+            dimensionDisplayNames[dim.name] = dim.displayName;
+            dimensionIds[dim.name] = dim.id || dim.dimension_id;
+        });
+
+        const totalChecked = matchData.rawComparison.summary ? matchData.rawComparison.summary.totalRequirementsChecked : 0;
+        const missingRequired = matchData.rawComparison.summary ? matchData.rawComparison.summary.missingRequired : 0;
+
+        let singleSourceOfTruthReport = {
+            ...matchData.rawComparison,
+            _match_context: {
+                requirement_id: sourceEntity.id,
+                requirement_name: sourceEntity.name || "Requirement",
+                offering_id: targetEntity.id,
+                offering_name: targetEntity.name || "Offering",
+                overall_match_score: matchData.score,
+                total_requirements_checked: totalChecked,
+                missing_required_count: missingRequired
+            },
+            _metadata: {
+                dimension_display_names: dimensionDisplayNames,
+                dimension_ids: dimensionIds
+            }
+        };
+
+        if (singleSourceOfTruthReport.reportInfo) {
+            singleSourceOfTruthReport.reportInfo.ai_summary_executive = aiSummaries.executive || null;
+        }
+
+        const dimensionalSummaries = aiSummaries.dimensional || {};
+        for (const [dimKey, summaryText] of Object.entries(dimensionalSummaries)) {
+            if (singleSourceOfTruthReport[dimKey]) {
+                singleSourceOfTruthReport[dimKey].ai_summary = summaryText;
+            }
+        }
+
+        const finalReport = singleSourceOfTruthReport;
+        const restructuredReport = {
+            _document_meta: {
+                document_type: "Semantic Match Assessment Report",
+                purpose: "Evaluates the fit between a specific Requirement (e.g., Job Listing) and an Offering (e.g., Candidate Resume) using vector-based semantic matching.",
+                generated_at: new Date().toISOString()
+            },
+            reportInfo: finalReport.reportInfo,
+            dimensions: {}
+        };
+
+        const metaIds = finalReport._metadata?.dimension_ids || {};
+        const metaNames = finalReport._metadata?.dimension_display_names || {};
+
+        const reservedKeys = ['reportInfo', '_metadata', '_ai_summary_executive', '_ai_summaries_dimensional', 'allDimensions', '_match_context'];
+
+        for (const [key, value] of Object.entries(finalReport)) {
+            if (!reservedKeys.includes(key) && typeof value === 'object') {
+                restructuredReport.dimensions[key] = {
+                    ...value,
+                    id: metaIds[key] || 0,
+                    displayName: metaNames[key] || key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+                };
+            }
+        }
+
+        if (finalReport.allDimensions) {
+            restructuredReport.allDimensions = finalReport.allDimensions;
+        }
+
+        return restructuredReport;
+    }
+
+    /**
+     * @private
+     * @socexplanation Atomized pipeline stage for persistence. Writes JSON report to disk and registers document metadata.
+     * This method isolates infrastructure I/O (file system, DB registration) from domain logic. Does not mutate global state.
+     * @param {number} matchId - The match ID.
+     * @param {Object} finalReport - The final report object.
+     * @param {string} matchFolderPath - The match folder path.
+     * @returns {string} The path to the saved report.
+     * @pipeline_stage PERSISTENCE - Atomic write and registration operation.
+     */
+    _saveAndRegisterReport(matchId, finalReport, matchFolderPath) {
+        const reportFileName = 'match_report.json';
+        const reportPath = path.join(matchFolderPath, reportFileName);
+        this._fileService.writeJsonFile(reportPath, finalReport);
+
+        this._matchService.registerDocumentRecord({
+            matchId,
+            docType: DOCUMENT_TYPES.MATCH_REPORT,
+            fileName: reportFileName
+        });
+
+        const matchFiles = this._fileService.listFilesInFolder(matchFolderPath);
+        const existingDocs = this._matchService.getDocumentsForMatch(matchId);
+
+        if (matchFiles.includes('ai_interactions.jsonl')) {
+            const isRegistered = existingDocs.some(doc => doc.file_name === 'ai_interactions.jsonl');
+            if (!isRegistered) {
+                this._matchService.registerDocumentRecord({
+                    matchId,
+                    docType: DOCUMENT_TYPES.AI_DEBUG_LOG,
+                    fileName: 'ai_interactions.jsonl'
+                });
+            }
+        }
+
+        if (matchFiles.includes('activity.jsonl')) {
+            const isRegistered = existingDocs.some(doc => doc.file_name === 'activity.jsonl');
+            if (!isRegistered) {
+                this._matchService.registerDocumentRecord({
+                    matchId,
+                    docType: DOCUMENT_TYPES.ACTIVITY_LOG,
+                    fileName: 'activity.jsonl'
+                });
+            }
+        }
+
+        return reportPath;
+    }
 }
 
-module.exports = new MatchAssessmentWorkflow();
+module.exports = MatchAssessmentWorkflow;

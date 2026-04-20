@@ -1,10 +1,11 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Loader2, Trophy, CheckCircle } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Entity } from '@/lib/types';
+import { ENTITY_STATUS, ENTITY_ROLES } from '@/lib/constants';
 import { formatPercentage, getEntityDisplayNames } from '@/lib/utils';
-import { useBlueprints } from '@/hooks/useBlueprints';
+import { useTerminology } from '@/hooks/useTerminology';
 import { Button, ViewButton, CreateButton } from '@/components/ui';
 import { useState, useEffect } from 'react';
 
@@ -43,15 +44,15 @@ function CreateReportAction({
     }
   };
 
-  if (localStatus === 'pending' || localStatus === 'processing') {
+  if (localStatus === ENTITY_STATUS.PENDING || localStatus === ENTITY_STATUS.PROCESSING) {
     return (
       <Button size="sm" variant="ghost" disabled className="text-accent-forest/50 bg-accent-sand/10">
-        <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Match report pending
+        <DOMAIN_ICONS.LOADING className="w-4 h-4 mr-2 animate-spin" /> Match report pending
       </Button>
     );
   }
 
-  if (localStatus === 'completed' && existingMatchId) {
+  if (localStatus === ENTITY_STATUS.COMPLETED && existingMatchId) {
     return (
       <ViewButton entityName="Match Report" size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); onView(existingMatchId); }} />
     );
@@ -106,26 +107,26 @@ interface TopMatchesTabProps {
   onViewEntity: (entityId: number, entityType: string) => void;
 }
 
-export function TopMatchesTab({ 
-  entity, 
-  topMatches, 
-  loading, 
-  processedCount, 
-  totalCount, 
+export function TopMatchesTab({
+  entity,
+  topMatches,
+  loading,
+  processedCount,
+  totalCount,
   isComplete,
-  onCloseModal, 
+  onCloseModal,
   onCreateMatchReport,
   onViewMatchReport,
   onViewEntity
 }: TopMatchesTabProps) {
-  const { blueprints } = useBlueprints();
+  const { getEntityLabels } = useTerminology();
 
   const progressPercentage = totalCount > 0 ? (processedCount / totalCount) * 100 : 0;
 
   if (processedCount === 0 && loading) {
     return (
       <div className="flex items-center justify-center h-40 text-accent-forest/60">
-        <Loader2 className="w-6 h-6 animate-spin mr-2" />
+        <DOMAIN_ICONS.LOADING className="w-6 h-6 animate-spin mr-2" />
         Initializing match evaluation...
       </div>
     );
@@ -134,7 +135,7 @@ export function TopMatchesTab({
   if (topMatches.length === 0 && !loading) {
     return (
       <div className="flex flex-col items-center justify-center h-40 text-accent-forest/40">
-        <Trophy className="w-10 h-10 mb-2 opacity-50" />
+        <DOMAIN_ICONS.MATCH className="w-10 h-10 mb-2 opacity-50" />
         <p>No valid matches found. Ensure both entities have extracted criteria.</p>
       </div>
     );
@@ -164,13 +165,8 @@ export function TopMatchesTab({
         </div>
       )}
 {topMatches.map((item, idx) => {
-        const { primary: primaryName, secondary: secondaryName } = getEntityDisplayNames(item.entity, blueprints);
-
-        // Determine the dynamic entity label from its blueprint
-        const entityBlueprint = blueprints.find(bp => bp.id === item.entity.blueprint_id);
-        const dynamicEntityLabel = item.entity.type === 'requirement' 
-          ? entityBlueprint?.requirementLabelSingular 
-          : entityBlueprint?.offeringLabelSingular;
+        const { primary: primaryName, secondary: secondaryName } = getEntityDisplayNames(item.entity);
+        const entityLabel = getEntityLabels(item.entity).singular;
 
         return (
           <motion.div
@@ -197,7 +193,7 @@ export function TopMatchesTab({
 
             <div className="flex items-center gap-4 ml-4">
               <ViewButton
-                entityName={dynamicEntityLabel || (item.entity.type === 'requirement' ? 'Requirement' : 'Offering')}
+                entityName={entityLabel}
                 size="sm"
                 onClick={(e) => {
                   e.stopPropagation();

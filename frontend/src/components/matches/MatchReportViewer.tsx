@@ -7,9 +7,6 @@ import { SummaryBox } from './report/SummaryBox';
 import { ScoreSummaryRow } from './report/ScoreSummaryRow';
 import { MatchCategorySection } from './report/MatchCategorySection';
 
-export type { RawMatchItem, ScoreMetrics, MatchScores, ReportInfo, CategorizedMatches, MatchReportData };
-export { ScoreSummaryRow };
-
 interface MatchReportViewerProps {
     reportData: MatchReportData | null;
     matchId?: number;

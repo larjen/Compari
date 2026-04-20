@@ -12,16 +12,17 @@
  * - ❌ MUST NOT interact with the file system or AI.
  */
 
-const db = require('./Database');
 const BaseRepository = require('./BaseRepository');
 
 class AiModelRepo extends BaseRepository {
     /**
      * Creates a new AiModelRepo instance.
      * @constructor
+     * @param {Object} deps - Dependencies object.
+     * @param {Object} deps.db - The database instance.
      */
-    constructor() {
-        super('ai_models');
+    constructor({ db }) {
+        super('ai_models', { db });
     }
 
     /**
@@ -29,7 +30,7 @@ class AiModelRepo extends BaseRepository {
      * @returns {Array<Object>} Array of AI model objects with all fields.
      */
     getAllModels() {
-        const stmt = db.prepare('SELECT * FROM ai_models ORDER BY created_at DESC');
+        const stmt = this.db.prepare('SELECT * FROM ai_models ORDER BY created_at DESC');
         const rows = stmt.all();
         return rows.map(row => this._mapRowToModel(row));
     }
@@ -76,9 +77,9 @@ class AiModelRepo extends BaseRepository {
             return false;
         }
 
-        const transaction = db.transaction(() => {
-            db.prepare('UPDATE ai_models SET is_active = 0 WHERE role = ?').run(targetModel.role);
-            db.prepare('UPDATE ai_models SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+        const transaction = this.db.transaction(() => {
+            this.db.prepare('UPDATE ai_models SET is_active = 0 WHERE role = ?').run(targetModel.role);
+            this.db.prepare('UPDATE ai_models SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
         });
 
         transaction();
@@ -91,7 +92,7 @@ class AiModelRepo extends BaseRepository {
      * @returns {Object|null} The active AI model object or null if none found.
      */
     getActiveModelByRole(role) {
-        const stmt = db.prepare('SELECT * FROM ai_models WHERE is_active = 1 AND role = ? LIMIT 1');
+        const stmt = this.db.prepare('SELECT * FROM ai_models WHERE is_active = 1 AND role = ? LIMIT 1');
         const row = stmt.get(role);
         return row ? this._mapRowToModel(row) : null;
     }
@@ -102,15 +103,15 @@ class AiModelRepo extends BaseRepository {
      * @returns {number} The ID of the newly inserted model.
      */
     createModel(data) {
-        const stmt = db.prepare(`
+        const stmt = this.db.prepare(`
             INSERT INTO ai_models (name, model_identifier, api_url, api_key, role, temperature, context_window, is_active, is_system)
             VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)
         `);
         const result = stmt.run(
-            data.name, 
-            data.model_identifier, 
-            data.api_url, 
-            data.api_key, 
+            data.name,
+            data.model_identifier,
+            data.api_url,
+            data.api_key,
             data.role,
             data.temperature,
             data.contextWindow
@@ -121,26 +122,31 @@ class AiModelRepo extends BaseRepository {
     /**
      * Updates an existing AI model.
      * @param {number} id - The ID of the model to update.
-     * @param {Object} data - The updated data.
+     * @param {Object} aiModelDto - The updated data.
      * @returns {boolean} True if successfully updated, false otherwise.
+     * @throws {Error} If attempting to update a system model.
      */
-    updateModel(id, data) {
-        const stmt = db.prepare(`
-            UPDATE ai_models 
-            SET name = ?, model_identifier = ?, api_url = ?, api_key = ?, role = ?, temperature = ?, context_window = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        `);
-        const result = stmt.run(
-            data.name, 
-            data.model_identifier, 
-            data.api_url, 
-            data.api_key, 
-            data.role,
-            data.temperature,
-            data.contextWindow,
-            id
-        );
-        return result.changes > 0;
+    updateModel(id, aiModelDto) {
+        const existing = this.getModelById(id);
+        if (!existing) {
+            return false;
+        }
+
+        if (existing.isSystem) {
+            throw new Error('Cannot update system model');
+        }
+
+        const mappedDto = {
+            name: aiModelDto.name,
+            model_identifier: aiModelDto.model_identifier,
+            api_url: aiModelDto.api_url,
+            api_key: aiModelDto.api_key,
+            role: aiModelDto.role,
+            temperature: aiModelDto.temperature,
+            context_window: aiModelDto.contextWindow
+        };
+
+        return super.update(id, mappedDto);
     }
 
     /**
@@ -167,4 +173,12 @@ class AiModelRepo extends BaseRepository {
     }
 }
 
-module.exports = new AiModelRepo();
+/**
+ * @dependency_injection
+ * AiModelRepo exports the class constructor rather than an instance.
+ * This enables DI container to instantiate with dependencies.
+ * @param {Object} deps - Dependencies object.
+ * @param {Object} deps.db - The database instance (injected).
+ * Reasoning: Allows runtime configuration and testing via injection.
+ */
+module.exports = AiModelRepo;

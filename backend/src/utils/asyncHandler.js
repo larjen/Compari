@@ -1,47 +1,50 @@
 /**
- * @fileoverview Express middleware utility for async route handler error catching.
- * @description Eliminates duplicate try/catch boilerplate in controllers by automatically
- *            catching rejected promises and forwarding errors to the Express error middleware.
- * 
- * @responsibility
- * - Wraps async route handlers to catch synchronous and asynchronous errors
- * - Passes caught errors to next(error) for centralized error handling
- * 
- * @boundary_rules
- * - ❌ MUST NOT contain business logic
- * - ❌ MUST NOT make database or service calls directly
- * - ✅ MUST be used by Controllers only
- * 
- * @socexplanation
- * - Removes repetitive try/catch boilerplate from every controller method
- * - Allows controllers to focus purely on HTTP transport (parameter extraction, response formatting)
- * - Ensures ALL errors are consistently passed to the global error middleware
- * - Prevents unhandled promise rejections that would crash the Node process
- * 
- * @example
- * // Before: Each controller method has duplicate boilerplate
- * static async getAll(req, res, next) {
- *   try {
- *     const users = userService.getAllUsers();
- *     res.json({ users });
- *   } catch (error) {
- *     next(error);
- *   }
- * }
- * 
- * // After: Clean controller focused on transport only
- * static getAll = asyncHandler(async (req, res, next) => {
- *   const users = userService.getAllUsers();
- *   res.json({ users });
- * });
- * 
- * @param {Function} asyncHandler - Async route handler function to wrap
+ * @fileoverview Express middleware utility for async route handler error catching
+ * and global task batching.
+ * * @responsibility
+ * - Wraps async route handlers to catch synchronous and asynchronous errors.
+ * - Enforces global concurrency limits strictly at the application level.
+ */
+
+/**
+ * Express middleware to catch async route handler errors.
+ * @param {Function} fn - Async route handler function to wrap
  * @returns {Function} Express middleware function with error catching
  */
-function asyncHandler(asyncHandler) {
+function asyncHandler(fn) {
     return (req, res, next) => {
-        Promise.resolve(asyncHandler(req, res, next)).catch(next);
+        Promise.resolve(fn(req, res, next)).catch(next);
     };
 }
 
+/**
+ * Processes an array of async tasks either concurrently or sequentially.
+ * * @socexplanation 
+ * - Enforces global concurrency limits strictly at the application level.
+ * - Centralizes iteration logic (DRY) to prevent workflows from manually managing promises, 
+ * protecting LLM API rate limits when concurrency is globally disabled.
+ * * @param {Array<any>} items - The array of items to iterate over.
+ * @param {Function} asyncCallback - The async function to execute for each item. Takes (item) as argument.
+ * @param {boolean} allowConcurrent - If true, uses Promise.all. If false, uses for...of sequential execution.
+ * @returns {Promise<Array<any>>} Array of resolved results mapped to the input items.
+ */
+const processAiTasks = async (items, asyncCallback, allowConcurrent) => {
+    if (allowConcurrent) {
+        return await Promise.all(items.map(item => asyncCallback(item)));
+    }
+
+    const results = [];
+    for (const item of items) {
+        // Sequential execution enforced by user settings
+        const result = await asyncCallback(item);
+        results.push(result);
+    }
+    return results;
+};
+
+// 1. Export the middleware as the primary module export so controllers don't break
 module.exports = asyncHandler;
+
+// 2. Attach the batch processing utility so workflows can destructure it: 
+// const { processAiTasks } = require('../utils/asyncHandler');
+module.exports.processAiTasks = processAiTasks;

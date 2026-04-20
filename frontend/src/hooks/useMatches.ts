@@ -1,54 +1,57 @@
-// src/hooks/useMatches.ts
 /**
  * @fileoverview Custom hook for managing matches.
  * @description Provides state management and API interactions for matches.
  * @responsibility
  * - Fetches, creates, and deletes matches.
  * - Handles real-time updates via SSE.
- * - Uses useSafeFetch for HTTP state management (avoids duplicating loading/error/race condition logic).
+ * - Uses useManagedCollection for unified lifecycle orchestration (fetch + SSE + watchdog).
  * @boundary_rules
  * - ❌ MUST NOT contain UI components.
  * - ❌ MUST NOT directly access database.
  * - Uses matchApi for all data operations.
+ * - ❌ MUST NOT directly manage HTTP state, SSE, or watchdog (delegated to useManagedCollection).
  */
 'use client';
 
 import { useCallback } from 'react';
 import { EntityMatch, SSEMatchUpdate } from '@/lib/types';
 import { matchApi, MatchQueryParams, MatchQueryResponse } from '@/lib/api/matchApi';
-import { useSafeFetch } from './useSafeFetch';
-import { useSSE } from './useSSE';
-import { useProcessingWatchdog } from './useProcessingWatchdog';
+import { useManagedCollection, resolveStatus } from './useManagedCollection';
 
-export interface UseMatchesOptions extends MatchQueryParams {
+interface UseMatchesOptions extends MatchQueryParams {
   immediate?: boolean;
 }
 
+/**
+ * Custom hook for managing matches with pagination, search, and real-time updates.
+ * @param {UseMatchesOptions} [options] - Configuration options including pagination, search, status.
+ * @returns {Object} Match data, loading state, error state, and CRUD functions.
+ */
 export function useMatches({ page, limit, search, status, immediate = true }: UseMatchesOptions = {}) {
-  const fetchMatches = useCallback(async () => {
-    return matchApi.getMatches({ page, limit, search, status });
+  const fetchFn = useCallback(async () => {
+    const apiStatus = resolveStatus(status);
+    return matchApi.getMatches({ page, limit, search, status: apiStatus });
   }, [page, limit, search, status]);
 
-  const { data, loading, error, execute: refetch } = useSafeFetch<MatchQueryResponse>(fetchMatches, immediate);
-
-  const matches = data?.matches ?? [];
-  const totalPages = data?.meta?.totalPages ?? 0;
-
-  const handleMatchUpdate = useCallback((update: SSEMatchUpdate) => {
-    refetch();
-  }, [refetch]);
-
-  useSSE({
-    onMatchUpdate: handleMatchUpdate,
-    onReconnect: fetchMatches
-  });
-
-  useProcessingWatchdog(
-    matches,
-    'status',
-    'processing',
-    refetch
+  const extractItems = useCallback(
+    (response: MatchQueryResponse | null): EntityMatch[] => response?.matches ?? [],
+    []
   );
+
+  const { items: matches, loading, error, refetch, totalPages } = useManagedCollection<
+    MatchQueryResponse,
+    EntityMatch
+  >({
+    fetchFn,
+    extractItems,
+    sseConfig: {
+      onMatchUpdate: () => {
+        refetch();
+      },
+    },
+    watchdogConfig: { enabled: true },
+    immediate,
+  });
 
   const addMatch = async (requirementEntityId: number, offeringEntityId: number) => {
     const matchId = await matchApi.createMatch(requirementEntityId, offeringEntityId);
@@ -74,7 +77,9 @@ export function useMatches({ page, limit, search, status, immediate = true }: Us
     refetch,
     addMatch,
     deleteMatch,
-    handleMatchUpdate,
+    handleMatchUpdate: () => {
+      refetch();
+    },
     totalPages,
   };
 }

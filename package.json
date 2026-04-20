@@ -1,19 +1,52 @@
 {
     "name": "compari",
-    "version": "0.7.1",
+    "version": "0.7.7",
     "private": true,
+    "workspaces": [
+        "backend",
+        "frontend"
+    ],
     "scripts": {
-        "install:all": "npm install --legacy-peer-deps && cd backend && npm install --legacy-peer-deps && cd ../frontend && npm install --legacy-peer-deps",
+        "setup": "npm install",
         "dev": "concurrently -n \"API,WEB\" -c \"cyan.bold,magenta.bold\" --kill-others \"cd backend && npm run dev\" \"cd frontend && npm run dev\"",
         "dev:wipe": "concurrently -n \"API,WEB\" -c \"cyan.bold,magenta.bold\" --kill-others \"cd backend && npm run dev:wipe\" \"cd frontend && npm run dev\"",
         "lint:backend": "cd backend && npm run lint",
         "build": "npm run lint:backend && cd frontend && npm run build",
-        "start": "concurrently -n \"API,WEB\" -c \"blue.bold,green.bold\" --kill-others \"cd backend && npm start\" \"cd frontend && npm start\""
+        "start": "concurrently -n \"API,WEB\" -c \"blue.bold,green.bold\" --kill-others \"cd backend && npm start\" \"cd frontend && npm start\"",
+        "knip": "knip",
+        "clean": "node -e \"const fs = require('fs'); ['Data', 'frontend/node_modules', 'backend/node_modules', 'node_modules', 'frontend/.next'].forEach(p => { if(fs.existsSync(p)) { console.log('Deleting ' + p); fs.rmSync(p, { recursive: true, force: true }); } })\""
     },
     "devDependencies": {
-        "concurrently": "^8.2.2"
+        "@types/node": "^22.0.0",
+        "concurrently": "^8.2.2",
+        "knip": "^6.5.0",
+        "typescript": "^5.7.0"
     },
-    "dependencies": {
-        "all": "^0.0.0"
+    "knip": {
+        "workspaces": {
+            "backend": {
+                "entry": [
+                    "src/config/container.js",
+                    "src/repositories/Seeder.js",
+                    "src/utils/AiReportGenerator.js",
+                    "src/utils/MatchingEngine.js",
+                    "src/utils/NameGenerator.js",
+                    "src/utils/ProcessGuard.js"
+                ],
+                "project": [
+                    "src/**/*.js"
+                ]
+            },
+            "frontend": {
+                "entry": [
+                    "src/app/**/page.tsx",
+                    "*.config.js"
+                ],
+                "project": [
+                    "src/**/*.{ts,tsx}",
+                    "*.config.js"
+                ]
+            }
+        }
     }
 }

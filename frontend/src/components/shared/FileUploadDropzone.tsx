@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Upload, Loader2 } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 
 /**
  * Props for the FileUploadDropzone component.
@@ -151,11 +151,11 @@ export function FileUploadDropzone({
         <div className="flex flex-col items-center gap-3">
           {isUploading ? (
             <div className="p-3 bg-accent-sand/20 rounded-full">
-              <Loader2 className="w-6 h-6 text-accent-forest/60 animate-spin" />
+              <DOMAIN_ICONS.LOADING className="w-6 h-6 text-accent-forest/60 animate-spin" />
             </div>
           ) : (
             <div className="p-3 bg-accent-sand/20 rounded-full group-hover:bg-accent-sage/20 transition-colors">
-              <Upload className="w-6 h-6 text-accent-forest/60 group-hover:text-accent-forest transition-colors" />
+              <DOMAIN_ICONS.UPLOAD className="w-6 h-6 text-accent-forest/60 group-hover:text-accent-forest transition-colors" />
             </div>
           )}
           <div className="text-center">

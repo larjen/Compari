@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { matchApi, MatchFiles } from '@/lib/api/matchApi';
-import { MatchReportData } from '@/components/matches/MatchReportViewer';
+import { MatchReportData } from '@/components/matches/report/types';
 
 /**
  * @fileoverview Match data fetching hooks

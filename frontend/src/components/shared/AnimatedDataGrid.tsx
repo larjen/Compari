@@ -212,5 +212,3 @@ export function AnimatedDataGrid<T extends { id?: number | string }, TGroup exte
     </AnimatePresence>
   );
 }
-
-export default AnimatedDataGrid;

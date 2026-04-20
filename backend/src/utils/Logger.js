@@ -17,6 +17,8 @@
  * - The two logging methods must be called separately to maintain the SoC boundary.
  * - NOTE: Response payloads are NOT logged to prevent HTTP payload spam.
  * - HTTP traffic logging is extremely noisy and is now hidden behind the LOG_HTTP_TRAFFIC=true environment variable.
+ * 
+ * @dependency_injection Dependencies are injected strictly via the constructor.
  */
 
 /**
@@ -27,16 +29,18 @@
  * @property {string} DEBUG
  */
 
-const logService = require('../services/LogService');
 const { LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 class Logger {
     /**
      * Creates a Logger instance.
      * @param {string} serviceName - The name of the service using this Logger.
+     * @param {Object} deps - Dependencies object
+     * @param {Object} deps.logService - The LogService instance
      */
-    constructor(serviceName) {
+    constructor(serviceName, { logService }) {
         this.serviceName = serviceName;
+        this._logService = logService;
         this.debugEnabled = process.env.DEBUG_MODE === 'true' || process.argv.includes('--debug');
         this.httpLogsEnabled = process.env.LOG_HTTP_TRAFFIC === 'true';
     }
@@ -53,11 +57,11 @@ class Logger {
 
             const startTime = Date.now();
 
-            logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.NONE, 'HTTP', `INCOMING: ${req.method} ${req.url}`);
+            this._logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.NONE, 'HTTP', `INCOMING: ${req.method} ${req.url}`);
 
             res.on('finish', () => {
                 const duration = Date.now() - startTime;
-                logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.NONE, 'HTTP', `RESOLVED: ${req.method} ${req.url} (${res.statusCode}) - ${duration}ms`);
+                this._logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.NONE, 'HTTP', `RESOLVED: ${req.method} ${req.url} (${res.statusCode}) - ${duration}ms`);
             });
 
             next();

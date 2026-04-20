@@ -17,13 +17,14 @@
 
 import { useCallback, useMemo } from 'react';
 import { Criterion } from '@/lib/types';
+import { UI_CONFIG } from '@/lib/constants';
 import { criteriaApi, GetCriteriaParams, PaginatedCriteriaResponse } from '@/lib/api/criteriaApi';
 import { useSafeFetch } from './useSafeFetch';
 
 /**
  * Query parameters for the useCriteria hook.
  */
-export interface UseCriteriaParams extends GetCriteriaParams {
+interface UseCriteriaParams extends GetCriteriaParams {
   /** Whether to automatically fetch on mount. Default: true */
   immediate?: boolean;
 }
@@ -31,7 +32,7 @@ export interface UseCriteriaParams extends GetCriteriaParams {
 /**
  * Return type for the useCriteria hook.
  */
-export interface UseCriteriaReturn {
+interface UseCriteriaReturn {
   /** Array of criteria for the current page. */
   criteria: Criterion[];
   /** Total number of pages available. */
@@ -69,7 +70,7 @@ export interface UseCriteriaReturn {
  * });
  */
 export function useCriteria(params: UseCriteriaParams = {}): UseCriteriaReturn {
-  const { page = 1, limit = 200, search, dimension, immediate = true } = params;
+  const { page = 1, limit = UI_CONFIG.PAGINATION.CRITERIA_LIMIT, search, dimension, immediate = true } = params;
 
   const fetchCriteria = useCallback(async () => {
     return criteriaApi.getAllCriteria({ page, limit, search, dimension });

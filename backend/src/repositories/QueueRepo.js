@@ -11,7 +11,6 @@
  * - ❌ MUST NOT interact with the file system or AI.
  */
 
-const db = require('./Database');
 const BaseRepository = require('./BaseRepository');
 const { QUEUE_STATUSES } = require('../config/constants');
 
@@ -19,23 +18,32 @@ class QueueRepo extends BaseRepository {
     /**
      * Creates a new QueueRepo instance.
      * @constructor
+     * @param {Object} deps - Dependencies object.
+     * @param {Object} deps.db - The database instance.
      */
-    constructor() {
-        super('job_queue');
+    constructor({ db }) {
+        super('job_queue', { db });
     }
 
     enqueue(taskType, payload) {
-        const stmt = db.prepare(`INSERT INTO job_queue (task_type, payload) VALUES (?, ?)`);
+        const stmt = this.db.prepare(`INSERT INTO job_queue (task_type, payload) VALUES (?, ?)`);
         const info = stmt.run(taskType, JSON.stringify(payload));
         return info.lastInsertRowid;
     }
 
     // Safely claim the next task and immediately mark it as processing
+    // Only claims tasks where status = 'pending' AND (available_at IS NULL OR available_at <= CURRENT_TIMESTAMP)
+    // This enables database-backed retries without blocking the worker
     claimNextTask() {
-        const dbTrans = db.transaction(() => {
-            const task = db.prepare(`SELECT * FROM job_queue WHERE status = ? ORDER BY id ASC LIMIT 1`).get(QUEUE_STATUSES.PENDING);
+        const dbTrans = this.db.transaction(() => {
+            const task = this.db.prepare(`
+                SELECT * FROM job_queue 
+                WHERE status = ? 
+                AND (available_at IS NULL OR available_at <= datetime('now')) 
+                ORDER BY id ASC LIMIT 1
+            `).get(QUEUE_STATUSES.PENDING);
             if (task) {
-                db.prepare(`UPDATE job_queue SET status = ?, started_at = CURRENT_TIMESTAMP WHERE id = ?`).run(QUEUE_STATUSES.PROCESSING, task.id);
+                this.db.prepare(`UPDATE job_queue SET status = ?, started_at = datetime('now') WHERE id = ?`).run(QUEUE_STATUSES.PROCESSING, task.id);
                 task.started_at = new Date().toISOString();
                 return task;
             }
@@ -44,24 +52,55 @@ class QueueRepo extends BaseRepository {
         return dbTrans();
     }
 
+    /**
+     * Marks a task for retry by pushing it back to the queue with a future visibility timestamp.
+     * 
+     * @description
+     * This method implements database-backed retry mechanics:
+     * - Resets status to 'pending' to make the task eligible for re-claiming
+     * - Increments the attempts counter to track retry attempts
+     * - Sets available_at to a future timestamp using SQLite's datetime() function
+     * - Clears the error field so the next run starts fresh
+     * 
+     * This approach avoids worker starvation by not blocking the worker with setTimeout.
+     * The worker can immediately process other tasks while this one awaits its scheduled time.
+     * 
+     * @param {number} id - The task ID to retry
+     * @param {number} delaySeconds - The number of seconds to wait before the task becomes visible
+     */
+    markForRetry(id, delaySeconds) {
+        this.db.prepare(`
+            UPDATE job_queue 
+            SET status = ?, 
+                attempts = attempts + 1, 
+                available_at = datetime('now', '+' || ? || ' seconds'),
+                error = NULL 
+            WHERE id = ?
+        `).run(QUEUE_STATUSES.PENDING, delaySeconds, id);
+    }
+
     getProcessingTask() {
-        return db.prepare(`SELECT * FROM job_queue WHERE status = ? ORDER BY id ASC LIMIT 1`).get(QUEUE_STATUSES.PROCESSING);
+        return this.db.prepare(`SELECT * FROM job_queue WHERE status = ? ORDER BY id ASC LIMIT 1`).get(QUEUE_STATUSES.PROCESSING);
+    }
+
+    getProcessingTasks() {
+        return this.db.prepare(`SELECT * FROM job_queue WHERE status = ? ORDER BY id ASC`).all(QUEUE_STATUSES.PROCESSING);
     }
 
     getPendingTasks() {
-        return db.prepare(`SELECT * FROM job_queue WHERE status = ? ORDER BY id ASC`).all(QUEUE_STATUSES.PENDING);
+        return this.db.prepare(`SELECT * FROM job_queue WHERE status = ? ORDER BY id ASC`).all(QUEUE_STATUSES.PENDING);
     }
 
     markCompleted(id) {
-        db.prepare(`UPDATE job_queue SET status = ? WHERE id = ?`).run(QUEUE_STATUSES.COMPLETED, id);
+        this.db.prepare(`UPDATE job_queue SET status = ? WHERE id = ?`).run(QUEUE_STATUSES.COMPLETED, id);
     }
 
     markFailed(id, errorMsg) {
-        db.prepare(`UPDATE job_queue SET status = ?, error = ? WHERE id = ?`).run(QUEUE_STATUSES.FAILED, errorMsg, id);
+        this.db.prepare(`UPDATE job_queue SET status = ?, error = ? WHERE id = ?`).run(QUEUE_STATUSES.FAILED, errorMsg, id);
     }
 
     getCurrentTaskById(id) {
-        return db.prepare(`SELECT * FROM job_queue WHERE id = ?`).get(id);
+        return this.db.prepare(`SELECT * FROM job_queue WHERE id = ?`).get(id);
     }
 
     /**
@@ -69,7 +108,7 @@ class QueueRepo extends BaseRepository {
      * @returns {Array} List of stale processing tasks.
      */
     getStaleProcessingTasks() {
-        return db.prepare(`SELECT * FROM job_queue WHERE status = ?`).all(QUEUE_STATUSES.PROCESSING);
+        return this.db.prepare(`SELECT * FROM job_queue WHERE status = ?`).all(QUEUE_STATUSES.PROCESSING);
     }
 
     /**
@@ -80,9 +119,9 @@ class QueueRepo extends BaseRepository {
      */
     updateStatus(id, status, error = null) {
         if (error) {
-            db.prepare(`UPDATE job_queue SET status = ?, error = ? WHERE id = ?`).run(status, error, id);
+            this.db.prepare(`UPDATE job_queue SET status = ?, error = ? WHERE id = ?`).run(status, error, id);
         } else {
-            db.prepare(`UPDATE job_queue SET status = ? WHERE id = ?`).run(status, id);
+            this.db.prepare(`UPDATE job_queue SET status = ? WHERE id = ?`).run(status, id);
         }
     }
 
@@ -93,7 +132,7 @@ class QueueRepo extends BaseRepository {
      * @returns {number} The number of tasks deleted
      */
     deleteEntityExtractionTasks(entityId) {
-        const stmt = db.prepare(`
+        const stmt = this.db.prepare(`
             DELETE FROM job_queue 
             WHERE (status = ? OR status = ?) 
             AND json_extract(payload, '$.entityId') = ?
@@ -103,39 +142,30 @@ class QueueRepo extends BaseRepository {
     }
 
     /**
-     * Wipes the job queue and gracefully fails interrupted tasks on startup.
+     * Wipes the job queue only.
      * @returns {number} The number of tasks deleted from the queue.
      * @description
-     * Safely clears all tasks from the job_queue table. Since the queue is wiped,
-     * any entities or matches that were actively 'processing' or 'pending' are now 
-     * orphaned. This safely transitions them to a 'failed' state so users can 
-     * manually retry them, while explicitly preserving entities that were already 
-     * 'failed' or 'completed'.
+     * Safely clears all tasks from the job_queue table. This method ONLY deletes
+     * from the queue table. Domain-level state transitions for orphaned entities
+     * and matches are handled by QueueService to maintain the Repository boundary.
+     *
+     * @socexplanation
+     * - Repository must not directly mutate entities or entity_matches tables.
+     * - This maintains the strict boundary where Repositories only manage their own domain.
+     * - Service layer handles domain-level state resets via their respective services.
      */
     wipeQueue() {
-        const dbTrans = db.transaction(() => {
-            const deleteResult = db.prepare(`DELETE FROM job_queue`).run();
-            
-            // Safely fail entities whose background jobs were just destroyed
-            db.prepare(`
-                UPDATE entities 
-                SET status = ?, 
-                    error = 'Interrupted by server shutdown. Please retry.' 
-                WHERE status = ? OR status = ?
-            `).run(QUEUE_STATUSES.FAILED, QUEUE_STATUSES.PENDING, QUEUE_STATUSES.PROCESSING);
-
-            // Safely fail matches whose background jobs were just destroyed
-            db.prepare(`
-                UPDATE entity_matches 
-                SET status = ?,
-                    error = 'Interrupted by server shutdown. Please retry.' 
-                WHERE status = ? OR status = ?
-            `).run(QUEUE_STATUSES.FAILED, QUEUE_STATUSES.PENDING, QUEUE_STATUSES.PROCESSING);
-            
-            return deleteResult.changes;
-        });
-        return dbTrans();
+        const deleteResult = this.db.prepare(`DELETE FROM job_queue`).run();
+        return deleteResult.changes;
     }
 }
 
-module.exports = new QueueRepo();
+/**
+ * @dependency_injection
+ * QueueRepo exports the class constructor rather than an instance.
+ * This enables DI container to instantiate with dependencies.
+ * @param {Object} deps - Dependencies object.
+ * @param {Object} deps.db - The database instance (injected).
+ * Reasoning: Allows runtime configuration and testing via injection.
+ */
+module.exports = QueueRepo;

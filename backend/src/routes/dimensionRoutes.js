@@ -8,22 +8,22 @@
 const express = require('express');
 const router = express.Router();
 
-const DimensionController = require('../controllers/DimensionController');
+const { dimensionController } = require('../config/container').getContainer();
 const { validate } = require('../middlewares/validateZod');
 const { dimensionSchema } = require('../validators/schemas');
 
-router.get('/active', DimensionController.getActive);
+router.get('/active', dimensionController.getActive);
 
-router.get('/', DimensionController.getAll);
+router.get('/', dimensionController.getAll);
 
-router.get('/:id', DimensionController.getById);
+router.get('/:id', dimensionController.getById);
 
-router.post('/', validate(dimensionSchema), DimensionController.create);
+router.post('/', validate(dimensionSchema), dimensionController.create);
 
-router.put('/:id', DimensionController.update);
+router.put('/:id', dimensionController.update);
 
-router.delete('/:id', DimensionController.delete);
+router.delete('/:id', dimensionController.delete);
 
-router.patch('/:id/toggle', DimensionController.toggleActive);
+router.patch('/:id/toggle', dimensionController.toggleActive);
 
 module.exports = router;

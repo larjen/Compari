@@ -1,15 +1,16 @@
 'use client';
 
 import { memo } from 'react';
-import { Dialog, Button } from '@/components/ui';
+import { Dialog, Button, ModalFooter } from '@/components/ui';
 import { FileUploadDropzone } from '@/components/shared/FileUploadDropzone';
-import { useBlueprints } from '@/hooks/useBlueprints';
+import { useTerminology } from '@/hooks/useTerminology';
+import { EntityType } from '@/lib/types';
 
 interface CreateEntityModalProps {
   open: boolean;
   onClose: () => void;
   onCreate: (files: File[]) => Promise<void>;
-  entityType: 'requirement' | 'offering';
+  entityType: EntityType;
 }
 
 /**
@@ -19,22 +20,10 @@ interface CreateEntityModalProps {
  * The parent component is responsible for managing async state, queue indicators, and toasts.
  */
 function CreateEntityModalComponent({ open, onClose, onCreate, entityType }: CreateEntityModalProps) {
-  const { blueprints } = useBlueprints();
-
-  const activeBlueprint = blueprints.find(b => b.is_active) || blueprints[0];
-
-  /**
-   * Infrastructure: Metadata is stored as JSON/unknown; explicit casting is required for frontend type safety.
-   * Safely extract labels with fallbacks to prevent runtime crashes during string manipulation.
-   * If no blueprints exist in the database, defaults to standard domain terminology.
-   */
-  const labelSingular = entityType === 'requirement' 
-    ? (activeBlueprint?.requirementLabelSingular || 'Requirement')
-    : (activeBlueprint?.offeringLabelSingular || 'Offering');
-    
-  const docTypeLabel = entityType === 'requirement' 
-    ? activeBlueprint?.requirementDocTypeLabel 
-    : activeBlueprint?.offeringDocTypeLabel;
+  const { activeLabels } = useTerminology();
+  const labels = activeLabels[entityType];
+  const labelSingular = labels.singular;
+  const docTypeLabel = labels.docType;
 
   /**
    * Handles file selection from the dropzone.
@@ -66,11 +55,11 @@ function CreateEntityModalComponent({ open, onClose, onCreate, entityType }: Cre
           />
         </div>
 
-        <div className="flex justify-end gap-3 pt-2">
+        <ModalFooter>
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-        </div>
+        </ModalFooter>
       </div>
     </Dialog>
   );

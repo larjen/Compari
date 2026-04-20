@@ -16,15 +16,31 @@
  * - ✅ All data access MUST go through Services.
  * - ✅ All errors MUST be passed to next(error) for centralized handling.
  * 
+ * @dependency_injection
+ * All services (settingsManager, aiService, logService) are injected via constructor.
+ * No global service locator is used - dependencies are explicitly provided.
+ * 
  * @socexplanation
  * - Standardizes error handling by delegating ALL errors to the global error middleware.
  * - This ensures consistent error responses and centralized error logging.
  * - Previously handled errors locally with res.status(500), now properly propagates via next().
  */
 
-const settingsManager = require('../config/SettingsManager');
+const { LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 class SettingController {
+    /**
+     * @param {Object} dependencies
+     * @param {Object} dependencies.settingsManager - Settings manager service instance
+     * @param {Object} dependencies.aiService - AI service instance
+     * @param {Object} dependencies.logService - Logging service instance
+     */
+    constructor({ settingsManager, aiService, logService }) {
+        this._settingsManager = settingsManager;
+        this._aiService = aiService;
+        this._logService = logService;
+    }
+
     /**
      * GET /api/settings
      * Retrieves all application settings.
@@ -32,9 +48,9 @@ class SettingController {
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
      */
-    static getAllSettings(req, res, next) {
+    getAllSettings = (req, res, next) => {
         try {
-            const settings = settingsManager.getAll();
+            const settings = this._settingsManager.getAll();
             res.json({ settings });
         } catch (error) {
             next(error);
@@ -57,9 +73,9 @@ class SettingController {
      * This maintains Separation of Concerns: the controller mediates between the
      * HTTP layer and the application state (both DB and memory).
      */
-    static updateSetting(req, res, next) {
+    updateSetting = (req, res, next) => {
         try {
-            settingsManager.set(req.body.key, req.body.value);
+            this._settingsManager.set(req.body.key, req.body.value);
             res.json({ success: true });
         } catch (error) {
             next(error);
@@ -68,17 +84,44 @@ class SettingController {
 
     /**
      * POST /api/settings/test-ai
-     * Tests AI connectivity.
+     * Tests AI connectivity using global end-to-end test.
+     * 
      * @param {Object} req - Express request object (req.body.message)
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
+     * 
+     * @dependency_injection_explanation
+     * This method wires the AiService instance into SettingsManager.testAiConnection()
+     * to eliminate circular dependencies. Previously, SettingsManager used a deferred
+     * require inside the testAiConnection method, which violated Separation of Concerns.
+     * Now the controller explicitly passes the dependency, following the DI pattern.
+     * SettingsManager and AiService are at the same architectural layer (both are Services),
+     * so the controller acts as the wiring layer to connect them.
+     * 
+     * @socexplanation
+     * - Wraps AI test in try/catch to log results to terminal.
+     * - Logging performed in Controller layer, execution in Service layer.
      */
-    static testAiConnectivity(req, res, next) {
+    testAiConnectivity = (req, res, next) => {
         (async () => {
             try {
-                const reply = await settingsManager.testAiConnection(req.body.message);
+                const reply = await this._settingsManager.testAiConnection(req.body.message, this._aiService);
+
+                this._logService.logTerminal({
+                    status: LOG_LEVELS.INFO,
+                    symbolKey: LOG_SYMBOLS.CHECKMARK,
+                    origin: 'SettingController',
+                    message: 'Global AI connectivity test successful.'
+                });
+
                 res.json({ success: true, reply });
             } catch (error) {
+                this._logService.logTerminal({
+                    status: LOG_LEVELS.ERROR,
+                    symbolKey: LOG_SYMBOLS.ERROR,
+                    origin: 'SettingController',
+                    message: `Global AI connectivity test failed: ${error.message}`
+                });
                 next(error);
             }
         })();

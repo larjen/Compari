@@ -9,24 +9,35 @@
  * - ✅ MAY call other Utility/Infrastructure services.
  * - ❌ MUST NOT call Domain Services (e.g., JobListingService, WorkflowService).
  * - ❌ MUST NOT contain business logic or construct business-specific paths.
- * 
+ *
  * @separation_of_concerns
  * This service enforces strict SoC between terminal and file output:
  * - logTerminal(): Writes ONLY to terminal/stdout. Handles ANSI formatting, dev-mode verbosity.
  * - logSystemFile(): Writes ONLY to system.jsonl. SUPPOSED in production (NODE_ENV=production).
  * - logErrorFile(): Writes ONLY to errors.jsonl. Writes regardless of environment.
- * 
+ *
  * USAGE RULES:
  * - Is it just developer feedback? -> Use logTerminal() only.
  * - Is it a system fault that needs permanent audit trail? -> Use logTerminal() + logErrorFile().
  * - Is it a major workflow milestone that needs historical tracking (non-production)? -> Use logTerminal() + logSystemFile().
+ *
+ * @dependency_injection
+ * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
  */
 
 const { LOGS_DIR } = require('../config/constants');
 const fs = require('fs');
 
 class LogService {
-    constructor() {
+    /**
+     * @constructor
+     * @param {Object} deps - Dependencies object
+     * @param {Object} deps.fileService - The FileService instance
+     * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
+     */
+    constructor({ fileService }) {
+        this._fileService = fileService;
+
         this.SYMBOLS = {
             CHECKMARK: '\x1b[32m✓\x1b[0m',
             INFO: '\x1b[34mℹ\x1b[0m',
@@ -133,34 +144,40 @@ class LogService {
 
     /**
      * Logs a message to the terminal/console ONLY.
-     * 
+     *
      * @method logTerminal
      * @memberof LogService
-     * @param {string} status - The log status level (e.g., 'INFO', 'ERROR', 'WARN').
-     * @param {string} symbolKey - The symbol key for the log symbol (e.g., 'CHECKMARK', 'ERROR').
-     * @param {string} origin - The origin of the log message (e.g., 'QueueService.js').
-     * @param {string} message - The log message.
-     * @param {Error|null} [errorObj] - Optional Error object to append stack trace (added to prevent silent failures).
+     * @param {Object} logDto - Data Transfer Object containing all log parameters.
+     * @param {string} logDto.status - The log status level (e.g., 'INFO', 'ERROR', 'WARN').
+     * @param {string} logDto.symbolKey - The symbol key for the log symbol (e.g., 'CHECKMARK', 'ERROR').
+     * @param {string} logDto.origin - The origin of the log message (e.g., 'QueueService.js').
+     * @param {string} logDto.message - The log message.
+     * @param {Error|null} [logDto.errorObj] - Optional Error object to append stack trace (added to prevent silent failures).
      * @returns {void}
-     * 
+     *
      * @description
      * Handles ANSI formatting and console.log/warn/error.
      * This method performs NO file I/O - it writes ONLY to the terminal.
-     * 
+     *
+     * @architectural_decision
+     * Enforces Anti-Parameter Creep policy (ARCHITECTURE.md Section 6). Function accepts 5 parameters
+     * which exceeds the 3-parameter threshold, so a single DTO is used instead of positional arguments.
+     * This improves maintainability and reduces the risk of argument order errors.
+     *
      * @soc_explanation
      * This method enforces Separation of Concerns by keeping terminal output completely
      * isolated from file persistence. Use this for developer feedback, debugging,
      * and console output that doesn't need to be persisted to disk.
-     * 
+     *
      * @rule
      * - Is it just developer feedback? -> Use logTerminal() only.
      * - Is it a system fault that needs permanent audit trail? -> Use logTerminal() + logErrorFile().
      * - Is it a major workflow milestone that needs historical tracking (non-production)? -> Use logTerminal() + logSystemFile().
-     * 
+     *
      * @param errorObj - Added as 5th parameter to prevent silent failures. When an Error object
      * is passed, its stack trace is appended to the terminal message for full visibility.
      */
-    logTerminal(status, symbolKey, origin, message, errorObj = null) {
+    logTerminal({ status, symbolKey, origin, message, errorObj = null }) {
         const symbol = this.SYMBOLS[symbolKey] || ' ';
 
         const originTag = origin ? `\x1b[90m[${origin}]\x1b[0m ` : '';
@@ -215,43 +232,49 @@ class LogService {
             format: 'jsonl'
         };
 
-        const FileService = require('./FileService');
+        const fileService = this._fileService;
         if (!fs.existsSync(LOGS_DIR)) {
             fs.mkdirSync(LOGS_DIR, { recursive: true });
         }
-        FileService.appendToFile(LOGS_DIR, 'system.jsonl', this._safeStringify(logEntry) + '\n');
+        fileService.appendToFile(LOGS_DIR, 'system.jsonl', this._safeStringify(logEntry) + '\n');
     }
 
     /**
      * Logs an error message to the errors.jsonl file ONLY.
-     * 
+     *
      * @method logErrorFile
      * @memberof LogService
-     * @param {string} origin - The origin of the log message (e.g., 'QueueService.js').
-     * @param {string} message - The error message.
-     * @param {Error|null} errorObj - Optional Error object for error details.
-     * @param {Object|null} details - Optional additional details object.
+     * @param {Object} logDto - Data Transfer Object containing all error log parameters.
+     * @param {string} logDto.origin - The origin of the log message (e.g., 'QueueService.js').
+     * @param {string} logDto.message - The error message.
+     * @param {Error|null} [logDto.errorObj] - Optional Error object for error details.
+     * @param {Object|null} [logDto.details] - Optional additional details object.
      * @returns {void}
-     * 
+     *
      * @description
      * Formats data as JSONL and appends to errors.jsonl using FileService.
      * This method performs NO terminal I/O - it writes ONLY to the file.
-     * 
+     *
+     * @architectural_decision
+     * Enforces Anti-Parameter Creep policy (ARCHITECTURE.md Section 6). Function accepts 4 parameters
+     * which exceeds the 3-parameter threshold, so a single DTO is used instead of positional arguments.
+     * This improves maintainability and reduces the risk of argument order errors.
+     *
      * @critical_behavior
      * ⚠️ Unlike logSystemFile(), this method writes regardless of the environment.
      * Error logs are persisted in both development and production.
-     * 
+     *
      * @soc_explanation
      * This method enforces Separation of Concerns by keeping error file persistence
      * completely isolated from terminal output. Use this for system faults, errors,
      * and failures that need permanent audit trail regardless of environment.
-     * 
+     *
      * @rule
      * Always call logTerminal() with 'ERROR' status alongside this method
      * when you need the error to be visible to developers in the terminal.
      * This method handles ONLY file persistence.
      */
-    logErrorFile(origin, message, errorObj = null, details = null) {
+    logErrorFile({ origin, message, errorObj = null, details = null }) {
         const logEntry = {
             timestamp: new Date().toISOString(),
             level: 'ERROR',
@@ -262,28 +285,33 @@ class LogService {
             format: 'jsonl'
         };
 
-        const FileService = require('./FileService');
+        const fileService = this._fileService;
         if (!fs.existsSync(LOGS_DIR)) {
             fs.mkdirSync(LOGS_DIR, { recursive: true });
         }
-        FileService.appendToFile(LOGS_DIR, 'errors.jsonl', this._safeStringify(logEntry) + '\n');
+        fileService.appendToFile(LOGS_DIR, 'errors.jsonl', this._safeStringify(logEntry) + '\n');
     }
 
-/**
+    /**
      * Adds an activity log entry for a given entity.
-     * @param {string} entityType - The type of entity (e.g., 'JobListing', 'Workflow').
-     * @param {number|string} entityId - The ID of the entity.
-     * @param {string} logType - The type of log (e.g., 'CREATE', 'UPDATE', 'DELETE').
-     * @param {string} message - The log message.
-     * @param {string|null} folderPath - Optional folder path for the log file.
-     * @param {Object|Error|null} verboseDetails - Optional detailed information to print in development mode.
+     *
+     * @method addActivityLog
+     * @memberof LogService
+     * @param {Object} activityLogDto - The DTO containing activity log data
+     * @param {string} activityLogDto.entityType - The type of entity (e.g., 'Entity', 'Match')
+     * @param {number|string} activityLogDto.entityId - The ID of the entity
+     * @param {string} activityLogDto.logType - The type of log (e.g., 'INFO', 'ERROR')
+     * @param {string} activityLogDto.message - The log message
+     * @param {string|null} [activityLogDto.folderPath] - Optional folder path for the log file
+     * @param {Object|Error|null} [activityLogDto.verboseDetails] - Optional detailed information for development mode
      * @returns {Object} The log entry object.
-     * 
-     * @socexplanation
-     * Uses deferred require (lazy loading) for FileService to break CommonJS circular dependency chains, ensuring the LogService instance is fully exported before file operations are invoked.
      */
-    addActivityLog(entityType, entityId, logType, message, folderPath = null, verboseDetails = null) {
-        const FileService = require('./FileService');
+    addActivityLog({ entityType, entityId, logType, message, folderPath = null, verboseDetails = null }) {
+        const fileService = this._fileService;
+        if (!fileService) {
+            return null;
+        }
+
         const isDevMode = process.env.NODE_ENV === 'development' || process.env.DEBUG_MODE === 'true';
 
         const logEntry = {
@@ -296,39 +324,37 @@ class LogService {
         };
 
         if (folderPath) {
-            FileService.appendToFile(folderPath, 'activity.jsonl', this._safeStringify(logEntry) + '\n');
+            fileService.appendToFile(folderPath, 'activity.jsonl', this._safeStringify(logEntry) + '\n');
         }
 
         return logEntry;
     }
 
 
-
     /**
      * Logs AI traffic (prompts and responses) to a JSON Lines file.
-     * Enforces the database-driven logging setting by querying SettingsManager.
-     * Demonstrates Separation of Concerns: the logging service delegates configuration
-     * resolution to the SettingsManager rather than hardcoding the toggle logic.
-     * 
-     * @param {string|null} entityFolderPath - The entity-specific folder path where the log file will be written
-     * @param {Array} requestMessages - The array of messages sent to the AI model
-     * @param {string} responseContent - The content returned from the AI model
-     * @param {Object} config - Configuration object containing model details
+     * The caller (e.g., AiService) is responsible for passing the shouldLog flag,
+     * eliminating the need for LogService to query SettingsManager directly.
+     * This follows the Separation of Concerns principle: LogService handles
+     * file writing, while the caller decides when logging is appropriate.
+     *
+     * @method logAiTraffic
+     * @memberof LogService
+     * @param {Object} aiTrafficDto - The DTO containing AI traffic data
+     * @param {string|null} aiTrafficDto.entityFolderPath - The entity-specific folder path where the log file will be written
+     * @param {Array} aiTrafficDto.requestMessages - The array of messages sent to the AI model
+     * @param {string} aiTrafficDto.responseContent - The content returned from the AI model
+     * @param {Object} aiTrafficDto.config - Configuration object containing model details
+     * @param {boolean} [aiTrafficDto.shouldLog=false] - Whether AI traffic should be logged
      * @returns {void}
-     * 
-     * @socexplanation
-     * Uses deferred requires for SettingsManager and FileService to prevent circular dependency crashes during application bootstrap.
-     * This method writes logs to the entity's specific folder path, NOT a global log folder.
-     * This ensures logs are isolated per entity to prevent global log file bloat.
-     * The file is named 'ai_interactions.jsonl' to match the 'log_ai_interactions' setting key.
-     * Logs are written in JSONL format (one JSON object per line) for easy parsing.
      */
-    logAiTraffic(entityFolderPath, requestMessages, responseContent, config) {
-        const SettingsManager = require('../config/SettingsManager');
-        const FileService = require('./FileService');
+    logAiTraffic({ entityFolderPath, requestMessages, responseContent, config, shouldLog = false }) {
+        if (!shouldLog || !entityFolderPath) return;
 
-        const shouldLogAi = SettingsManager.get('log_ai_interactions') === 'true';
-        if (!shouldLogAi || !entityFolderPath) return;
+        const fileService = this._fileService;
+        if (!fileService) {
+            return;
+        }
 
         const logEntry = {
             timestamp: new Date().toISOString(),
@@ -337,8 +363,8 @@ class LogService {
             config
         };
 
-        FileService.appendToFile(entityFolderPath, 'ai_interactions.jsonl', this._safeStringify(logEntry) + '\n');
+        fileService.appendToFile(entityFolderPath, 'ai_interactions.jsonl', this._safeStringify(logEntry) + '\n');
     }
 }
 
-module.exports = new LogService();
+module.exports = LogService;

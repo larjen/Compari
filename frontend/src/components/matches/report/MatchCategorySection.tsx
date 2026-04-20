@@ -1,10 +1,11 @@
 import { RawMatchItem } from './types';
 import { FlatMatchCard } from './FlatMatchCard';
+import { MatchCategory } from '@/lib/types';
 
 /**
  * Renders a specific category of matches (e.g., Perfect, Partial, Missed).
  */
-function MatchCategorySection({ items, title, dimensionId, matchType }: { items: RawMatchItem[] | undefined, title: string, dimensionId: number, matchType: 'perfect' | 'partial' | 'missed' }) {
+function MatchCategorySection({ items, title, dimensionId, matchType }: { items: RawMatchItem[] | undefined, title: string, dimensionId: number, matchType: MatchCategory }) {
     if (!items || items.length === 0) return null;
 
     const sortedItems = [...items].sort((a, b) => b.similarityScore - a.similarityScore);

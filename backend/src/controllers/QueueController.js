@@ -18,11 +18,16 @@
  * - Standardizes error handling by delegating ALL errors to the global error middleware.
  * - This ensures consistent error responses and centralized error logging.
  * - Previously handled errors locally with res.status(500), now properly propagates via next().
+ * 
+ * @dependency_injection
+ * Services are injected via the constructor using Constructor Injection pattern.
  */
 
-const queueService = require('../services/QueueService');
-
 class QueueController {
+    constructor({ queueService }) {
+        this._queueService = queueService;
+    }
+
     /**
      * GET /api/queue/status
      * Retrieves the current queue status.
@@ -30,14 +35,14 @@ class QueueController {
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
      */
-    static getQueueStatus(req, res, next) {
+    getQueueStatus = (req, res, next) => {
         try {
-            const status = queueService.getQueueStatus();
+            const status = this._queueService.getQueueStatus();
             res.json(status);
         } catch (error) {
             next(error);
         }
-    }
+    };
 }
 
 module.exports = QueueController;

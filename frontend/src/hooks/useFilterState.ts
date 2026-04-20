@@ -17,7 +17,7 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from './useDebounce';
 
-export interface UseFilterStateOptions {
+interface UseFilterStateOptions {
   /** Initial status filter value (default: 'all') */
   initialStatus?: string;
   /** Debounce delay for search input in milliseconds (default: 500) */

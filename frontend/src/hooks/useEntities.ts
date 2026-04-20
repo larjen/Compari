@@ -1,24 +1,22 @@
-// src/hooks/useEntities.ts
 /**
  * @fileoverview Custom hook for managing unified entities.
  * @description Provides state management and API interactions for generic entities.
  * @responsibility
  * - Fetches, creates, deletes entities (supporting both 'source' and 'target' types).
- * - Uses useSafeFetch for HTTP state management (avoids duplicating loading/error/race condition logic).
+ * - Uses useManagedCollection for unified lifecycle orchestration (fetch + SSE + watchdog).
  * - Supports server-side pagination, search, and status filtering.
  * @boundary_rules
  * - ❌ MUST NOT contain UI components.
  * - ❌ MUST NOT directly access database.
  * - Uses entityApi for all data operations.
+ * - ❌ MUST NOT directly manage HTTP state, SSE, or watchdog (delegated to useManagedCollection).
  */
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Entity } from '@/lib/types';
 import { entityApi, CreateEntityData, EntityQueryParams, EntityQueryResponse } from '@/lib/api/entityApi';
-import { useSafeFetch } from './useSafeFetch';
-import { useSSE } from './useSSE';
-import { useProcessingWatchdog } from './useProcessingWatchdog';
+import { useManagedCollection, resolveStatus } from './useManagedCollection';
 
 interface UseEntitiesOptions extends EntityQueryParams {
   /** Whether to automatically fetch on mount (default: true) */
@@ -41,30 +39,32 @@ export function useEntities({
   immediate = true,
   listenToSSE = true,
 }: UseEntitiesOptions = {}) {
-  const fetchEntities = useCallback(async () => {
-    return entityApi.getEntities({ type, page, limit, search, status });
+  const fetchFn = useCallback(async () => {
+    const apiStatus = resolveStatus(status);
+    return entityApi.getEntities({ type, page, limit, search, status: apiStatus });
   }, [type, page, limit, search, status]);
 
-  const { data, loading, error, execute: refetch } = useSafeFetch<EntityQueryResponse>(fetchEntities, immediate);
-
-  const entities = data?.entities ?? [];
-  const totalPages = data?.meta?.totalPages ?? 0;
-
-  const handleEntityUpdate = useCallback(() => {
-    refetch();
-  }, [refetch]);
-
-  useSSE({
-    onEntityUpdate: listenToSSE ? handleEntityUpdate : undefined,
-    onReconnect: fetchEntities
-  });
-
-  useProcessingWatchdog(
-    entities,
-    'status',
-    'processing',
-    refetch
+  const extractItems = useCallback(
+    (response: EntityQueryResponse | null): Entity[] => response?.entities ?? [],
+    []
   );
+
+  const { items: entities, loading, error, refetch, totalPages } = useManagedCollection<
+    EntityQueryResponse,
+    Entity
+  >({
+    fetchFn,
+    extractItems,
+    sseConfig: listenToSSE
+      ? {
+          onEntityUpdate: () => {
+            refetch();
+          },
+        }
+      : undefined,
+    watchdogConfig: { enabled: true },
+    immediate,
+  });
 
   const addEntity = async (data: CreateEntityData) => {
     await entityApi.createEntity(data);

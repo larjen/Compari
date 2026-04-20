@@ -1,6 +1,7 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Dimension, Entity, Blueprint, EntityMatch, EntityType } from '@/lib/types';
+import { Dimension, Entity, EntityMatch, EntityType } from '@/lib/types';
+import { ENTITY_ROLES } from './constants';
 
 /**
  * Utility for merging Tailwind CSS class names with conflict resolution.
@@ -90,24 +91,7 @@ export function formatElapsedTime(startTime: string | null): string {
   return `${Math.floor(diff / 86400)}d`;
 }
 
-export function getStatusColor(status: string): string {
-  switch (status) {
-    case 'Waiting':
-      return 'bg-status-waiting/20 text-status-waiting border-status-waiting/30';
-    case 'Preparing':
-      return 'bg-status-preparing/20 text-status-preparing border-status-preparing/30';
-    case 'Sent':
-      return 'bg-status-sent/20 text-status-sent border-status-sent/30';
-    case 'Finished':
-      return 'bg-status-finished/20 text-status-finished border-status-finished/30';
-    default:
-      return 'bg-gray-100 text-gray-600 border-gray-200';
-  }
-}
 
-export function getScoreColor(score: number | null): string {
-  return 'text-accent-forest';
-}
 
 const COLOR_PALETTES = [
   { name: 'blue', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
@@ -157,20 +141,6 @@ export function getDimensionColors(dimensionId: number | undefined | null) {
 }
 
 /**
- * Deterministically calculates a stable color index based on a dimension's absolute order
- * in the dynamic dimensions list.
- * Enforces UI consistency so dimensions maintain their colors regardless of localized UI filtering.
- * @param {Dimension[]} dimensions - The full array of dynamic dimensions.
- * @param {string | undefined | null} dimensionName - The name of the dimension to look up.
- * @returns {number} The absolute index of the dimension, falling back to a safe default.
- */
-export function getDynamicDimensionIndex(dimensions: Dimension[], dimensionName: string | undefined | null): number {
-  if (!dimensionName || !dimensions || dimensions.length === 0) return 5;
-  const index = dimensions.findIndex(d => d.name === dimensionName);
-  return index !== -1 ? index : dimensions.length;
-}
-
-/**
  * Parses a flat EntityMatch object to extract requirement and offering entity objects.
  * 
  * @description
@@ -191,7 +161,7 @@ export function getDynamicDimensionIndex(dimensions: Dimension[], dimensionName:
  * 
  * @example
  * const { reqEntity, offEntity } = parseMatchEntities(match);
- * const { full: displayName } = getEntityDisplayNames(reqEntity, blueprints);
+ * const { full: displayName } = getEntityDisplayNames(reqEntity);
  */
 /**
  * Formats a float value into a rounded percentage string.
@@ -213,20 +183,24 @@ export function formatPercentage(value: number | null | undefined): string {
 export function parseMatchEntities(match: EntityMatch): { reqEntity: Partial<Entity>; offEntity: Partial<Entity> } {
   const reqEntity: Partial<Entity> = {
     name: match.requirement_name || '',
-    type: 'requirement' as EntityType,
-    metadata: typeof match.requirement_metadata === 'string' 
-      ? JSON.parse(match.requirement_metadata) 
+    type: ENTITY_ROLES.REQUIREMENT,
+    metadata: typeof match.requirement_metadata === 'string'
+      ? JSON.parse(match.requirement_metadata)
       : (match.requirement_metadata || {}),
-    blueprint_id: match.requirement_blueprint_id ?? null
+    blueprint_id: match.requirement_blueprint_id ?? null,
+    niceNameLine1: match.requirement_nice_name_line_1,
+    niceNameLine2: match.requirement_nice_name_line_2
   };
 
   const offEntity: Partial<Entity> = {
     name: match.offering_name || '',
-    type: 'offering' as EntityType,
-    metadata: typeof match.offering_metadata === 'string' 
-      ? JSON.parse(match.offering_metadata) 
+    type: ENTITY_ROLES.OFFERING,
+    metadata: typeof match.offering_metadata === 'string'
+      ? JSON.parse(match.offering_metadata)
       : (match.offering_metadata || {}),
-    blueprint_id: match.offering_blueprint_id ?? null
+    blueprint_id: match.offering_blueprint_id ?? null,
+    niceNameLine1: match.offering_nice_name_line_1,
+    niceNameLine2: match.offering_nice_name_line_2
   };
 
   return { reqEntity, offEntity };
@@ -234,66 +208,42 @@ export function parseMatchEntities(match: EntityMatch): { reqEntity: Partial<Ent
 
 /**
  * Centralized utility for resolving entity display names.
- * Safely extracts primary and secondary names directly from required metadata fields
- * to prevent string-splitting bugs (e.g., when a job title naturally contains a hyphen).
- * 
- * @param entity - The entity object
- * @param blueprints - Optional array of blueprints for nuanced naming
- * @param overrideName - Optional explicit name override
+ * Relies on backend-calculated CTI (Computed To Include) fields for display name construction.
+ *
+ * @description
+ * This function enforces Separation of Concerns (SoC) by delegating name calculation logic to the backend.
+ * The backend computes niceNameLine1 and niceNameLine2 during entity extraction, eliminating the need for
+ * frontend blueprint-based name calculations. This prevents issues like the "Hyphen Bug" where natural
+ * hyphens in names (e.g., job titles) would incorrectly split the display name.
+ *
+ * @param entity - The entity object containing niceNameLine1 and niceNameLine2 fields
+ * @param overrideName - Optional explicit name override (legacy fallback for pre-formatted strings)
  * @returns Object containing the primary name, secondary name (if any), and the full name string
+ *
+ * @architectural_notes
+ * - SoC: Presentation layer trusts backend-calculated fields (niceNameLine1, niceNameLine2)
+ * - DRY: Single source of truth for display name resolution across all components
+ * - Prevents: "Hyphen Bug" from splitting names on hyphens that are part of the actual name
  */
 export function getEntityDisplayNames(
-  entity: Partial<Entity>, 
-  blueprints?: Blueprint[], 
+  entity: Partial<Entity>,
   overrideName?: string
 ): { primary: string; secondary: string | null; full: string } {
-  
-  // 1. If explicit override, split it (legacy fallback for pre-formatted strings)
+
   if (overrideName) {
     const parts = overrideName.split(' - ');
-    return { 
-      primary: parts[0], 
-      secondary: parts.length > 1 ? parts.slice(1).join(' - ') : null, 
-      full: overrideName 
+    return {
+      primary: parts[0],
+      secondary: parts.length > 1 ? parts.slice(1).join(' - ') : null,
+      full: overrideName
     };
   }
 
-  // 2. Direct Metadata Resolution: Prevents the "Hyphen Bug"
-  if (blueprints && blueprints.length > 0 && entity.blueprint_id && entity.metadata) {
-    const blueprint = blueprints.find(b => b.id === entity.blueprint_id);
-    
-    if (blueprint && blueprint.fields) {
-      const requiredFields = blueprint.fields
-        .filter((f) => f.is_required && f.entity_role === entity.type)
-        .slice(0, 2);
+  const primary = entity.niceNameLine1 || entity.name || 'Unnamed Entity';
+  const secondary = (entity.niceNameLine2 && entity.niceNameLine2 !== 'Unknown') ? entity.niceNameLine2 : null;
+  const full = secondary ? `${primary} - ${secondary}` : primary;
 
-      if (requiredFields.length > 0) {
-        const field1Name = requiredFields[0].field_name;
-        const field2Name = requiredFields.length > 1 ? requiredFields[1].field_name : null;
-
-        const val1 = (entity.metadata as Record<string, any>)[field1Name];
-        const val2 = field2Name ? (entity.metadata as Record<string, any>)[field2Name] : null;
-
-        const primary = (val1 && val1 !== 'Unknown' && val1 !== 'Please wait...') ? String(val1) : null;
-        const secondary = (val2 && val2 !== 'Unknown' && val2 !== 'Please wait...') ? String(val2) : null;
-
-        if (primary) {
-          const full = secondary ? `${primary} - ${secondary}` : primary;
-          return { primary, secondary, full };
-        }
-      }
-    }
-  }
-
-  // 3. Fallback to nice_name or base entity name, using legacy split
-  const fallbackFull = ((entity.metadata as Record<string, any>)?.nice_name as string) || entity.name || 'Unnamed Entity';
-  const parts = fallbackFull.split(' - ');
-  
-  return {
-    primary: parts[0],
-    secondary: parts.length > 1 ? parts.slice(1).join(' - ') : null,
-    full: fallbackFull
-  };
+  return { primary, secondary, full };
 }
 
 

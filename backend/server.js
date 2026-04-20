@@ -21,7 +21,8 @@ const startTime = performance.now();
 
 require('dotenv').config();
 
-require('./src/utils/ProcessGuard').registerProcessListeners();
+const ProcessGuard = require('./src/utils/ProcessGuard');
+ProcessGuard.registerProcessListeners();
 // Process-level listeners must be attached before any infrastructure or domain logic initializes.
 // This separation of concerns (SoC) ensures the ProcessGuard can catch initialization errors.
 
@@ -31,7 +32,8 @@ const shouldWipe = process.argv.includes('--wipe') || process.env.WIPE_DATA === 
 if (shouldWipe) {
     try {
         const FileService = require('./src/services/FileService');
-        FileService.wipeWorkspace();
+        const fileService = new FileService({ pdfService: null, logService: null });
+        fileService.wipeWorkspace();
     } catch (err) {
         console.error('[FATAL] Phase 0 Failed: Could not wipe workspace:', err.message);
         process.exit(1);
@@ -45,7 +47,8 @@ if (shouldWipe) {
 
 try {
     const FileService = require('./src/services/FileService');
-    FileService.initializeWorkspace();
+    const fileService = new FileService({ pdfService: null, logService: null });
+    fileService.initializeWorkspace();
 } catch (err) {
     console.error('[FATAL] Phase 1 Failed: Could not initialize workspace directories:', err.message);
     process.exit(1);
@@ -62,13 +65,24 @@ try {
     process.exit(1);
 }
 
+// Phase 2.5: Composition Root (Dependency Injection Container)
+// =============================================================
+try {
+    const { bootstrap } = require('./src/config/container');
+    bootstrap();
+} catch (err) {
+    console.error('[FATAL] Phase 2.5 Failed: Container Bootstrap Error:', err.message);
+    process.exit(1);
+}
+
 // Phase 3: Application Logic
 // ==========================
-const logService = require('./src/services/LogService');
+const containerModule = require('./src/config/container');
+const { logService } = containerModule.getContainer();
 const { LOG_LEVELS, LOG_SYMBOLS } = require('./src/config/constants');
 const setupRoutes = require('./src/routes/index');
 
-logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.NONE, 'server.js', `Server starting...`);
+logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.NONE, origin: 'server.js', message: `Server starting...` });
 
 const express = require('express');
 
@@ -77,7 +91,7 @@ const Logger = require('./src/utils/Logger');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const logger = new Logger('system');
+const logger = new Logger('system', { logService });
 app.use(logger.middleware());
 
 app.use(express.json());
@@ -119,8 +133,8 @@ app.use((req, res, next) => {
  * @param {Function} next - Express next function
  */
 app.use((err, req, res, next) => {
-    logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'GlobalErrorHandler', `API Error on ${req.method} ${req.url}`, err);
-    logService.logErrorFile('GlobalErrorHandler', `API Error on ${req.method} ${req.url}`, err);
+    logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'GlobalErrorHandler', message: `API Error on ${req.method} ${req.url}`, errorObj: err });
+    logService.logErrorFile({ origin: 'GlobalErrorHandler', message: `API Error on ${req.method} ${req.url}`, errorObj: err });
 
     res.status(err.status || 500).json({
         success: false,
@@ -129,10 +143,7 @@ app.use((err, req, res, next) => {
     });
 });
 
-const registerTaskListeners = require('./src/events/TaskListeners');
-registerTaskListeners();
-
-const queueService = require('./src/services/QueueService');
+const { queueService } = containerModule.getContainer();
 
 app.listen(PORT, '0.0.0.0', async () => {
     const startupTime = Math.round(performance.now() - startTime);
@@ -140,16 +151,16 @@ app.listen(PORT, '0.0.0.0', async () => {
     await queueService.sweepOrphanedTasks();
     queueService.start();
 
-    logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'server.js', `Backend API running on http://localhost:${PORT}`);
+    logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'server.js', message: `Backend API running on http://localhost:${PORT}` });
 
     const isDevMode = process.env.NODE_ENV === 'development' || process.env.DEBUG_MODE === 'true';
     if (isDevMode) {
-        logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'server.js', 'Server is running in DEBUG/DEV mode. Verbose logging is enabled.');
-        logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.NONE, 'server.js', 'To disable debug mode and run normally, stop this process and use: npm start');
+        logService.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'server.js', message: 'Server is running in DEBUG/DEV mode. Verbose logging is enabled.' });
+        logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.NONE, origin: 'server.js', message: 'To disable debug mode and run normally, stop this process and use: npm start' });
     } else {
-        logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'server.js', 'Server is running in PRODUCTION mode.');
+        logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'server.js', message: 'Server is running in PRODUCTION mode.' });
     }
 
-    logService.logTerminal(LOG_LEVELS.INFO, LOG_SYMBOLS.CHECKMARK, 'server.js', `Server started in ${startupTime}ms`);
+    logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'server.js', message: `Server started in ${startupTime}ms` });
     console.log();
 });

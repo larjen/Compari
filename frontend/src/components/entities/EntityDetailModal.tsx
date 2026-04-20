@@ -17,12 +17,12 @@
  * @validation Renders fallback UI with console warning if entity data is missing.
  */
 import { useState, useEffect } from 'react';
-import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { DeleteAction, EditButton } from '@/components/ui';
 import { Entity, Blueprint } from '@/lib/types';
 import { entityApi } from '@/lib/api/entityApi';
 import { getEntityDisplayNames } from '@/lib/utils';
-import { Info, Files, ListChecks, Trophy } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CriteriaViewer } from '@/components/shared/CriteriaViewer';
 import { EntityDetailLayout } from '@/components/shared/EntityDetailLayout';
@@ -32,8 +32,10 @@ import { useToast } from '@/hooks/useToast';
 import { useEntityFiles, useEntityCriteria, useTopMatches } from '@/hooks/useEntityData';
 import { useMatches } from '@/hooks/useMatches';
 import { useBlueprints } from '@/hooks/useBlueprints';
+import { useTerminology } from '@/hooks/useTerminology';
+import { useUrlTabs } from '@/hooks/useUrlTabs';
 import { TopMatchesTab } from './TopMatchesTab';
-import { TOAST_TYPES } from '@/lib/constants';
+import { TOAST_TYPES, ENTITY_ROLES } from '@/lib/constants';
 
 interface EntityDetailModalProps {
   /** The entity to display */
@@ -48,29 +50,28 @@ interface EntityDetailModalProps {
   onEdit?: () => void;
 }
 
-type TabId = 'info' | 'criteria' | 'files' | 'top-matches';
+const ENTITY_TABS = {
+  INFO: 'info',
+  CRITERIA: 'criteria',
+  FILES: 'files',
+  TOP_MATCHES: 'top-matches'
+} as const;
+type TabId = typeof ENTITY_TABS[keyof typeof ENTITY_TABS];
 
 const tabs = [
-  { id: 'info', label: 'General Info', icon: Info },
-  { id: 'top-matches', label: 'Top Matches', icon: Trophy },
-  { id: 'criteria', label: 'Criteria', icon: ListChecks },
-  { id: 'files', label: 'Files', icon: Files },
+  { id: ENTITY_TABS.INFO, label: 'General Info', icon: DOMAIN_ICONS.INFO },
+  { id: ENTITY_TABS.TOP_MATCHES, label: 'Top Matches', icon: DOMAIN_ICONS.MATCH },
+  { id: ENTITY_TABS.CRITERIA, label: 'Criteria', icon: DOMAIN_ICONS.CRITERIA },
+  { id: ENTITY_TABS.FILES, label: 'Files', icon: DOMAIN_ICONS.FILES },
 ];
 
 export function EntityDetailModal({ entity, open, onClose, onDelete, onEdit }: EntityDetailModalProps) {
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
   const { addToast } = useToast();
   const { blueprints } = useBlueprints();
-  const activeTab = (searchParams.get('tab') as TabId) || 'info';
+  const { getEntityLabels } = useTerminology();
+  const { activeTab, handleTabChange } = useUrlTabs(ENTITY_TABS.INFO);
   const [currentEntity, setCurrentEntity] = useState<Entity | null>(entity);
-
-  const handleTabChange = (id: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('tab', id);
-    router.push(pathname + '?' + params.toString(), { scroll: false });
-  };
 
   // Find the matching blueprint
   /**
@@ -81,8 +82,8 @@ export function EntityDetailModal({ entity, open, onClose, onDelete, onEdit }: E
   const matchedBlueprint = blueprints.find(b => b.id === entityBlueprintId);
 
   const { files, loading: loadingFiles } = useEntityFiles(entity?.id);
-  const { criteria, loading: loadingCriteria } = useEntityCriteria(activeTab === 'criteria' && entity?.id ? entity.id : undefined);
-  const { topMatches, loading: loadingMatches, processedCount, totalCount, isComplete } = useTopMatches(entity?.id, activeTab === 'top-matches');
+  const { criteria, loading: loadingCriteria } = useEntityCriteria(activeTab === ENTITY_TABS.CRITERIA && entity?.id ? entity.id : undefined);
+  const { topMatches, loading: loadingMatches, processedCount, totalCount, isComplete } = useTopMatches(entity?.id, activeTab === ENTITY_TABS.TOP_MATCHES);
   const { matches, deleteMatch, addMatch } = useMatches({ immediate: open });
 
   useEffect(() => {
@@ -107,8 +108,8 @@ const handleSaveMetadata = async (key: string, value: string) => {
    */
   const handleDeleteMatch = async (matchedEntityId: number) => {
     if (!entity?.id) return;
-    const requirementId = entity.type === 'requirement' ? entity.id : matchedEntityId;
-    const offeringId = entity.type === 'offering' ? entity.id : matchedEntityId;
+    const requirementId = entity.type === ENTITY_ROLES.REQUIREMENT ? entity.id : matchedEntityId;
+    const offeringId = entity.type === ENTITY_ROLES.OFFERING ? entity.id : matchedEntityId;
     const existingMatch = matches.find(
       (m) => m.requirement_id === requirementId && m.offering_id === offeringId
     );
@@ -125,8 +126,8 @@ const handleSaveMetadata = async (key: string, value: string) => {
    */
   const handleCreateMatchReport = async (matchedEntityId: number) => {
     if (!entity?.id) return;
-    const requirementId = entity.type === 'requirement' ? entity.id : matchedEntityId;
-    const offeringId = entity.type === 'offering' ? entity.id : matchedEntityId;
+    const requirementId = entity.type === ENTITY_ROLES.REQUIREMENT ? entity.id : matchedEntityId;
+    const offeringId = entity.type === ENTITY_ROLES.OFFERING ? entity.id : matchedEntityId;
     try {
       await addMatch(requirementId, offeringId);
       addToast(TOAST_TYPES.SUCCESS, 'Match report queued for processing');
@@ -147,20 +148,16 @@ const handleSaveMetadata = async (key: string, value: string) => {
    * Navigates the user to view an opposing entity.
    */
   const handleViewEntity = (matchedEntityId: number, matchedEntityType: string) => {
-    const basePath = matchedEntityType === 'requirement' ? '/' : '/offerings';
+    const basePath = matchedEntityType === ENTITY_ROLES.REQUIREMENT ? '/' : '/offerings';
     router.push(`${basePath}?entityId=${matchedEntityId}`);
   };
 
   if (!entity) return null;
 
   // 1. Resolve names using the centralized utility
-  const { primary: primaryName, secondary: secondaryName } = getEntityDisplayNames(entity, blueprints);
+  const { primary: primaryName, secondary: secondaryName } = getEntityDisplayNames(entity);
 
-  // 2. Resolve the dynamic type label (e.g., "Job Listing") from the blueprint
-  const entityBlueprint = blueprints.find(bp => bp.id === entity?.blueprint_id);
-  const typeLabel = entity?.type === 'requirement' 
-    ? (entityBlueprint?.requirementLabelSingular || 'Requirement')
-    : (entityBlueprint?.offeringLabelSingular || 'Offering');
+  const typeLabel = getEntityLabels(entity).singular;
 
   const customTitle = (
     <div className="flex flex-col gap-1.5 pt-1 w-full overflow-hidden">
@@ -204,7 +201,7 @@ const handleSaveMetadata = async (key: string, value: string) => {
       }
     >
       <AnimatePresence mode="wait">
-        {activeTab === 'info' && (
+        {activeTab === ENTITY_TABS.INFO && (
           <motion.div
             key="info"
             initial={{ opacity: 0, y: 10 }}
@@ -226,7 +223,7 @@ const handleSaveMetadata = async (key: string, value: string) => {
           </motion.div>
         )}
 
-        {activeTab === 'criteria' && (
+        {activeTab === ENTITY_TABS.CRITERIA && (
           <motion.div
             key="criteria"
             initial={{ opacity: 0, y: 10 }}
@@ -242,9 +239,9 @@ const handleSaveMetadata = async (key: string, value: string) => {
           </motion.div>
         )}
 
-        {activeTab === 'files' && (
+        {activeTab === ENTITY_TABS.FILES && (
           <FilesTabContent
-            folderPath={entity.folder_path}
+            folderPath={entity?.folder_path ?? (entity as any)?.folderPath ?? null}
             files={files}
             loadingFiles={loadingFiles}
             getDownloadUrl={(filename) => `/api/entities/${entity.id}/files/${encodeURIComponent(filename)}`}
@@ -259,7 +256,7 @@ const handleSaveMetadata = async (key: string, value: string) => {
           />
         )}
 
-        {activeTab === 'top-matches' && (
+        {activeTab === ENTITY_TABS.TOP_MATCHES && (
           <motion.div
             key="top-matches"
             initial={{ opacity: 0, y: 10 }}

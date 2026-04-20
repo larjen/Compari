@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { ENTITY_STATUS } from '@/lib/constants';
 
 interface BadgeProps {
   status: string;
@@ -13,10 +14,10 @@ export function Badge({ status, className }: BadgeProps) {
     Preparing: 'bg-status-preparing/20 text-emerald-900 border-status-preparing/30',
     Sent: 'bg-status-sent/20 text-teal-900 border-status-sent/30',
     Finished: 'bg-status-finished/20 text-gray-900 border-status-finished/30',
-    pending: 'bg-gray-100 text-gray-600 border-gray-200',
-    processing: 'bg-blue-100 text-blue-700 border-blue-200',
-    completed: 'bg-green-100 text-green-700 border-green-200',
-    error: 'bg-red-100 text-red-700 border-red-200',
+    [ENTITY_STATUS.PENDING]: 'bg-gray-100 text-gray-600 border-gray-200',
+    [ENTITY_STATUS.PROCESSING]: 'bg-blue-100 text-blue-700 border-blue-200',
+    [ENTITY_STATUS.COMPLETED]: 'bg-green-100 text-green-700 border-green-200',
+    [ENTITY_STATUS.FAILED]: 'bg-red-100 text-red-700 border-red-200',
   };
 
   return (

@@ -1,18 +1,39 @@
 /**
  * @module PromptBuilder
  * @description Domain Layer utility for constructing LLM prompts.
- * * @responsibility
+ *
+ * @responsibility
  * - Builds message arrays for entity extraction, markdown conversion, and dynamic extraction.
  * - Contains all business rules for prompt engineering.
- * * @boundary_rules
+ *
+ * @boundary_rules
  * - ✅ MUST know about Entities and Assessments.
  * - ❌ MUST NOT directly call infrastructure services (AiService).
+ *
+ * @dependency_injection
+ * Dependencies are injected strictly via the constructor.
+ * Defensive getters are not required as instantiation guarantees dependency presence.
+ * Reasoning: Constructor Injection ensures promptRepo is available immediately after construction.
  */
 
-const promptRepo = require('../repositories/PromptRepo');
 const { ENTITY_ROLES, PROMPT_SYSTEM_NAMES } = require('../config/constants');
 
 class PromptBuilder {
+    /**
+     * @constructor
+     * @param {Object} deps - Dependencies object
+     * @param {Object} deps.promptRepo - The PromptRepo instance
+     * @dependency_injection Dependencies are injected strictly via the constructor.
+     * Defensive getters are not required as instantiation guarantees dependency presence.
+     */
+    constructor({ promptRepo }) {
+        this._promptRepo = promptRepo;
+    }
+
+    getPromptBySystemName(systemName) {
+        return this._promptRepo.getPromptBySystemName(systemName);
+    }
+
     _inject(template, vars) {
         let result = template;
         for (const key of Object.keys(vars)) {
@@ -21,8 +42,17 @@ class PromptBuilder {
         return result;
     }
 
+    _buildMessages(systemName, templateVars, userContent) {
+        const template = this._promptRepo.getPromptBySystemName(systemName).prompt;
+        const systemPrompt = this._inject(template, templateVars);
+        return [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent }
+        ];
+    }
+
     buildMarkdownExtractionMessages(rawText) {
-        const template = promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.MARKDOWN_EXTRACTION).prompt;
+        const template = this._promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.MARKDOWN_EXTRACTION).prompt;
         return [
             { role: 'system', content: template },
             { role: 'user', content: rawText }
@@ -53,16 +83,7 @@ class PromptBuilder {
             return `- ${field.fieldName} (${field.fieldType})${required}: ${field.description}`;
         }).join('\n');
 
-        const template = promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.ENTITY_METADATA).prompt;
-        const systemPrompt = this._inject(template, {
-            blueprintName,
-            fieldsList
-        });
-
-        return [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: rawText }
-        ];
+        return this._buildMessages(PROMPT_SYSTEM_NAMES.ENTITY_METADATA, { blueprintName, fieldsList }, rawText);
     }
 
     /**
@@ -108,18 +129,7 @@ class PromptBuilder {
 
         const roleLabel = entityRole === ENTITY_ROLES.REQUIREMENT ? 'requirement document (defines criteria and needs)' : 'offering profile (possesses skills and attributes)';
 
-        const template = promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.DYNAMIC_EXTRACTION).prompt;
-        const systemPrompt = this._inject(template, {
-            roleLabel,
-            dimensionCount: activeDimensions.length,
-            dimensionList,
-            exampleJsonString
-        });
-
-        return [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: rawText }
-        ];
+        return this._buildMessages(PROMPT_SYSTEM_NAMES.DYNAMIC_EXTRACTION, { roleLabel, dimensionCount: activeDimensions.length, dimensionList, exampleJsonString }, rawText);
     }
 
     /**
@@ -143,21 +153,11 @@ class PromptBuilder {
     buildExecutiveSummaryMessages(dimensionalSummariesMap, requirementName, offeringName) {
         const dimensionNames = Object.keys(dimensionalSummariesMap).join(', ');
 
-        const template = promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.EXECUTIVE_SUMMARY).prompt;
-        const systemPrompt = this._inject(template, {
-            requirementName,
-            offeringName,
-            dimensionNames
-        });
-
         const userContent = Object.entries(dimensionalSummariesMap)
             .map(([dimension, summary]) => `### ${dimension}\n${summary}\n\n`)
             .join('');
 
-        return [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userContent }
-        ];
+        return this._buildMessages(PROMPT_SYSTEM_NAMES.EXECUTIVE_SUMMARY, { requirementName, offeringName, dimensionNames }, userContent);
     }
 
     /**
@@ -168,7 +168,7 @@ class PromptBuilder {
      * @returns {Array<Object>} Array of message objects for the LLM.
      */
     buildMatchSummaryMessages(reportJson) {
-        const template = promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.MATCH_SUMMARY).prompt;
+        const template = this._promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.MATCH_SUMMARY).prompt;
         return [
             { role: 'system', content: template },
             { role: 'user', content: JSON.stringify(reportJson, null, 2) }
@@ -176,4 +176,10 @@ class PromptBuilder {
     }
 }
 
-module.exports = new PromptBuilder();
+/**
+ * @dependency_injection
+ * PromptBuilder exports the class constructor rather than an instance.
+ * This enables DI container to instantiate with dependencies.
+ * Reasoning: Constructor Injection ensures promptRepo is available immediately.
+ */
+module.exports = PromptBuilder;

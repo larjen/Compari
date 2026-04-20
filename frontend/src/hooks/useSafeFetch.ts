@@ -31,7 +31,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
  * Represents the state of a fetch operation.
  * @template T - The type of data being fetched.
  */
-export interface FetchState<T> {
+interface FetchState<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
@@ -42,13 +42,13 @@ export interface FetchState<T> {
  * @template T - The type of data to fetch.
  * @returns A Promise that resolves to the fetched data.
  */
-export type Fetcher<T> = () => Promise<T>;
+type Fetcher<T> = () => Promise<T>;
 
 /**
  * Return type for the useSafeFetch hook.
  * @template T - The type of data being fetched.
  */
-export interface UseSafeFetchReturn<T> {
+interface UseSafeFetchReturn<T> {
   /** The fetched data, or null if not yet loaded. */
   data: T | null;
   /** Whether a fetch operation is currently in progress. */

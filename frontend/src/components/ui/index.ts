@@ -1,12 +1,11 @@
 export { Button } from './Button';
 export { EditButton } from './EditButton';
 export { ViewButton } from './ViewButton';
-export { Input } from './Input';
-export { Badge } from './Badge';
 export { Dialog } from './Dialog';
 export { ModalFooter } from './ModalFooter';
 export { DeleteAction } from './DeleteAction';
-export { FormActions } from './FormActions';
 export { CreateButton } from './CreateButton';
 export { SaveButton } from './SaveButton';
 export { DownloadButton } from './DownloadButton';
+export { FormLabel, FormInput, FormSelect, FormTextarea } from './FormControls';
+export { MicroBadge } from './MicroBadge';

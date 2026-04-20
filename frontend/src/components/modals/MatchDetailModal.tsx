@@ -1,15 +1,15 @@
 'use client';
 
-import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
+import { useRouter } from 'next/navigation';
 import { DeleteAction, EditButton, DownloadButton } from '@/components/ui';
 import { EntityMatch } from '@/lib/types';
 import { formatDate, cn, getEntityDisplayNames, parseMatchEntities, formatPercentage } from '@/lib/utils';
-import { useBlueprints } from '@/hooks/useBlueprints';
+import { useUrlTabs } from '@/hooks/useUrlTabs';
 import { useMatchFiles, useMatchReport } from '@/hooks/useMatchData';
 import { useToast } from '@/hooks/useToast';
 import { matchApi } from '@/lib/api/matchApi';
 import { TOAST_TYPES } from '@/lib/constants';
-import { Scale, Weight, Clock, AlertCircle, CheckCircle, FileText, Files, Info } from 'lucide-react';
 import { FileViewer } from '@/components/shared/FileViewer';
 import { FilesTabContent } from '@/components/shared/FilesTabContent';
 import { EntityDetailLayout } from '@/components/shared/EntityDetailLayout';
@@ -23,34 +23,26 @@ interface MatchDetailModalProps {
   onEdit?: () => void;
 }
 
-type TabId = 'info' | 'files' | 'report';
+const MATCH_TABS = {
+  INFO: 'info',
+  FILES: 'files',
+  REPORT: 'report'
+} as const;
+type TabId = typeof MATCH_TABS[keyof typeof MATCH_TABS];
 
 const tabs = [
-  { id: 'info', label: 'General Info', icon: Info },
-  { id: 'files', label: 'Files', icon: Files },
-  { id: 'report', label: 'Report', icon: FileText },
+  { id: MATCH_TABS.INFO, label: 'General Info', icon: DOMAIN_ICONS.INFO },
+  { id: MATCH_TABS.REPORT, label: 'Report', icon: DOMAIN_ICONS.FILE },
+  { id: MATCH_TABS.FILES, label: 'Files', icon: DOMAIN_ICONS.FILES },
 ];
 
 export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: MatchDetailModalProps) {
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const activeTab = (searchParams.get('tab') as TabId) || 'info';
-
-  const handleTabChange = (id: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('tab', id);
-    router.push(pathname + '?' + params.toString(), { scroll: false });
-  };
-  const { blueprints } = useBlueprints();
+  const { activeTab, handleTabChange } = useUrlTabs(MATCH_TABS.INFO);
 
   const { files, loading: loadingFiles } = useMatchFiles(match?.id);
   const { reportData, loading: loadingReport } = useMatchReport(match?.id, match?.report_path);
   const { addToast } = useToast();
-
-  const activeBlueprint = blueprints?.find((bp) => bp.is_active);
-  const reqLabel = activeBlueprint?.requirementLabelSingular || 'Requirement';
-  const offLabel = activeBlueprint?.offeringLabelSingular || 'Offering';
 
   if (!match) return null;
 
@@ -65,37 +57,7 @@ export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: Mat
 
   const handleDownloadPdf = async () => {
     try {
-      const response = await fetch(`/api/matches/${match.id}/pdf`);
-      
-      if (!response.ok) {
-        let errorMessage = "Failed to generate PDF";
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-        } catch (e) {
-        }
-        throw new Error(errorMessage);
-      }
-      
-      const blob = await response.blob();
-      const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = `Compari_Match_Report_${match.id}.pdf`;
-      if (contentDisposition && contentDisposition.includes('filename=')) {
-        const matches = /filename="([^"]+)"/.exec(contentDisposition);
-        if (matches != null && matches) { 
-          filename = matches[1];
-        }
-      }
-
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      await matchApi.downloadMatchReportPdf(match.id);
     } catch (error) {
       console.error(error);
       addToast(TOAST_TYPES.ERROR, error instanceof Error ? error.message : "There was an error downloading the PDF.");
@@ -103,8 +65,11 @@ export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: Mat
   };
 
   const { reqEntity, offEntity } = parseMatchEntities(match);
-  const { primary: reqName } = getEntityDisplayNames(reqEntity, blueprints);
-  const { primary: offName } = getEntityDisplayNames(offEntity, blueprints);
+  const { primary: reqName } = getEntityDisplayNames(reqEntity);
+  const { primary: offName } = getEntityDisplayNames(offEntity);
+
+  const reqLabel = 'Requirement';
+  const offLabel = 'Offering';
 
   const customTitle = (
     <div className="flex flex-col gap-1.5 pt-1 w-full overflow-hidden">
@@ -143,12 +108,12 @@ export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: Mat
       }
     >
       <>
-        {activeTab === 'info' && (
+        {activeTab === MATCH_TABS.INFO && (
           <div className="space-y-4">
             {match.status === 'failed' && match.error && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
                 <div className="flex items-center gap-2 text-red-700 text-sm font-medium">
-                  <AlertCircle className="w-4 h-4" />
+                  <DOMAIN_ICONS.ERROR className="w-4 h-4" />
                   Error
                 </div>
                 <p className="text-red-600 text-sm mt-1">{match.error}</p>
@@ -159,7 +124,7 @@ export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: Mat
             {match.match_score !== null && (
               <div>
                 <div className="flex items-center gap-2 text-accent-forest/60 text-sm mb-1">
-                  <CheckCircle className="w-4 h-4" />
+                  <DOMAIN_ICONS.CHECK className="w-4 h-4" />
                   Overall Match Score
                 </div>
                 <p className="text-2xl font-bold text-accent-forest">
@@ -171,7 +136,7 @@ export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: Mat
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="flex items-center gap-2 text-accent-forest/60 text-sm mb-1">
-                  <Clock className="w-4 h-4" />
+                  <DOMAIN_ICONS.CLOCK className="w-4 h-4" />
                   Created
                 </div>
                 <p className="text-sm text-accent-forest">
@@ -182,7 +147,7 @@ export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: Mat
               {match.updated_at && (
                 <div>
                   <div className="flex items-center gap-2 text-accent-forest/60 text-sm mb-1">
-                    <Clock className="w-4 h-4" />
+                    <DOMAIN_ICONS.CLOCK className="w-4 h-4" />
                     Updated
                   </div>
                   <p className="text-sm text-accent-forest">
@@ -194,20 +159,20 @@ export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: Mat
           </div>
         )}
 
-        {activeTab === 'files' && (
+        {activeTab === MATCH_TABS.REPORT && (
+          <MatchReportViewer
+            reportData={reportData}
+            matchId={match.id}
+          />
+        )}
+
+        {activeTab === MATCH_TABS.FILES && (
           <FilesTabContent
-            folderPath={match.folder_path}
+            folderPath={match?.folder_path ?? (match as any)?.folderPath ?? null}
             files={files}
             loadingFiles={loadingFiles}
             getDownloadUrl={(filename) => `/api/matches/${match.id}/files/${encodeURIComponent(filename)}`}
             onOpenFolder={() => matchApi.openFolder(match.id)}
-          />
-        )}
-
-        {activeTab === 'report' && (
-          <MatchReportViewer
-            reportData={reportData}
-            matchId={match.id}
           />
         )}
       </>

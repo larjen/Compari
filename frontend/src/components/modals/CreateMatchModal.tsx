@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Dialog, Button, CreateButton } from '@/components/ui';
+import { Dialog, Button, CreateButton, ModalFooter } from '@/components/ui';
 import { useBlueprints } from '@/hooks/useBlueprints';
+import { useTerminology } from '@/hooks/useTerminology';
 import { EntityCombobox } from '@/components/shared/EntityCombobox';
-import { Scale, Weight } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 
 interface CreateMatchModalProps {
   open: boolean;
@@ -18,9 +19,8 @@ export function CreateMatchModal({ open, onClose, onCreateMatch }: CreateMatchMo
   const [selectedTargetId, setSelectedTargetId] = useState<number | null>(null);
 
   const { blueprints } = useBlueprints();
-  const activeBlueprint = blueprints.find(b => b.is_active) || blueprints[0];
-  const requirementLabel = activeBlueprint?.requirementLabelSingular || 'Requirement';
-  const offeringLabel = activeBlueprint?.offeringLabelSingular || 'Offering';
+  const { activeLabels } = useTerminology();
+  const { requirement: { singular: requirementLabel }, offering: { singular: offeringLabel } } = activeLabels;
 
   const handleCreate = async () => {
     if (!selectedSourceId || !selectedTargetId) return;
@@ -56,7 +56,7 @@ export function CreateMatchModal({ open, onClose, onCreateMatch }: CreateMatchMo
         <div className="space-y-4">
           <div className="space-y-2">
             <label className="block text-sm font-medium text-accent-forest">
-              <Scale className="w-4 h-4 inline-block mr-2" />
+              <DOMAIN_ICONS.REQUIREMENT className="w-4 h-4 inline-block mr-2" />
               {requirementLabel}
             </label>
             <EntityCombobox
@@ -71,7 +71,7 @@ export function CreateMatchModal({ open, onClose, onCreateMatch }: CreateMatchMo
 
           <div className="space-y-2">
             <label className="block text-sm font-medium text-accent-forest">
-              <Weight className="w-4 h-4 inline-block mr-2" />
+              <DOMAIN_ICONS.OFFERING className="w-4 h-4 inline-block mr-2" />
               {offeringLabel}
             </label>
             <EntityCombobox
@@ -85,7 +85,7 @@ export function CreateMatchModal({ open, onClose, onCreateMatch }: CreateMatchMo
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 pt-2">
+        <ModalFooter>
           <Button type="button" variant="ghost" onClick={handleClose} disabled={isCreating}>
             Cancel
           </Button>
@@ -96,7 +96,7 @@ export function CreateMatchModal({ open, onClose, onCreateMatch }: CreateMatchMo
             isCreating={isCreating}
             disabled={!selectedSourceId || !selectedTargetId}
           />
-        </div>
+        </ModalFooter>
       </div>
     </Dialog>
   );

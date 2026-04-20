@@ -10,8 +10,7 @@
  * Enforces strict contracts between the SSE service and React components.
  */
 export const APP_EVENTS = {
-    ENTITY_UPDATE: 'entityUpdate',
-    MATCH_UPDATE: 'matchUpdate',
+    RESOURCE_STATE_CHANGED: 'resourceStateChanged',
     QUEUE_UPDATE: 'queueUpdate',
     BLUEPRINT_UPDATE: 'blueprintUpdate',
     NOTIFICATION: 'notification'
@@ -74,16 +73,79 @@ export const FIELD_TYPES = {
 } as const;
 
 /**
- * Entity Status Values
+ * Match Category Definitions
+ * Replaces magic strings for match categorization in reports.
+ */
+export const MATCH_CATEGORIES = {
+    PERFECT: 'perfect',
+    PARTIAL: 'partial',
+    MISSED: 'missed'
+} as const;
+
+/**
+ * @description The single source of truth for entity processing states. All UI lifecycle logic must derive from this object.
+ * Entity Status Registry
  * Centralized status constants for entity processing lifecycle.
  * This is the single source of truth - queue_status has been deprecated.
+ * @responsibility Provides exhaustive list of all possible entity states for frontend type safety.
+ * @reasoning Includes granular processing sub-states to enable UI differentiation between
+ *            overall processing and specific pipeline stages (parsing, extraction, vault movement).
  */
-export const ENTITY_STATUS = {
-    PENDING: 'pending',
-    PROCESSING: 'processing',
-    COMPLETED: 'completed',
-    FAILED: 'failed',
+const ENTITY_STATUS_REGISTRY = {
+    PENDING: { value: 'pending', label: 'Queued for processing', group: 'pending' },
+    PARSING_DOCUMENT: { value: 'parsing_document', label: 'Reading document', group: 'processing' },
+    EXTRACTING_VERBATIM_TEXT: { value: 'extracting_verbatim_text', label: 'Extracting text', group: 'processing' },
+    EXTRACTING_METADATA: { value: 'extracting_metadata', label: 'Extracting metadata', group: 'processing' },
+    EXTRACTING_CRITERIA: { value: 'extracting_criteria', label: 'Extracting criteria', group: 'processing' },
+    MOVING_TO_VAULT: { value: 'moving_to_vault', label: 'Finalizing', group: 'processing' },
+    COMPLETED: { value: 'completed', label: 'Completed', group: 'completed' },
+    FAILED: { value: 'failed', label: 'Failed', group: 'failed' },
+    VECTORIZING_CRITERIA: { value: 'vectorizing_criteria', label: 'Vectorizing criteria', group: 'processing' },
+    MERGING_CRITERIA: { value: 'merging_criteria', label: 'Merging criteria', group: 'processing' },
+    CALCULATING_MATCH_SCORES: { value: 'calculating_match_scores', label: 'Calculating match scores', group: 'processing' },
+    GENERATING_MATCH_SUMMARY: { value: 'generating_match_summary', label: 'Generating match summary', group: 'processing' },
+    GENERATING_MATCH_REPORT: { value: 'generating_match_report', label: 'Generating match report', group: 'processing' }
 } as const;
+
+export const ENTITY_STATUS = {
+    PENDING: ENTITY_STATUS_REGISTRY.PENDING.value,
+    PROCESSING: 'processing',
+    PARSING_DOCUMENT: ENTITY_STATUS_REGISTRY.PARSING_DOCUMENT.value,
+    EXTRACTING_VERBATIM_TEXT: ENTITY_STATUS_REGISTRY.EXTRACTING_VERBATIM_TEXT.value,
+    EXTRACTING_METADATA: ENTITY_STATUS_REGISTRY.EXTRACTING_METADATA.value,
+    EXTRACTING_CRITERIA: ENTITY_STATUS_REGISTRY.EXTRACTING_CRITERIA.value,
+    MOVING_TO_VAULT: ENTITY_STATUS_REGISTRY.MOVING_TO_VAULT.value,
+    COMPLETED: ENTITY_STATUS_REGISTRY.COMPLETED.value,
+    FAILED: ENTITY_STATUS_REGISTRY.FAILED.value,
+    VECTORIZING_CRITERIA: ENTITY_STATUS_REGISTRY.VECTORIZING_CRITERIA.value,
+    MERGING_CRITERIA: ENTITY_STATUS_REGISTRY.MERGING_CRITERIA.value,
+    CALCULATING_MATCH_SCORES: ENTITY_STATUS_REGISTRY.CALCULATING_MATCH_SCORES.value,
+    GENERATING_MATCH_SUMMARY: ENTITY_STATUS_REGISTRY.GENERATING_MATCH_SUMMARY.value,
+    GENERATING_MATCH_REPORT: ENTITY_STATUS_REGISTRY.GENERATING_MATCH_REPORT.value,
+} as const;
+
+export const ENTITY_STATUS_LABELS: Record<EntityStatus, string> =
+    Object.values(ENTITY_STATUS_REGISTRY).reduce((acc, curr) => ({ ...acc, [curr.value]: curr.label }), {} as any);
+
+export const STATUS_GROUPS: Record<string, string[]> = Object.values(ENTITY_STATUS_REGISTRY).reduce((acc, curr) => {
+    if (!acc[curr.group]) acc[curr.group] = [];
+    acc[curr.group].push(curr.value);
+    return acc;
+}, {} as any);
+
+/**
+ * Standardized Status Filter Options
+ * @description Single source of truth for status filtering dropdowns across the application (Requirements, Offerings, Matches).
+ * @responsibility Prevents DRY violations by centralizing the label mapping and order of status filters.
+ * If a new lifecycle state is added to ENTITY_STATUS that requires UI filtering, it must be added here.
+ */
+export const STATUS_FILTER_OPTIONS = [
+    { value: 'all', label: 'All' },
+    { value: 'pending', label: 'Queued' },
+    { value: 'processing', label: 'Processing' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'failed', label: 'Failed' }
+];
 
 /**
  * System Setting Keys
@@ -99,11 +161,12 @@ export const SETTING_KEYS = {
 } as const;
 
 export type EntityStatus = typeof ENTITY_STATUS[keyof typeof ENTITY_STATUS];
-export type EntityRole = typeof ENTITY_ROLES[keyof typeof ENTITY_ROLES];
-export type AiModelRole = typeof AI_MODEL_ROLES[keyof typeof AI_MODEL_ROLES];
-export type FieldType = typeof FIELD_TYPES[keyof typeof FIELD_TYPES];
-export type ToastType = typeof TOAST_TYPES[keyof typeof TOAST_TYPES];
-export type AppEvent = typeof APP_EVENTS[keyof typeof APP_EVENTS];
+type EntityRole = typeof ENTITY_ROLES[keyof typeof ENTITY_ROLES];
+type AiModelRole = typeof AI_MODEL_ROLES[keyof typeof AI_MODEL_ROLES];
+type FieldType = typeof FIELD_TYPES[keyof typeof FIELD_TYPES];
+export type MatchCategory = typeof MATCH_CATEGORIES[keyof typeof MATCH_CATEGORIES];
+type ToastType = typeof TOAST_TYPES[keyof typeof TOAST_TYPES];
+type AppEvent = typeof APP_EVENTS[keyof typeof APP_EVENTS];
 
 /**
  * Base path for API requests.
@@ -136,7 +199,9 @@ export const FETCH_CACHE_MODES = {
  */
 export const UI_CONFIG = {
     PAGINATION: {
-        ITEMS_PER_PAGE: 12
+        ITEMS_PER_PAGE: 12,
+        COMBOBOX_LIMIT: 12,
+        CRITERIA_LIMIT: 200
     },
     ANIMATION: {
         STAGGER_DELAY: 0.05,
@@ -145,3 +210,41 @@ export const UI_CONFIG = {
         EASING_OUT: "easeOut" as const
     }
 } as const;
+
+/**
+ * UI Component Variations
+ * Centralized options for shared UI components to prevent inline unions.
+ */
+export const BUTTON_VARIANTS = {
+    PRIMARY: 'primary',
+    SECONDARY: 'secondary',
+    GHOST: 'ghost',
+    DANGER: 'danger'
+} as const;
+
+export const BUTTON_SIZES = {
+    SM: 'sm',
+    MD: 'md',
+    LG: 'lg',
+    ICON: 'icon'
+} as const;
+
+/**
+ * Queue Task Types
+ * Mirrors backend task names for type-safe queue operations.
+ */
+export const QUEUE_TASKS = {
+    PROCESS_ENTITY_DOCUMENT: 'PROCESS_ENTITY_DOCUMENT',
+    EXTRACT_ENTITY_CRITERIA: 'EXTRACT_ENTITY_CRITERIA',
+    ASSESS_ENTITY_MATCH: 'ASSESS_ENTITY_MATCH'
+} as const;
+
+type QueueTaskType = typeof QUEUE_TASKS[keyof typeof QUEUE_TASKS];
+
+/**
+ * @description Single Source of Truth (SSoT) for all application constants and domain types.
+ * @responsibility Prevents DRY violations and magic strings across the frontend.
+ * @boundary_rules
+ * - ❌ MUST NOT use inline string or number unions in any component or API client.
+ * - ✅ MUST export all application-wide settings, statuses, and roles from here.
+ */

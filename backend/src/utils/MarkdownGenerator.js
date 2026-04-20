@@ -22,6 +22,7 @@ class MarkdownGenerator {
 
     /**
      * Generates a standard markdown document for an entity profile.
+     * Primary output is intended for master.md in the entity vault folder.
      * 
      * @method generateEntityProfile
      * @memberof MarkdownGenerator

@@ -15,12 +15,12 @@
 const express = require('express');
 const router = express.Router();
 
-const SettingController = require('../controllers/SettingController');
+const { settingController } = require('../config/container').getContainer();
 
-router.get('/', SettingController.getAllSettings);
+router.get('/', settingController.getAllSettings);
 
-router.post('/', SettingController.updateSetting);
+router.post('/', settingController.updateSetting);
 
-router.post('/test-ai', SettingController.testAiConnectivity);
+router.post('/test-ai', settingController.testAiConnectivity);
 
 module.exports = router;

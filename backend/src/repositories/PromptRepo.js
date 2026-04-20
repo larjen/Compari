@@ -10,29 +10,37 @@
  * - ❌ MUST NOT interact with the file system or AI.
  */
 
-const db = require('./Database');
-
 class PromptRepo {
+    /**
+     * Creates a new PromptRepo instance.
+     * @constructor
+     * @param {Object} deps - Dependencies object.
+     * @param {Object} deps.db - The database instance.
+     */
+    constructor({ db }) {
+        this.db = db;
+    }
+
     getAllPrompts() {
-        const stmt = db.prepare('SELECT * FROM prompts');
+        const stmt = this.db.prepare('SELECT * FROM prompts');
         const rows = stmt.all();
         return rows.map(row => this._mapRow(row));
     }
 
     getPromptBySystemName(systemName) {
-        const stmt = db.prepare('SELECT * FROM prompts WHERE system_name = ?');
+        const stmt = this.db.prepare('SELECT * FROM prompts WHERE system_name = ?');
         const row = stmt.get(systemName);
         return this._mapRow(row);
     }
 
     getPromptById(id) {
-        const stmt = db.prepare('SELECT * FROM prompts WHERE id = ?');
+        const stmt = this.db.prepare('SELECT * FROM prompts WHERE id = ?');
         const row = stmt.get(id);
         return this._mapRow(row);
     }
 
     updatePrompt(id, promptText) {
-        const stmt = db.prepare('UPDATE prompts SET prompt = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        const stmt = this.db.prepare('UPDATE prompts SET prompt = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
         const result = stmt.run(promptText, id);
         return result.changes > 0;
     }
@@ -50,4 +58,12 @@ class PromptRepo {
     }
 }
 
-module.exports = new PromptRepo();
+/**
+ * @dependency_injection
+ * PromptRepo exports the class constructor rather than an instance.
+ * This enables DI container to instantiate with dependencies.
+ * @param {Object} deps - Dependencies object.
+ * @param {Object} deps.db - The database instance (injected).
+ * Reasoning: Allows runtime configuration and testing via injection.
+ */
+module.exports = PromptRepo;

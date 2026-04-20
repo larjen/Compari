@@ -14,10 +14,10 @@
 const express = require('express');
 const router = express.Router();
 
-const PromptController = require('../controllers/PromptController');
+const { promptController } = require('../config/container').getContainer();
 
-router.get('/', PromptController.getPrompts);
+router.get('/', promptController.getPrompts);
 
-router.put('/:id', PromptController.updatePrompt);
+router.put('/:id', promptController.updatePrompt);
 
 module.exports = router;

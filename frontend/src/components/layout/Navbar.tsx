@@ -3,10 +3,10 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Settings } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Button, CreateButton } from '@/components/ui';
 import { useModal, ModalType } from '@/hooks/useModal';
-import { useBlueprints } from '@/hooks/useBlueprints';
+import { useTerminology } from '@/hooks/useTerminology';
 import { Logo } from '@/components/ui/Logo';
 import { MODAL_TYPES } from '@/lib/constants';
 
@@ -51,23 +51,14 @@ export function Navbar({ isLoading }: NavbarProps) {
   }
 
   const { openModal } = useModal();
-  const { blueprints, loading: blueprintsLoading } = useBlueprints();
-
-  const activeBlueprint = blueprints.find(b => b.is_active) || blueprints[0];
-  const requirementLabelSingular = activeBlueprint?.requirementLabelSingular || 'Requirement';
-  const requirementLabelPlural = activeBlueprint?.requirementLabelPlural || 'Requirements';
-  const offeringLabelSingular = activeBlueprint?.offeringLabelSingular || 'Offering';
-  const offeringLabelPlural = activeBlueprint?.offeringLabelPlural || 'Offerings';
+  const { activeLabels } = useTerminology();
+  const { requirement: { singular: requirementLabelSingular, plural: requirementLabelPlural }, offering: { singular: offeringLabelSingular, plural: offeringLabelPlural } } = activeLabels;
 
   const [isReady, setIsReady] = useState(false);
 
-  const hasDynamicData = !blueprintsLoading && activeBlueprint;
-
   useEffect(() => {
-    if (hasDynamicData || !pathname.includes('/matches/')) {
-      setIsReady(true);
-    }
-  }, [hasDynamicData, pathname]);
+    setIsReady(true);
+  }, [pathname]);
 
   /**
    * Navigation route configuration.
@@ -151,7 +142,7 @@ export function Navbar({ isLoading }: NavbarProps) {
             )}
 
             <Button variant="ghost" size="sm" onClick={() => openModal(MODAL_TYPES.SETTINGS)}>
-              <Settings className="w-4 h-4" />
+              <DOMAIN_ICONS.SETTINGS className="w-4 h-4" />
             </Button>
           </div>
         </div>

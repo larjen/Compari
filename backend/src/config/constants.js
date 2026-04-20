@@ -11,8 +11,7 @@ const path = require('path');
  * This prevents silent failures caused by typos in string literals across the codebase.
  */
 const APP_EVENTS = Object.freeze({
-    ENTITY_UPDATE: 'entityUpdate',
-    MATCH_UPDATE: 'matchUpdate',
+    RESOURCE_STATE_CHANGED: 'resourceStateChanged',
     QUEUE_UPDATE: 'queueUpdate',
     BLUEPRINT_UPDATE: 'blueprintUpdate',
     NOTIFICATION: 'notification',
@@ -34,6 +33,21 @@ const LOG_SYMBOLS = Object.freeze({
 });
 
 const ROOT_DIR = path.join(__dirname, '../../../');
+const HASH_ALGORITHM = 'sha256';
+
+/**
+ * Entity Type Definitions (Class Table Inheritance)
+ * Defines the universal entity types stored in the base_entities registry table.
+ * Used to generate SQL CHECK constraints and identify records in the base table.
+ * @constant
+ * @type {Object.<string, string>}
+ */
+const ENTITY_TYPES = Object.freeze({
+    REQUIREMENT: 'requirement',
+    OFFERING: 'offering',
+    CRITERION: 'criterion',
+    MATCH: 'match'
+});
 
 /**
  * Entity Role Definitions
@@ -94,7 +108,8 @@ const SETTING_KEYS = Object.freeze({
     MODEL_ROUTING_METADATA: 'model_routing_metadata',
     ALLOW_CONCURRENT_AI: 'allow_concurrent_ai',
     OLLAMA_HOST: 'ollama_host',
-    OLLAMA_MODEL: 'ollama_model'
+    OLLAMA_MODEL: 'ollama_model',
+    USE_AI_CACHE: 'use_ai_cache'
 });
 
 /**
@@ -137,6 +152,9 @@ const ERROR_MESSAGES = Object.freeze({
 });
 
 module.exports = {
+    // Hash Configuration
+    HASH_ALGORITHM,
+
     // HTTP Status Codes (NEW)
     HTTP_STATUS,
 
@@ -148,6 +166,9 @@ module.exports = {
 
     // Log Symbols (NEW)
     LOG_SYMBOLS,
+
+    // Entity Types (CTI) (NEW)
+    ENTITY_TYPES,
 
     // Entity Roles (NEW)
     ENTITY_ROLES,
@@ -167,16 +188,17 @@ module.exports = {
      * Renamed from Sources/Targets to Offerings/Requirements to align with 
      * the updated business terminology and entity roles.
      */
-    OFFERINGS_DIR: path.join(ROOT_DIR, 'data', 'Offerings'),
-    REQUIREMENTS_DIR: path.join(ROOT_DIR, 'data', 'Requirements'),
-    TRASHED_DIR: path.join(ROOT_DIR, 'data', 'Trashed'),
-    DB_DIR: path.join(ROOT_DIR, 'data', 'Database'),
-    LOGS_DIR: path.join(ROOT_DIR, 'data', 'logs'),
-    UPLOADS_DIR: path.join(ROOT_DIR, 'data', 'uploads'),
-    DATA_DIR: path.join(ROOT_DIR, 'data'),
-
-    // Match Reports
-    MATCH_REPORTS_DIR: path.join(ROOT_DIR, 'data', 'Match Reports'),
+    DATA_DIR: path.join(ROOT_DIR, 'Data'),
+    VAULT_DIR: path.join(ROOT_DIR, 'Data', 'Vault'),
+    OFFERINGS_DIR: path.join(ROOT_DIR, 'Data', 'Vault', 'Offerings'),
+    REQUIREMENTS_DIR: path.join(ROOT_DIR, 'Data', 'Vault', 'Requirements'),
+    CRITERIA_DIR: path.join(ROOT_DIR, 'Data', 'Vault', 'Criteria'),
+    MATCH_REPORTS_DIR: path.join(ROOT_DIR, 'Data', 'Vault', 'Match Reports'),
+    TRASHED_DIR: path.join(ROOT_DIR, 'Data', 'Trashed'),
+    DB_DIR: path.join(ROOT_DIR, 'Data', 'Database'),
+    LOGS_DIR: path.join(ROOT_DIR, 'Data', 'Logs'),
+    UPLOADS_DIR: path.join(ROOT_DIR, 'Data', 'Uploads'),
+    AI_CACHE_DIR: path.join(ROOT_DIR, '.ai_cache'),
 
     // Log Severity Levels
     LOG_LEVELS: {
@@ -200,7 +222,8 @@ module.exports = {
      * Uses consistent casing to match database seeded values.
      */
     DOCUMENT_TYPES: {
-        ENTITY_PROFILE: 'Entity Profile',
+        MASTER_DOCUMENT: 'Master Document',
+        ENTITY_VERBATIM_EXTRACT: 'Entity verbatim extract',
         EXTRACTED_DATA: 'Extracted Entity Data',
         TARGET_PROFILE: 'Target Profile',
         SUPPORTING_DOC: 'Supporting Document',
@@ -217,8 +240,9 @@ module.exports = {
      * Used by QueueService, TaskListeners, and frontend to enforce strong contracts.
      */
     QUEUE_TASKS: {
-        PROCESS_ENTITY_DOCUMENT: 'PROCESS_ENTITY_DOCUMENT',
+        PROCESS_DOCUMENT: 'PROCESS_DOCUMENT',
         EXTRACT_ENTITY_CRITERIA: 'EXTRACT_ENTITY_CRITERIA',
+        FINALIZE_ENTITY_WORKSPACE: 'FINALIZE_ENTITY_WORKSPACE',
         ASSESS_ENTITY_MATCH: 'ASSESS_ENTITY_MATCH'
     },
 
@@ -242,7 +266,16 @@ module.exports = {
      */
     ENTITY_STATUS: {
         PENDING: 'pending',
-        PROCESSING: 'processing',
+        PARSING_DOCUMENT: 'parsing_document',
+        EXTRACTING_VERBATIM_TEXT: 'extracting_verbatim_text',
+        EXTRACTING_METADATA: 'extracting_metadata',
+        EXTRACTING_CRITERIA: 'extracting_criteria',
+        VECTORIZING_CRITERIA: 'vectorizing_criteria',
+        MERGING_CRITERIA: 'merging_criteria',
+        CALCULATING_MATCH_SCORES: 'calculating_match_scores',
+        GENERATING_MATCH_SUMMARY: 'generating_match_summary',
+        GENERATING_MATCH_REPORT: 'generating_match_report',
+        MOVING_TO_VAULT: 'moving_to_vault',
         COMPLETED: 'completed',
         FAILED: 'failed',
     },

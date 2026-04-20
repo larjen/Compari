@@ -8,10 +8,11 @@
 
 import { ButtonHTMLAttributes, forwardRef } from 'react';
 import { cn } from '@/lib/utils';
+import { ButtonVariant, ButtonSize } from '@/lib/types';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
-  size?: 'sm' | 'md' | 'lg' | 'icon';
+  variant?: ButtonVariant;
+  size?: ButtonSize;
 }
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(

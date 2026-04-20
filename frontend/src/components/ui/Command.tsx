@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Command as CommandPrimitive } from 'cmdk';
-import { Search, X } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { cn } from '@/lib/utils';
 
 const Command = React.forwardRef<
@@ -29,7 +29,7 @@ const CommandInput = React.forwardRef<
   CommandInputProps
 >(({ className, children, ...props }, ref) => (
   <div className="flex items-center border-b border-accent-sand/30 px-3" cmdk-input-wrapper="">
-    <Search className="mr-2 h-4 w-4 shrink-0 text-accent-forest/50" />
+    <DOMAIN_ICONS.SEARCH className="mr-2 h-4 w-4 shrink-0 text-accent-forest/50" />
     <CommandPrimitive.Input
       ref={ref}
       className={cn(

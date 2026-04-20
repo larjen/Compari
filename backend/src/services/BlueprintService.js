@@ -1,32 +1,33 @@
 /**
  * @module BlueprintService
  * @description Domain Service orchestration for Blueprint lifecycle.
- * 
+ *
  * @responsibility
  * - Acts as the generic API for creating, updating, and retrieving blueprints.
  * - Handles aggregation of blueprint fields and dimensions.
  * - Wraps BlueprintRepo to abstract database concepts.
- * 
+ *
  * @boundary_rules
  * - ✅ MAY call Infrastructure Services (EventService) for domain events.
  * - ❌ MUST NOT handle HTTP request/response objects directly.
  * - ❌ MUST NOT contain business rules or workflow logic.
+ *
+ * @dependency_injection
+ * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
  */
-const eventService = require('./EventService');
-const { APP_EVENTS } = require('../config/constants');
+const { APP_EVENTS, HTTP_STATUS } = require('../config/constants');
 
 class BlueprintService {
-    constructor({
-        blueprintRepo
-    } = {}) {
+    /**
+     * @constructor
+     * @param {Object} deps - Dependencies object
+     * @param {Object} deps.blueprintRepo - The BlueprintRepo instance
+     * @param {Object} deps.eventService - The EventService instance
+     * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
+     */
+    constructor({ blueprintRepo, eventService }) {
         this._blueprintRepo = blueprintRepo;
-    }
-
-    get _repo() {
-        if (!this._blueprintRepo) {
-            this._blueprintRepo = require('../repositories/BlueprintRepo');
-        }
-        return this._blueprintRepo;
+        this._eventService = eventService;
     }
 
     /**
@@ -36,7 +37,7 @@ class BlueprintService {
      * @returns {Array<Object>} Array of Blueprint objects.
      */
     getAllBlueprints(role) {
-        return this._repo.getAllBlueprints(role);
+        return this._blueprintRepo.getAllBlueprints(role);
     }
 
     /**
@@ -47,41 +48,28 @@ class BlueprintService {
      * @returns {Object|null} The aggregated blueprint object with fields and dimensions, or null if not found.
      */
     getBlueprintById(id) {
-        return this._repo.getBlueprintById(id);
+        return this._blueprintRepo.getBlueprintById(id);
     }
 
     /**
      * Creates a new blueprint with fields and dimension links atomically.
      * @method createBlueprint
-     * @param {string} name - The blueprint name.
-     * @param {string} requirementLabelSingular - The singular label for requirement (e.g., "Job Listing").
-     * @param {string} requirementLabelPlural - The plural label for requirement (e.g., "Job Listings").
-     * @param {string} offeringLabelSingular - The singular label for offering (e.g., "Candidate").
-     * @param {string} offeringLabelPlural - The plural label for offering (e.g., "Candidates").
-     * @param {string|null} requirementDocTypeLabel - The document type guidance label for requirements.
-     * @param {string|null} offeringDocTypeLabel - The document type guidance label for offerings.
-     * @param {string|null} [description] - The blueprint description.
-     * @param {Array<Object>} fields - Array of field objects {fieldName, fieldType, description, isRequired, entityRole}.
-     * @param {Array<number>} dimensionIds - Array of dimension IDs to link.
+     * @param {Object} dto - Data Transfer Object containing blueprint creation data.
+     * @param {Object} dto.blueprintDto - The blueprint DTO containing name, requirementLabelSingular, requirementLabelPlural, offeringLabelSingular, offeringLabelPlural, requirementDocTypeLabel, offeringDocTypeLabel, description.
+     * @param {Array<Object>} dto.fields - Array of field objects {fieldName, fieldType, description, isRequired, entityRole}.
+     * @param {Array<number>} dto.dimensionIds - Array of dimension IDs to link.
      * @returns {number} The ID of the newly created blueprint.
      */
-    createBlueprint(name, requirementLabelSingular, requirementLabelPlural, offeringLabelSingular, offeringLabelPlural, requirementDocTypeLabel, offeringDocTypeLabel, description, fields, dimensionIds) {
+    createBlueprint({ blueprintDto, fields, dimensionIds }) {
         const blueprintData = {
-            name,
-            requirementLabelSingular,
-            requirementLabelPlural,
-            offeringLabelSingular,
-            offeringLabelPlural,
-            requirementDocTypeLabel,
-            offeringDocTypeLabel,
-            description,
-            isActive: false // Ensures new blueprints are inactive by default
+            ...blueprintDto,
+            isActive: false
         };
 
-        const blueprintId = this._repo.createBlueprint(blueprintData, fields, dimensionIds);
-        
-        eventService.emit(APP_EVENTS.BLUEPRINT_UPDATE, { timestamp: Date.now() });
-        
+        const blueprintId = this._blueprintRepo.createBlueprint({ blueprintData, fieldsData: fields, dimensionIds });
+
+        this._eventService.emit(APP_EVENTS.BLUEPRINT_UPDATE, { timestamp: Date.now() });
+
         return blueprintId;
     }
 
@@ -89,15 +77,16 @@ class BlueprintService {
      * Updates an existing blueprint, replacing its fields and dimension links.
      * Delegates to BlueprintRepo for database operations.
      * @method updateBlueprint
-     * @param {number} id - The blueprint ID to update.
-     * @param {Object} updates - The blueprint updates (name, requirementLabelSingular, requirementLabelPlural, offeringLabelSingular, offeringLabelPlural, requirementDocTypeLabel, offeringDocTypeLabel, description, isActive).
-     * @param {Array<Object>} fields - New array of field objects to replace existing fields.
-     * @param {Array<number>} dimensionIds - New array of dimension IDs to replace existing links.
+     * @param {Object} blueprintUpdateDto - The DTO containing the blueprint update data
+     * @param {number} blueprintUpdateDto.id - The blueprint ID to update
+     * @param {Object} blueprintUpdateDto.blueprintDto - The blueprint DTO containing name, requirementLabelSingular, requirementLabelPlural, offeringLabelSingular, offeringLabelPlural, requirementDocTypeLabel, offeringDocTypeLabel, description, isActive
+     * @param {Array<Object>} blueprintUpdateDto.fields - New array of field objects to replace existing fields
+     * @param {Array<number>} blueprintUpdateDto.dimensionIds - New array of dimension IDs to replace existing links
      * @returns {void}
      */
-    updateBlueprint(id, updates, fields, dimensionIds) {
-        this._repo.updateBlueprint(id, updates, fields, dimensionIds);
-        eventService.emit(APP_EVENTS.BLUEPRINT_UPDATE, { timestamp: Date.now() });
+    updateBlueprint({ id, blueprintDto, fields, dimensionIds }) {
+        this._blueprintRepo.updateBlueprint(id, { blueprintDto, fieldsData: fields, dimensionIds });
+        this._eventService.emit(APP_EVENTS.BLUEPRINT_UPDATE, { timestamp: Date.now() });
     }
 
     /**
@@ -107,20 +96,37 @@ class BlueprintService {
      * @returns {void}
      */
     setActiveBlueprint(id) {
-        this._repo.setActiveBlueprint(id);
-        eventService.emit(APP_EVENTS.BLUEPRINT_UPDATE, { timestamp: Date.now() });
+        this._blueprintRepo.setActiveBlueprint(id);
+        this._eventService.emit(APP_EVENTS.BLUEPRINT_UPDATE, { timestamp: Date.now() });
+    }
+
+    getActiveBlueprint() {
+        return this._blueprintRepo.getActiveBlueprint();
     }
 
     /**
      * Deletes a blueprint by ID.
+     * Validates that the blueprint is not active before deletion.
      * @method deleteBlueprint
      * @param {number} id - The blueprint ID to delete.
-     * @returns {void}
+     * @throws {Error} If the blueprint is active and cannot be deleted.
      */
     deleteBlueprint(id) {
-        this._repo.deleteBlueprint(id);
-        eventService.emit(APP_EVENTS.BLUEPRINT_UPDATE, { timestamp: Date.now() });
+        const blueprint = this._blueprintRepo.getBlueprintById(id);
+        if (!blueprint) {
+            return;
+        }
+
+        if (blueprint.isActive) {
+            const error = new Error('Cannot delete the active blueprint. Please set another blueprint as active first.');
+            error.statusCode = HTTP_STATUS.BAD_REQUEST;
+            error.status = HTTP_STATUS.BAD_REQUEST;
+            throw error;
+        }
+
+        this._blueprintRepo.deleteBlueprint(id);
+        this._eventService.emit(APP_EVENTS.BLUEPRINT_UPDATE, { timestamp: Date.now() });
     }
 }
 
-module.exports = new BlueprintService();
+module.exports = BlueprintService;

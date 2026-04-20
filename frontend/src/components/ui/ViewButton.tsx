@@ -1,14 +1,15 @@
 'use client';
 
-import { Eye } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Button } from './Button';
 import { ButtonHTMLAttributes } from 'react';
+import { ButtonVariant, ButtonSize } from '@/lib/types';
 
 interface ViewButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** The name of the entity being viewed (e.g., "Report", "Document"). Defaults to "Details". */
   entityName?: string;
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
-  size?: 'sm' | 'md' | 'lg' | 'icon';
+  variant?: ButtonVariant;
+  size?: ButtonSize;
 }
 
 /**
@@ -27,7 +28,7 @@ export function ViewButton({
   
   return (
     <Button variant={variant} size={size} className={className} {...props}>
-      <Eye className="w-4 h-4 mr-2 shrink-0" />
+      <DOMAIN_ICONS.VIEW className="w-4 h-4 mr-2 shrink-0" />
       <span className="pr-1 truncate">View {formattedEntity}</span>
     </Button>
   );

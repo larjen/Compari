@@ -1,6 +1,6 @@
 /**
  * @module MatchRepo
- * @description Data Access Layer for `entity_matches` table.
+ * @description Data Access Layer for Match entity using Class Table Inheritance (CTI).
  * * @responsibility
  * - Executes all SQL CRUD queries related to entity matches.
  * - Maps raw SQLite rows into match objects.
@@ -11,103 +11,173 @@
  * - ❌ This layer ONLY handles database operations.
  */
 
-const db = require('./Database');
-const BaseRepository = require('./BaseRepository');
+const BaseEntityRepo = require('./BaseEntityRepo');
 
 /**
  * @class MatchRepo
- * @extends BaseRepository
+ * @extends BaseEntityRepo
  * @description Repository for entity match CRUD operations.
  */
-class MatchRepo extends BaseRepository {
+class MatchRepo extends BaseEntityRepo {
     /**
      * Creates a new MatchRepo instance.
      * @constructor
+     * @param {Object} deps - Dependencies object.
+     * @param {Object} deps.db - The database instance.
      */
-    constructor() {
-        super('entity_matches');
+    constructor({ db }) {
+        super({ db });
     }
+
+    /**
+     * @private
+     * Generates the base SQL SELECT query for match retrieval.
+     * Centralizes the massive CTI JOIN structure to enforce DRY principles.
+     * @param {string} [whereClause=''] - Optional WHERE conditions.
+     * @param {string} [orderBy='ORDER BY em_base.created_at DESC'] - Optional ORDER BY clause.
+     * @returns {string} The constructed SQL query.
+     */
+    _getBaseSelectQuery(whereClause = '', orderBy = 'ORDER BY em_base.created_at DESC') {
+        return `
+            SELECT
+                em_base.id,
+                em_base.entity_type,
+                em_base.entity_type as type,
+                em_base.nicename,
+                em_base.normalized_name,
+                em_base.nice_name_line_1,
+                em_base.nice_name_line_2,
+                em_base.is_busy,
+                em_base.master_file,
+                em_child.requirement_id,
+                em_child.offering_id,
+                em_child.match_score,
+                em_child.report_path,
+                em_base.folder_path,
+                em_base.status,
+                em_base.error,
+                em_base.hash,
+                em_base.created_at,
+                em_base.updated_at,
+                em_base.metadata,
+                re.nicename as requirement_name,
+                re.nice_name_line_1 as requirement_nice_name_line_1,
+                re.nice_name_line_2 as requirement_nice_name_line_2,
+                re.entity_type as requirement_type,
+                re.metadata as requirement_metadata,
+                re.blueprint_id as requirement_blueprint_id,
+                oe.nicename as offering_name,
+                oe.nice_name_line_1 as offering_nice_name_line_1,
+                oe.nice_name_line_2 as offering_nice_name_line_2,
+                oe.entity_type as offering_type,
+                oe.metadata as offering_metadata,
+                oe.blueprint_id as offering_blueprint_id
+            FROM entities_base em_base
+            JOIN entities_match em_child ON em_base.id = em_child.entity_id
+            JOIN entities_base re ON em_child.requirement_id = re.id
+            JOIN entities_base oe ON em_child.offering_id = oe.id
+            ${whereClause ? `WHERE ${whereClause}` : ''}
+            ${orderBy}
+        `;
+    }
+
     /**
      * Retrieves all matches with requirement and offering entity details.
      * @method getAllMatches
      * @returns {Array<Object>} Array of match objects with requirement and offering details.
      * @why_not_base - Requires INNER JOIN with entities table twice (requirement and offering)
      *                 to fetch related entity data in single query.
+     * @socexplanation
+     * - This method uses Class Table Inheritance (CTI) pattern.
+     * - Lifecycle data (id, status, folder_path, error, metadata, timestamps) lives in entities_base.
+     * - Match-specific data (requirement_id, offering_id, match_score, report_path) lives in entities_match.
+     * - The CTI complexity is abstracted here so MatchService receives the same object shape as before.
      */
     getAllMatches() {
-        const stmt = db.prepare(`
-            SELECT 
-                em.*,
-                re.name as requirement_name,
-                re.description as requirement_description,
-                re.type as requirement_type,
-                re.metadata as requirement_metadata,
-                re.blueprint_id as requirement_blueprint_id,
-                oe.name as offering_name,
-                oe.description as offering_description,
-                oe.type as offering_type,
-                oe.metadata as offering_metadata,
-                oe.blueprint_id as offering_blueprint_id
-            FROM entity_matches em
-            JOIN entities re ON em.requirement_id = re.id
-            JOIN entities oe ON em.offering_id = oe.id
-            ORDER BY em.created_at DESC
-        `);
-        const rows = stmt.all();
-        return rows;
+        const stmt = this.db.prepare(this._getBaseSelectQuery());
+        return stmt.all();
     }
 
     /**
      * Retrieves matches with pagination, search, and status filtering.
      * @method getPaginatedMatches
-     * @param {number} limit - Max number of records to return.
-     * @param {number} offset - Number of records to skip.
-     * @param {string} search - Search term for entity names.
-     * @param {string} status - Status filter.
+     * @param {Object} matchQueryDto - The DTO containing query parameters
+     * @param {number} matchQueryDto.limit - Max number of records to return
+     * @param {number} matchQueryDto.offset - Number of records to skip
+     * @param {string} matchQueryDto.search - Search term for entity names
+     * @param {string} matchQueryDto.status - Status filter
      * @returns {Object} Object containing matches array and total count.
      */
-    getPaginatedMatches(limit, offset, search, status) {
+    getPaginatedMatches({ limit, offset, search, status }) {
         let baseQuery = `
-            FROM entity_matches em
-            JOIN entities re ON em.requirement_id = re.id
-            JOIN entities oe ON em.offering_id = oe.id
+            FROM entities_base em_base
+            JOIN entities_match em_child ON em_base.id = em_child.entity_id
+            JOIN entities_base re ON em_child.requirement_id = re.id
+            JOIN entities_base oe ON em_child.offering_id = oe.id
             WHERE 1=1
         `;
         const params = [];
 
         if (search) {
-            baseQuery += ` AND (re.name LIKE ? OR oe.name LIKE ?)`;
+            baseQuery += ` AND (re.nicename LIKE ? OR oe.nicename LIKE ?)`;
             params.push(`%${search}%`, `%${search}%`);
         }
 
         if (status && status !== 'all') {
-            baseQuery += ` AND em.status = ?`;
-            params.push(status);
+            const statusArray = Array.isArray(status) ? status : String(status).split(',');
+            const cleanStatuses = statusArray.map(s => s.trim().toLowerCase()).filter(Boolean);
+
+            if (cleanStatuses.length > 0) {
+                const placeholders = cleanStatuses.map(() => '?').join(', ');
+                baseQuery += ` AND em_base.status IN (${placeholders})`;
+                params.push(...cleanStatuses);
+            }
         }
 
-        const countStmt = db.prepare(`SELECT COUNT(*) as count ${baseQuery}`);
+        const countStmt = this.db.prepare(`SELECT COUNT(*) as count ${baseQuery}`);
         const total = countStmt.get(...params).count;
 
         const dataQuery = `
-            SELECT 
-                em.*,
-                re.name as requirement_name,
-                re.description as requirement_description,
-                re.type as requirement_type,
+            SELECT
+                em_base.id,
+                em_base.entity_type,
+                em_base.entity_type as type,
+                em_base.nicename,
+                em_base.normalized_name,
+                em_base.nice_name_line_1,
+                em_base.nice_name_line_2,
+                em_base.is_busy,
+                em_base.master_file,
+                em_child.requirement_id,
+                em_child.offering_id,
+                em_child.match_score,
+                em_child.report_path,
+                em_base.folder_path,
+                em_base.status,
+                em_base.error,
+                em_base.hash,
+                em_base.created_at,
+                em_base.updated_at,
+                em_base.metadata,
+                re.nicename as requirement_name,
+                re.nice_name_line_1 as requirement_nice_name_line_1,
+                re.nice_name_line_2 as requirement_nice_name_line_2,
+                re.entity_type as requirement_type,
                 re.metadata as requirement_metadata,
                 re.blueprint_id as requirement_blueprint_id,
-                oe.name as offering_name,
-                oe.description as offering_description,
-                oe.type as offering_type,
+                oe.nicename as offering_name,
+                oe.nice_name_line_1 as offering_nice_name_line_1,
+                oe.nice_name_line_2 as offering_nice_name_line_2,
+                oe.entity_type as offering_type,
                 oe.metadata as offering_metadata,
                 oe.blueprint_id as offering_blueprint_id
             ${baseQuery}
-            ORDER BY em.created_at DESC
+            ORDER BY em_base.created_at DESC
             LIMIT ? OFFSET ?
         `;
 
         const dataParams = [...params, limit, offset];
-        const stmt = db.prepare(dataQuery);
+        const stmt = this.db.prepare(dataQuery);
         const matches = stmt.all(...dataParams);
 
         return { matches, total };
@@ -116,48 +186,40 @@ class MatchRepo extends BaseRepository {
     /**
      * Creates a new entity match record.
      * @method createMatch
-     * @param {number} requirementId - The requirement entity ID.
-     * @param {number} offeringId - The offering entity ID.
-     * @param {number|null} matchScore - The computed match score.
-     * @param {string|null} reportPath - Path to the generated match report.
-     * @param {string|null} folderPath - Path to the match folder.
-     * @param {string} [status='pending'] - The match status.
+     * @param {Object} matchDto - The match DTO object.
+     * @param {number} matchDto.requirementId - The requirement entity ID.
+     * @param {number} matchDto.offeringId - The offering entity ID.
+     * @param {number|null} [matchDto.matchScore] - The computed match score.
+     * @param {string|null} [matchDto.reportPath] - Path to the generated match report.
+     * @param {string|null} [matchDto.folderPath] - Path to the match folder.
+     * @param {string} [matchDto.status='pending'] - The match status.
      * @returns {number} The ID of the newly created match record.
-     * @why_not_base - Custom INSERT with specific columns and returns lastInsertRowid.
+     * @socexplanation
+     * - Uses CTI pattern: inserts into entities_base for lifecycle data, then entities_match for specific data.
+     * - Transaction ensures atomicity - both inserts succeed or fail together.
+     * - Returns the same ID that MatchService expects, hiding the CTI structure from the Service layer.
      */
-    createMatch(requirementId, offeringId, matchScore, reportPath, folderPath, status = 'pending') {
-        const stmt = db.prepare(`
-            INSERT INTO entity_matches (requirement_id, offering_id, match_score, report_path, folder_path, status)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `);
-        const info = stmt.run(requirementId, offeringId, matchScore || null, reportPath || null, folderPath || null, status);
-        return info.lastInsertRowid;
-    }
+    createMatch(matchDto) {
+        const { requirementId, offeringId, matchScore, reportPath, folderPath, status = 'pending', hash, nicename = 'Match', niceNameLine1 = 'Unknown', niceNameLine2 = 'Unknown' } = matchDto;
 
-    /**
-     * Updates the status for an existing match.
-     * @method updateMatchStatus
-     * @param {number} id - The match record ID.
-     * @param {string} status - The new status ('pending', 'processing', 'completed', 'failed').
-     * @returns {void}
-     * @why_not_base - Custom UPDATE with specific column targeting and timestamp.
-     */
-    updateMatchStatus(id, status) {
-        const stmt = db.prepare('UPDATE entity_matches SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
-        stmt.run(status, id);
-    }
+        const executeTransaction = this.db.transaction(() => {
+            const baseStmt = this.db.prepare(`
+                INSERT INTO entities_base (entity_type, nicename, normalized_name, nice_name_line_1, nice_name_line_2, folder_path, status, hash)
+                VALUES ('match', ?, 'match', ?, ?, ?, ?, ?)
+            `);
+            const baseInfo = baseStmt.run(nicename, niceNameLine1, niceNameLine2, folderPath || null, status, hash || null);
+            const entityId = baseInfo.lastInsertRowid;
 
-    /**
-     * Updates the error for an existing match.
-     * @method updateMatchError
-     * @param {number} id - The match record ID.
-     * @param {string|null} error - The error message.
-     * @returns {void}
-     * @why_not_base - Custom UPDATE with specific column targeting and timestamp.
-     */
-    updateMatchError(id, error) {
-        const stmt = db.prepare('UPDATE entity_matches SET error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
-        stmt.run(error, id);
+            const childStmt = this.db.prepare(`
+                INSERT INTO entities_match (entity_id, requirement_id, offering_id, match_score, report_path)
+                VALUES (?, ?, ?, ?, ?)
+            `);
+            childStmt.run(entityId, requirementId, offeringId, matchScore || null, reportPath || null);
+
+            return entityId;
+        });
+
+        return executeTransaction();
     }
 
     /**
@@ -168,20 +230,8 @@ class MatchRepo extends BaseRepository {
      * @why_not_base - Requires JOIN with entities table to fetch offering entity details.
      */
     getMatchesForRequirement(requirementId) {
-        const stmt = db.prepare(`
-            SELECT em.*,
-                oe.name as offering_name,
-                oe.description as offering_description,
-                oe.type as offering_type,
-                oe.metadata as offering_metadata,
-                oe.blueprint_id as offering_blueprint_id
-            FROM entity_matches em
-            JOIN entities oe ON em.offering_id = oe.id
-            WHERE em.requirement_id = ?
-            ORDER BY em.created_at DESC
-        `);
-        const rows = stmt.all(requirementId);
-        return rows;
+        const stmt = this.db.prepare(this._getBaseSelectQuery('em_child.requirement_id = ?'));
+        return stmt.all(requirementId);
     }
 
     /**
@@ -192,20 +242,8 @@ class MatchRepo extends BaseRepository {
      * @why_not_base - Requires JOIN with entities table to fetch requirement entity details.
      */
     getMatchesForOffering(offeringId) {
-        const stmt = db.prepare(`
-            SELECT em.*,
-                re.name as requirement_name,
-                re.description as requirement_description,
-                re.type as requirement_type,
-                re.metadata as requirement_metadata,
-                re.blueprint_id as requirement_blueprint_id
-            FROM entity_matches em
-            JOIN entities re ON em.requirement_id = re.id
-            WHERE em.offering_id = ?
-            ORDER BY em.created_at DESC
-        `);
-        const rows = stmt.all(offeringId);
-        return rows;
+        const stmt = this.db.prepare(this._getBaseSelectQuery('em_child.offering_id = ?'));
+        return stmt.all(offeringId);
     }
 
 
@@ -218,25 +256,8 @@ class MatchRepo extends BaseRepository {
      * @why_not_base - Requires INNER JOIN with entities table twice for composite key lookup.
      */
     getMatchByRequirementAndOffering(requirementId, offeringId) {
-        const stmt = db.prepare(`
-            SELECT em.*,
-                re.name as requirement_name,
-                re.description as requirement_description,
-                re.type as requirement_type,
-                re.metadata as requirement_metadata,
-                re.blueprint_id as requirement_blueprint_id,
-                oe.name as offering_name,
-                oe.description as offering_description,
-                oe.type as offering_type,
-                oe.metadata as offering_metadata,
-                oe.blueprint_id as offering_blueprint_id
-            FROM entity_matches em
-            JOIN entities re ON em.requirement_id = re.id
-            JOIN entities oe ON em.offering_id = oe.id
-            WHERE em.requirement_id = ? AND em.offering_id = ?
-        `);
-        const row = stmt.get(requirementId, offeringId);
-        return row;
+        const stmt = this.db.prepare(this._getBaseSelectQuery('em_child.requirement_id = ? AND em_child.offering_id = ?', ''));
+        return stmt.get(requirementId, offeringId);
     }
 
     /**
@@ -247,24 +268,7 @@ class MatchRepo extends BaseRepository {
      * @why_not_base - Requires INNER JOIN with entities table twice to fetch related entity details.
      */
     getMatchById(id) {
-        const stmt = db.prepare(`
-            SELECT 
-                em.*,
-                re.name as requirement_name,
-                re.description as requirement_description,
-                re.type as requirement_type,
-                re.metadata as requirement_metadata,
-                re.blueprint_id as requirement_blueprint_id,
-                oe.name as offering_name,
-                oe.description as offering_description,
-                oe.type as offering_type,
-                oe.metadata as offering_metadata,
-                oe.blueprint_id as offering_blueprint_id
-            FROM entity_matches em
-            JOIN entities re ON em.requirement_id = re.id
-            JOIN entities oe ON em.offering_id = oe.id
-            WHERE em.id = ?
-        `);
+        const stmt = this.db.prepare(this._getBaseSelectQuery('em_base.id = ?', ''));
         return stmt.get(id);
     }
 
@@ -273,12 +277,14 @@ class MatchRepo extends BaseRepository {
      * @method updateMatchScore
      * @param {number} id - The match record ID.
      * @param {number} matchScore - The new match score.
-     * @returns {void}
-     * @why_not_base - Custom UPDATE with specific column targeting.
+     * @returns {boolean} True if the row was updated.
      */
     updateMatchScore(id, matchScore) {
-        const stmt = db.prepare('UPDATE entity_matches SET match_score = ? WHERE id = ?');
-        stmt.run(matchScore, id);
+        const stmt = this.db.prepare(`
+            UPDATE entities_match SET match_score = ? WHERE entity_id = ?
+        `);
+        const info = stmt.run(matchScore, id);
+        return info.changes > 0;
     }
 
     /**
@@ -286,29 +292,14 @@ class MatchRepo extends BaseRepository {
      * @method updateReportPath
      * @param {number} id - The match record ID.
      * @param {string} reportPath - The new report path.
-     * @returns {void}
-     * @why_not_base - Custom UPDATE with specific column targeting.
+     * @returns {boolean} True if the row was updated.
      */
     updateReportPath(id, reportPath) {
-        const stmt = db.prepare('UPDATE entity_matches SET report_path = ? WHERE id = ?');
-        stmt.run(reportPath, id);
-    }
-
-    /**
-     * Updates the folder path for an existing match.
-     * @method updateFolderPath
-     * @param {number} id - The match record ID.
-     * @param {string} folderPath - The new folder path.
-     * @returns {void}
-     * 
-     * @socexplanation
-     * - Delegates DB updates to the Repository to maintain strict data-access boundaries.
-     * - Workflows and Services MUST NOT execute raw SQL; they must use Repository methods.
-     * - This ensures centralized data access control and prevents boundary violations.
-     */
-    updateFolderPath(id, folderPath) {
-        const stmt = db.prepare('UPDATE entity_matches SET folder_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
-        stmt.run(folderPath, id);
+        const stmt = this.db.prepare(`
+            UPDATE entities_match SET report_path = ? WHERE entity_id = ?
+        `);
+        const info = stmt.run(reportPath, id);
+        return info.changes > 0;
     }
 
     /**
@@ -319,8 +310,10 @@ class MatchRepo extends BaseRepository {
      * @why_not_base - Custom DELETE that may have cascade behavior (kept in child for explicit control).
      */
     deleteMatch(id) {
-        const stmt = db.prepare('DELETE FROM entity_matches WHERE id = ?');
+        const stmt = this.db.prepare('DELETE FROM entities_match WHERE entity_id = ?');
         stmt.run(id);
+        const baseStmt = this.db.prepare('DELETE FROM entities_base WHERE id = ?');
+        baseStmt.run(id);
     }
 
     /**
@@ -331,7 +324,9 @@ class MatchRepo extends BaseRepository {
      * @why_not_base - Custom DELETE with specific column targeting (requirement_id).
      */
     deleteMatchesForRequirement(requirementId) {
-        const stmt = db.prepare('DELETE FROM entity_matches WHERE requirement_id = ?');
+        const stmt = this.db.prepare(`
+            DELETE FROM entities_match WHERE requirement_id = ?
+        `);
         stmt.run(requirementId);
     }
 
@@ -343,7 +338,9 @@ class MatchRepo extends BaseRepository {
      * @why_not_base - Custom DELETE with specific column targeting (offering_id).
      */
     deleteMatchesForOffering(offeringId) {
-        const stmt = db.prepare('DELETE FROM entity_matches WHERE offering_id = ?');
+        const stmt = this.db.prepare(`
+            DELETE FROM entities_match WHERE offering_id = ?
+        `);
         stmt.run(offeringId);
     }
 
@@ -356,62 +353,26 @@ class MatchRepo extends BaseRepository {
      * @why_not_base - Requires JOIN with entities table to fetch entity names.
      */
     getMatchesByStatus(status) {
-        const stmt = db.prepare(`
-            SELECT em.*,
-                re.name as requirement_name,
-                oe.name as offering_name
-            FROM entity_matches em
-            JOIN entities re ON em.requirement_id = re.id
-            JOIN entities oe ON em.offering_id = oe.id
-            WHERE em.status = ?
-            ORDER BY em.created_at DESC
-        `);
-        const rows = stmt.all(status);
-        return rows;
+        const stmt = this.db.prepare(this._getBaseSelectQuery('em_base.status = ?'));
+        return stmt.all(status);
     }
 
     /**
-     * Registers a document record for a match.
-     * @method registerDocumentRecord
-     * @param {number} matchId - The match ID.
-     * @param {string} docType - The document type (e.g., 'Match Report', 'General Summary', 'Dimension Summary').
-     * @param {string} fileName - The document filename.
-     * @param {string} filePath - The full path to the document file.
-     * @returns {number} The ID of the newly created document record.
-     * @why_not_base - Custom INSERT for match_documents table to track match-generated files.
-     * @socexplanation
-     * - Brings Matches into parity with Entity document tracking.
-     * - Enables DB-backed file retrieval instead of dynamic folder reading.
+     * Retrieves matches stuck in any active processing state.
+     * @returns {Array<Object>}
      */
-    registerDocumentRecord(matchId, docType, fileName, filePath) {
-        const stmt = db.prepare(`
-            INSERT INTO match_documents (match_id, doc_type, file_name, file_path)
-            VALUES (?, ?, ?, ?)
-        `);
-        const info = stmt.run(matchId, docType, fileName, filePath);
-        return info.lastInsertRowid;
-    }
-
-    /**
-     * Retrieves all document records for a specific match.
-     * @method getDocumentsForMatch
-     * @param {number} matchId - The match ID.
-     * @returns {Array<Object>} Array of document records with id, match_id, doc_type, file_name, file_path.
-     * @why_not_base - Custom SELECT from match_documents table.
-     * @socexplanation
-     * - Enables DB-backed file retrieval instead of dynamic folder reading.
-     * - Returns raw database records for mapping in the Service layer.
-     */
-    getDocumentsForMatch(matchId) {
-        const stmt = db.prepare(`
-            SELECT id, match_id, doc_type, file_name, file_path
-            FROM match_documents
-            WHERE match_id = ?
-            ORDER BY id ASC
-        `);
-        const rows = stmt.all(matchId);
-        return rows;
+    getStuckMatches() {
+        const stmt = this.db.prepare(this._getBaseSelectQuery("em_base.status NOT IN ('pending', 'completed', 'failed')"));
+        return stmt.all();
     }
 }
 
-module.exports = new MatchRepo();
+/**
+ * @dependency_injection
+ * MatchRepo exports the class constructor rather than an instance.
+ * This enables DI container to instantiate with dependencies.
+ * @param {Object} deps - Dependencies object.
+ * @param {Object} deps.db - The database instance (injected).
+ * Reasoning: Allows runtime configuration and testing via injection.
+ */
+module.exports = MatchRepo;

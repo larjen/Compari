@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import ReactMarkdown from 'react-markdown';
 import { ContentLoader } from '@/components/shared/PageStates';
+import { useLogFetcher } from '@/hooks/useLogFetcher';
 
 const browserStandardStyles = `
   .browser-standard-mono {
@@ -44,65 +45,7 @@ function LogViewerContent() {
   const fileUrl = searchParams.get('fileUrl');
   const fileName = searchParams.get('fileName');
 
-  const [logs, setLogs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!fileUrl) {
-      setError("No log file URL provided.");
-      return;
-    }
-
-    let isMounted = true;
-    setLoading(true);
-    setError(null);
-
-    fetch(fileUrl)
-      .then((res) => {
-        if (!res.ok) throw new Error('Failed to fetch log file');
-        return res.text();
-      })
-      .then((text) => {
-        if (!isMounted) return;
-
-        const isJsonl = fileName?.toLowerCase().endsWith('.jsonl');
-        const isMd = fileName?.toLowerCase().endsWith('.md');
-        const isTxt = fileName?.toLowerCase().endsWith('.txt');
-
-        if (isJsonl) {
-          const parsedLogs = text
-            .split('\n')
-            .filter((line) => line.trim() !== '')
-            .map((line) => {
-              try { return JSON.parse(line); } 
-              catch (e) { return { unparseable: line }; }
-            });
-          setLogs(parsedLogs);
-        } else if (isMd) {
-          setLogs([{ type: 'markdown', content: text }]);
-        } else if (isTxt) {
-          setLogs([{ type: 'text', content: text }]);
-        } else {
-          try {
-            const parsedData = JSON.parse(text);
-            setLogs([parsedData]);
-          } catch (e) {
-            setLogs([{ unparseable: text }]);
-          }
-        }
-      })
-      .catch((err) => {
-        if (isMounted) setError(err.message);
-      })
-      .finally(() => {
-        if (isMounted) setLoading(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [fileUrl]);
+  const { logs, loading, error } = useLogFetcher(fileUrl, fileName);
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
@@ -114,12 +57,12 @@ function LogViewerContent() {
         <div className="space-y-6">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20 text-accent-forest/50">
-              <Loader2 className="w-8 h-8 animate-spin mb-4" />
+              <DOMAIN_ICONS.LOADING className="w-8 h-8 animate-spin mb-4" />
               <p>Loading and parsing log file...</p>
             </div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center py-20 text-red-500">
-              <AlertCircle className="w-8 h-8 mb-4" />
+              <DOMAIN_ICONS.ERROR className="w-8 h-8 mb-4" />
               <p>{error}</p>
             </div>
           ) : logs.length === 0 ? (
@@ -127,7 +70,6 @@ function LogViewerContent() {
               <p>File is empty.</p>
             </div>
           ) : fileName?.toLowerCase().endsWith('.md') ? (
-            /* STANDARD BROWSER MONO VIEW */
             <div className="bg-transparent p-0">
                <style>{browserStandardStyles}</style>
                <div className="browser-standard-mono text-xs">

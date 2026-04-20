@@ -14,8 +14,8 @@
 const express = require('express');
 const router = express.Router();
 
-const EventController = require('../controllers/EventController');
+const { eventController } = require('../config/container').getContainer();
 
-router.get('/', EventController.streamEvents);
+router.get('/', eventController.streamEvents);
 
 module.exports = router;

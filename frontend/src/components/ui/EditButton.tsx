@@ -1,14 +1,15 @@
 'use client';
 
-import { Pencil } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Button } from './Button';
 import { ButtonHTMLAttributes } from 'react';
+import { ButtonVariant, ButtonSize } from '@/lib/types';
 
 interface EditButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** The name of the entity being edited (e.g., "Model", "Blueprint") */
   entityName: string;
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
-  size?: 'sm' | 'md' | 'lg' | 'icon';
+  variant?: ButtonVariant;
+  size?: ButtonSize;
 }
 
 /**
@@ -21,7 +22,7 @@ export function EditButton({ entityName, variant = 'secondary', size = 'md', cla
   
   return (
     <Button variant={variant} size={size} className={className} {...props}>
-      <Pencil className="w-4 h-4 mr-2 shrink-0" />
+      <DOMAIN_ICONS.EDIT className="w-4 h-4 mr-2 shrink-0" />
       <span className="pr-1 truncate">Edit {formattedEntity}</span>
     </Button>
   );

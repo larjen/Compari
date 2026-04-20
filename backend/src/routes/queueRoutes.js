@@ -14,8 +14,8 @@
 const express = require('express');
 const router = express.Router();
 
-const QueueController = require('../controllers/QueueController');
+const { queueController } = require('../config/container').getContainer();
 
-router.get('/status', QueueController.getQueueStatus);
+router.get('/status', queueController.getQueueStatus);
 
 module.exports = router;

@@ -1,116 +1,71 @@
 /**
  * @module DimensionController
  * @description HTTP Controller for handling dimension requests.
+ * Extends BaseCrudController to inherit standard CRUD operations.
  * @responsibility
  * - Extract HTTP parameters from requests.
  * - Delegate business logic to DimensionService.
  * - Format and return HTTP responses.
+ * - Provide custom methods for dimension-specific operations (getActive, toggleActive).
  * @boundary_rules
  * - ❌ MUST NOT contain business logic.
  * - ❌ MUST NOT interact directly with Repositories.
  * - ✅ All business logic MUST be delegated to Services.
  * - ✅ All errors MUST be passed to next(error) for centralized handling.
+ *
+ * @dependency_injection
+ * Services are injected via the constructor using Constructor Injection pattern.
  */
-const dimensionService = require('../services/DimensionService');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const { HTTP_STATUS } = require('../config/constants');
+const BaseCrudController = require('./BaseCrudController');
 
-class DimensionController {
+class DimensionController extends BaseCrudController {
+    /**
+     * @constructor
+     * @param {Object} deps - Dependencies object
+     * @param {Object} deps.dimensionService - The DimensionService instance
+     * @dependency_injection Dependencies are injected via the constructor.
+     */
+    constructor({ dimensionService }) {
+        super({
+            service: dimensionService,
+            entityName: 'Dimension',
+            methodMap: {
+                getAll: 'getAllDimensions',
+                getById: 'getDimensionById',
+                create: 'createDimension',
+                update: 'updateDimension',
+                delete: 'deleteDimension'
+            }
+        });
+        this._dimensionService = dimensionService;
+    }
+
     /**
      * GET /api/dimensions/active
      * Retrieves all active dimensions.
      */
-    static getActive = asyncHandler(async (req, res) => {
-        const dimensions = dimensionService.getActiveDimensions();
+    getActive = asyncHandler(async (req, res) => {
+        const dimensions = this._dimensionService.getActiveDimensions();
         res.json({ dimensions });
-    });
-
-    /**
-     * GET /api/dimensions
-     * Retrieves all dimensions.
-     */
-    static getAll = asyncHandler(async (req, res) => {
-        const dimensions = dimensionService.getAllDimensions();
-        res.json({ dimensions });
-    });
-
-    /**
-     * GET /api/dimensions/:id
-     * Retrieves a single dimension by ID.
-     */
-    static getById = asyncHandler(async (req, res) => {
-        const dimension = dimensionService.getDimensionById(parseInt(req.params.id));
-        if (!dimension) {
-            throw new AppError('Dimension not found', HTTP_STATUS.NOT_FOUND);
-        }
-        res.json({ dimension });
-    });
-
-    /**
-     * POST /api/dimensions
-     * Creates a new dimension.
-     */
-    static create = asyncHandler(async (req, res) => {
-        const { name, displayName, requirementInstruction, offeringInstruction, isActive, weight } = req.body;
-        const dimensionId = dimensionService.createDimension(name, displayName, requirementInstruction, offeringInstruction, isActive, weight);
-        res.status(HTTP_STATUS.CREATED).json({ success: true, dimensionId });
-    });
-
-    /**
-     * PUT /api/dimensions/:id
-     * Updates an existing dimension.
-     */
-    static update = asyncHandler(async (req, res) => {
-        const id = parseInt(req.params.id);
-        const { displayName, requirementInstruction, offeringInstruction, isActive, weight } = req.body;
-        
-        const existing = dimensionService.getDimensionById(id);
-        if (!existing) {
-            throw new AppError('Dimension not found', HTTP_STATUS.NOT_FOUND);
-        }
-
-        const updates = {};
-        if (displayName !== undefined) updates.displayName = displayName;
-        if (requirementInstruction !== undefined) updates.requirementInstruction = requirementInstruction;
-        if (offeringInstruction !== undefined) updates.offeringInstruction = offeringInstruction;
-        if (isActive !== undefined) updates.isActive = isActive;
-        if (weight !== undefined) updates.weight = weight;
-
-        dimensionService.updateDimension(id, updates);
-        res.json({ success: true, message: 'Dimension updated' });
-    });
-
-    /**
-     * DELETE /api/dimensions/:id
-     * Deletes a dimension by ID.
-     */
-    static delete = asyncHandler(async (req, res) => {
-        const id = parseInt(req.params.id);
-        
-        const existing = dimensionService.getDimensionById(id);
-        if (!existing) {
-            throw new AppError('Dimension not found', HTTP_STATUS.NOT_FOUND);
-        }
-
-        dimensionService.deleteDimension(id);
-        res.json({ success: true, message: 'Dimension deleted successfully' });
     });
 
     /**
      * PATCH /api/dimensions/:id/toggle
      * Toggles the active status of a dimension.
      */
-    static toggleActive = asyncHandler(async (req, res) => {
+    toggleActive = asyncHandler(async (req, res) => {
         const id = parseInt(req.params.id);
-        
-        const existing = dimensionService.getDimensionById(id);
+
+        const existing = this._dimensionService.getDimensionById(id);
         if (!existing) {
             throw new AppError('Dimension not found', HTTP_STATUS.NOT_FOUND);
         }
 
         const newStatus = !existing.isActive;
-        dimensionService.setDimensionActive(id, newStatus);
+        this._dimensionService.setDimensionActive(id, newStatus);
         res.json({ success: true, isActive: newStatus });
     });
 }

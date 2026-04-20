@@ -11,6 +11,7 @@
  * - All requests go through the REST API endpoints.
  */
 import { Dimension } from '../types';
+import { HTTP_METHODS } from '../constants';
 import { fetchWrapper } from './apiClient';
 
 export interface CreateDimensionData {
@@ -70,7 +71,7 @@ export const dimensionApi = {
    */
   async createDimension(data: CreateDimensionData): Promise<number> {
     const response = await fetchWrapper<{ dimensionId: number }>('/dimensions', {
-      method: 'POST',
+      method: HTTP_METHODS.POST,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
@@ -86,8 +87,7 @@ export const dimensionApi = {
    */
   async updateDimension(id: number, data: UpdateDimensionData): Promise<void> {
     return fetchWrapper(`/dimensions/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      method: HTTP_METHODS.PUT,
       body: JSON.stringify(data),
     });
   },
@@ -99,7 +99,7 @@ export const dimensionApi = {
    * @throws {Error} If the request fails.
    */
   async deleteDimension(id: number): Promise<void> {
-    return fetchWrapper(`/dimensions/${id}`, { method: 'DELETE' });
+    return fetchWrapper(`/dimensions/${id}`, { method: HTTP_METHODS.DELETE });
   },
 
   /**
@@ -110,7 +110,7 @@ export const dimensionApi = {
    */
   async toggleActive(id: number): Promise<boolean> {
     const data = await fetchWrapper<{ success: boolean; isActive: boolean }>(`/dimensions/${id}/toggle`, {
-      method: 'PATCH',
+      method: HTTP_METHODS.PATCH,
     });
     return data.isActive;
   },

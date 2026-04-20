@@ -74,50 +74,7 @@ function _formatMatch(match) {
  * @param {Object} rawComparison - The raw comparison object from MatchingEngine.
  * @returns {Object} Structured report matching the target JSON schema.
  */
-function generateGeneralAiReport(rawComparison) {
-    if (!rawComparison) {
-        return {
-            context: { requirement_name: null, offering_name: null, match_score: null },
-            analysis: { type: "general", name: "overall_summary", weight: 1.0, perfect_matches: [], partial_matches: [], missing_requirements: [] }
-        };
-    }
 
-    const reportInfo = rawComparison.reportInfo || {};
-    const requirementName = reportInfo.requirement?.name || null;
-    const offeringName = reportInfo.offering?.name || null;
-    const matchScore = reportInfo.metrics?.score !== undefined ? reportInfo.metrics.score : 0;
-
-    const perfectMatches = [];
-    const partialMatches = [];
-    const missingRequirements = [];
-
-    // Dynamically collect matches from all dimensions to feed the LLM a global view
-    const keysToSkip = ['reportInfo'];
-    for (const [key, value] of Object.entries(rawComparison)) {
-        if (keysToSkip.includes(key) || !value || typeof value !== 'object') continue;
-        
-        if (value.perfectMatch) perfectMatches.push(...value.perfectMatch.map(_formatMatch).filter(Boolean));
-        if (value.partialMatch) partialMatches.push(...value.partialMatch.map(_formatMatch).filter(Boolean));
-        if (value.missedMatch) missingRequirements.push(...value.missedMatch.map(_formatMatch).filter(Boolean));
-    }
-
-    return {
-        context: {
-            requirement_name: requirementName,
-            offering_name: offeringName,
-            match_score: matchScore,
-            formula_breakdown: reportInfo.metrics?.formula || null // Give the LLM access to the formula
-        },
-        analysis: {
-            type: "general",
-            name: "overall_summary",
-            weight: 1.0,
-            perfect_matches: perfectMatches,
-            partial_matches: partialMatches,
-            missing_requirements: missingRequirements
-        }
-    };
-}
 
 /**
  * Transforms raw comparison data into dimension-specific structured reports for LLM summarization.
@@ -125,7 +82,7 @@ function generateGeneralAiReport(rawComparison) {
  * Iterates over each dimension key (excluding reportInfo and allDimensions), extracting dimension-specific
  * scores, weights, and match arrays. Each dimension report maintains the same schema structure as the
  * general report, enabling consistent LLM processing across all analysis levels.
- * 
+ * @public
  * @param {Object} rawComparison - The raw comparison object from MatchingEngine with grouped structure.
  * @param {Object} rawComparison.reportInfo - Contains overall score and metadata.
  * @param {Object} rawComparison[dimensionKey].metrics - Contains dimension-specific score and weight.
@@ -215,4 +172,4 @@ function generateDimensionalAiReports(rawComparison) {
     return result;
 }
 
-module.exports = { generateGeneralAiReport, generateDimensionalAiReports };
+module.exports = { generateDimensionalAiReports };

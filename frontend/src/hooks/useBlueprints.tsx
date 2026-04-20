@@ -6,7 +6,7 @@ import { useSSE } from './useSSE';
 import { blueprintApi, CreateBlueprintData, UpdateBlueprintData } from '@/lib/api/blueprintApi';
 import { Blueprint } from '@/lib/types';
 
-export interface UseBlueprintsReturn {
+interface UseBlueprintsReturn {
   blueprints: Blueprint[];
   loading: boolean;
   error: string | null;

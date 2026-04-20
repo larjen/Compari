@@ -1,31 +1,43 @@
 /**
  * @module EventController
  * @description HTTP Controller responsible for handling HTTP requests related to Server-Sent Events (SSE).
- * 
+ *
  * @responsibility
  * - Establish SSE connection with client.
  * - Subscribe to EventService events and forward them to the client.
  * - Handle keep-alive heartbeats.
  * - Clean up resources on connection close.
  * - Format and return SSE responses.
- * 
+ *
  * @boundary_rules
  * - ❌ MUST NOT contain business logic for events.
  * - ❌ MUST NOT interact directly with Repositories.
  * - ✅ All event data MUST come from EventService.
  * - ✅ SSE formatting and connection management is the sole responsibility of this controller.
+ *
+ * @dependency_injection
+ * Services are injected via the constructor using Constructor Injection pattern.
+ * This replaces the previous static/service-locator anti-pattern.
  */
-
-const eventService = require('../services/EventService');
 
 class EventController {
     /**
+     * @constructor
+     * @param {Object} deps - Dependencies object
+     * @param {Object} deps.eventService - The EventService instance
+     */
+    constructor({ eventService }) {
+        this._eventService = eventService;
+    }
+
+    /**
      * @description Establishes an SSE connection with the client, subscribes to EventService events,
      * and forwards them to the client with strict JSON serialization guarantees.
+     * Arrow function to preserve lexical `this` binding when invoked by Express.
      * @param {Object} req - Express request object
      * @param {Object} res - Express response object
      */
-    static streamEvents(req, res) {
+    streamEvents = (req, res) => {
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
@@ -49,7 +61,7 @@ class EventController {
             sendEvent(eventName, data);
         };
 
-        eventService.subscribe(clientCallback);
+        this._eventService.subscribe(clientCallback);
 
         const keepAlive = setInterval(() => {
             res.write(':\n\n');
@@ -57,7 +69,7 @@ class EventController {
 
         req.on('close', () => {
             clearInterval(keepAlive);
-            eventService.unsubscribe(clientCallback);
+            this._eventService.unsubscribe(clientCallback);
             res.end();
         });
     }

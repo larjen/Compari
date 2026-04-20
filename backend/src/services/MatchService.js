@@ -1,50 +1,67 @@
 /**
  * @module MatchService
- * @description Domain Service for match management - acts as the domain boundary between Controllers and Repositories.
- * 
+ * @description Domain Service for match management - handles match data access and match folder I/O.
+ *
  * @responsibility
  * - Wraps MatchRepo to provide a clean API for match data access.
  * - Translates repository data into domain models suitable for Controllers.
  * - Encapsulates all match-related data access behind this service layer.
  * - Handles file system operations for match folder creation and deletion.
- * 
+ * - Manages document records associated with matches.
+ *
  * @boundary_rules
  * - ✅ MAY call Repositories (MatchRepo).
  * - ✅ MAY call Infrastructure Services (FileService).
- * * - ❌ MUST NOT handle HTTP request/response objects directly.
+ * - ✅ MAY emit events via EventService.
+ * - ❌ MUST NOT handle HTTP request/response objects directly.
  * - ❌ MUST NOT contain business logic or workflow orchestration.
- * - ❌ MUST NOT emit events directly (use EventService if needed).
- * 
+ * - ❌ MUST NOT handle PDF generation or match evaluation (delegated to MatchAnalyticsWorkflow).
+ *
  * @socexplanation
  * - The Match domain acts as the sole aggregate root where source and target entities interact, maintaining strict domain isolation.
+ * - PDF generation and fast vector evaluations have been extracted to MatchAnalyticsWorkflow to resolve God Class code smell.
+ *
+ * @dependency_injection
+ * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
  */
 
-const matchRepo = require('../repositories/MatchRepo');
-const entityRepo = require('../repositories/EntityRepo');
-const criteriaRepo = require('../repositories/CriteriaRepo');
-const dimensionRepo = require('../repositories/DimensionRepo');
-const MatchingEngine = require('../utils/MatchingEngine');
-const FileService = require('./FileService');
-const logService = require('./LogService');
-const SettingsManager = require('../config/SettingsManager');
-const { TRASHED_DIR, QUEUE_TASKS, ENTITY_ROLES, APP_EVENTS, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
+const { TRASHED_DIR, ENTITY_ROLES, APP_EVENTS, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 const path = require('path');
-const eventService = require('./EventService');
-const queueService = require('./QueueService');
+const BaseEntityService = require('./BaseEntityService');
+const HashGenerator = require('../utils/HashGenerator');
 
-class MatchService {
+class MatchService extends BaseEntityService {
+    /**
+     * @constructor
+     * @param {Object} deps - Dependencies object
+     * @param {Object} deps.matchRepo - The MatchRepo instance
+     * @param {Object} deps.fileService - The FileService instance
+     * @param {Object} deps.logService - The LogService instance
+     * @param {Object} deps.eventService - The EventService instance
+     * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
+     */
+    constructor({ matchRepo, entityRepo, fileService, logService, eventService }) {
+        super({ repository: matchRepo, eventService, logService, resourceName: 'Match', getByIdMethod: 'getMatchById' });
+        this._matchRepo = matchRepo;
+        this._entityRepo = entityRepo;
+        this._fileService = fileService;
+        this._logService = logService;
+        this._eventService = eventService;
+    }
+
     /**
      * Retrieves matches with pagination, search, and status filtering.
      * @method getPaginatedMatches
-     * @param {number} page - Current page number.
-     * @param {number} limit - Items per page.
-     * @param {string} search - Search term for entity names.
-     * @param {string} status - Queue status filter.
+     * @param {Object} matchQueryDto - The DTO containing query parameters
+     * @param {number} matchQueryDto.page - Current page number
+     * @param {number} matchQueryDto.limit - Items per page
+     * @param {string} matchQueryDto.search - Search term for entity names
+     * @param {string} matchQueryDto.status - Queue status filter
      * @returns {Object} { matches, meta: { total, page, limit, totalPages } }
      */
-    getPaginatedMatches(page, limit, search, status) {
+    getPaginatedMatches({ page, limit, search, status }) {
         const offset = (page - 1) * limit;
-        const { matches, total } = matchRepo.getPaginatedMatches(limit, offset, search, status);
+        const { matches, total } = this._matchRepo.getPaginatedMatches({ limit, offset, search, status });
 
         return {
             matches,
@@ -62,7 +79,7 @@ class MatchService {
      * @returns {Array<Object>} Array of match objects with source and target entity details.
      */
     getAllMatches() {
-        return matchRepo.getAllMatches();
+        return this._matchRepo.getAllMatches();
     }
 
     /**
@@ -75,11 +92,11 @@ class MatchService {
      */
     getMatchesForEntity(entityId, role) {
         if (role === ENTITY_ROLES.REQUIREMENT) {
-            return matchRepo.getMatchesForRequirement(entityId);
+            return this._matchRepo.getMatchesForRequirement(entityId);
         } else if (role === ENTITY_ROLES.OFFERING) {
-            return matchRepo.getMatchesForOffering(entityId);
+            return this._matchRepo.getMatchesForOffering(entityId);
         }
-        return matchRepo.getMatchesForRequirement(entityId).concat(matchRepo.getMatchesForOffering(entityId));
+        return this._matchRepo.getMatchesForRequirement(entityId).concat(this._matchRepo.getMatchesForOffering(entityId));
     }
 
     /**
@@ -89,21 +106,23 @@ class MatchService {
      * @returns {Object|null} Match instance or null if not found.
      */
     getMatchByEntities(requirementEntityId, offeringEntityId) {
-        return matchRepo.getMatchByRequirementAndOffering(requirementEntityId, offeringEntityId);
+        return this._matchRepo.getMatchByRequirementAndOffering(requirementEntityId, offeringEntityId);
     }
 
     /**
      * Creates a new match record between entities.
-     * @param {number} sourceEntityId - The source entity ID (user).
-     * @param {number} targetEntityId - The target entity ID (job listing).
-     * @param {number|null} matchScore - The computed match score.
-     * @param {string|null} reportPath - Path to the generated match report.
-     * @param {string|null} folderPath - Path to the match folder.
-     * @param {string} status - The match status (default: 'pending').
+     * @method createMatch
+     * @param {Object} matchDto - The match DTO object.
+     * @param {number} matchDto.requirementId - The requirement entity ID.
+     * @param {number} matchDto.offeringId - The offering entity ID.
+     * @param {number|null} [matchDto.matchScore] - The computed match score.
+     * @param {string|null} [matchDto.reportPath] - Path to the generated match report.
+     * @param {string|null} [matchDto.folderPath] - Path to the match folder.
+     * @param {string} [matchDto.status='pending'] - The match status.
      * @returns {number} The ID of the newly created match record.
      */
-    createMatch(sourceEntityId, targetEntityId, matchScore, reportPath, folderPath, status = 'pending') {
-        return matchRepo.createMatch(sourceEntityId, targetEntityId, matchScore, reportPath, folderPath, status);
+    createMatch(matchDto) {
+        return this._matchRepo.createMatch(matchDto);
     }
 
     /**
@@ -112,65 +131,7 @@ class MatchService {
      * @returns {Object|null} The match record.
      */
     getMatchById(id) {
-        return matchRepo.getMatchById(id);
-    }
-
-    /**
-     * Updates the status for an existing match and emits SSE event to push state to UI.
-     * @param {number} id - The match record ID.
-     * @param {string} status - The new status.
-     * 
-     * @socexplanation
-     * - This method serves as the authoritative state transition point for match status.
-     * - The service layer is responsible for dispatching SSE events when state changes,
-     *   keeping workflows agnostic of transport layers (HTTP/SSE).
-     * - This ensures the frontend receives real-time status updates regardless of how
-     *   the workflow was triggered (API call, queued task, etc.).
-     * - Sanitizes the status string to lowercase and trims whitespace before
-     *   passing to the repository to prevent CHECK constraint violations
-     *   due to casing issues.
-     */
-    updateMatchStatus(id, status) {
-        const sanitizedStatus = status.toLowerCase().trim();
-        matchRepo.updateMatchStatus(id, sanitizedStatus);
-        const updatedMatch = matchRepo.getMatchById(id);
-        if (updatedMatch) {
-            eventService.emit(APP_EVENTS.MATCH_UPDATE, updatedMatch);
-        }
-    }
-
-    /**
-     * Updates the error for an existing match, logs it, and emits event to push state to UI.
-     * @param {number} id - The match record ID.
-     * @param {string|null} error - The error message.
-     */
-    updateMatchError(id, error) {
-        matchRepo.updateMatchError(id, error);
-
-        if (error) {
-            const match = matchRepo.getMatchById(id);
-            const folderPath = match ? match.folder_path : null;
-            logService.addActivityLog('Match', id, LOG_LEVELS.ERROR, `Assessment failed: ${error}`, folderPath);
-        }
-
-        const updatedMatch = matchRepo.getMatchById(id);
-        if (updatedMatch) {
-            eventService.emit(APP_EVENTS.MATCH_UPDATE, updatedMatch);
-        }
-    }
-
-    /**
-     * Updates the folder path for an existing match.
-     * @param {number} id - The match record ID.
-     * @param {string} folderPath - The folder path.
-     * 
-     * @socexplanation
-     * - Delegates DB updates to the Repository to maintain strict data-access boundaries.
-     * - Previously bypassed the Repository layer with raw SQL, which violated SoC.
-     * - Now properly delegates to MatchRepo.updateFolderPath method.
-     */
-    updateFolderPath(id, folderPath) {
-        return matchRepo.updateFolderPath(id, folderPath);
+        return this._matchRepo.getMatchById(id);
     }
 
     /**
@@ -179,7 +140,7 @@ class MatchService {
      * @param {number} matchScore - The new match score.
      */
     updateMatchScore(id, matchScore) {
-        return matchRepo.updateMatchScore(id, matchScore);
+        return this._matchRepo.updateMatchScore(id, matchScore);
     }
 
     /**
@@ -188,7 +149,7 @@ class MatchService {
      * @param {string} reportPath - The new report path.
      */
     updateReportPath(id, reportPath) {
-        return matchRepo.updateReportPath(id, reportPath);
+        return this._matchRepo.updateReportPath(id, reportPath);
     }
 
     /**
@@ -196,7 +157,7 @@ class MatchService {
      * @param {number} id - The match record ID.
      */
     deleteMatch(id) {
-        return matchRepo.deleteMatch(id);
+        return this._matchRepo.deleteMatch(id);
     }
 
     /**
@@ -207,47 +168,68 @@ class MatchService {
      */
     deleteMatchesForEntity(entityId, role) {
         if (role === ENTITY_ROLES.REQUIREMENT) {
-            return matchRepo.deleteMatchesForRequirement(entityId);
+            return this._matchRepo.deleteMatchesForRequirement(entityId);
         } else if (role === ENTITY_ROLES.OFFERING) {
-            return matchRepo.deleteMatchesForOffering(entityId);
+            return this._matchRepo.deleteMatchesForOffering(entityId);
         }
         // If no role specified, delete matches where entity is either requirement or offering
-        matchRepo.deleteMatchesForRequirement(entityId);
-        matchRepo.deleteMatchesForOffering(entityId);
+        this._matchRepo.deleteMatchesForRequirement(entityId);
+        this._matchRepo.deleteMatchesForOffering(entityId);
     }
 
     /**
-     * Creates a new match with folder, queues assessment, and emits event.
+     * Creates a new match with folder and emits event.
      * This method encapsulates all file system logic for match creation.
-     * 
+     *
      * @method createMatchWithFolder
      * @memberof MatchService
      * @param {number} sourceEntityId - The source entity ID.
      * @param {number} targetEntityId - The target entity ID.
      * @returns {number} The ID of the newly created match.
-     * 
+     *
      * @workflow_steps
-     * 1. Generates unique folder path in MATCH_REPORTS_DIR.
-     * 2. Creates the match folder using FileService.
+     * 1. Creates a staging folder in UPLOADS_DIR using unified prepareStagingDirectory.
+     * 2. Creates the match folder using this._fileService.
      * 3. Creates the match record in database.
-     * 4. Queues the assessment task.
-     * 5. Emits matchUpdate event.
-     * 
+     * 4. Emits matchUpdate event.
+     *
      * @socexplanation
+     * - CTI: Uses unified prepareStagingDirectory for all entity types.
      * - File system logic (folder creation, path generation) belongs in the Service layer,
      *   not in the Controller. This keeps the Controller focused purely on HTTP transport.
+     * - Queue orchestration has been delegated to the Controller to prevent circular dependencies and enforce strict domain boundaries.
      */
-    createMatchWithFolder(sourceEntityId, targetEntityId) {
-        const folderPath = FileService.generateMatchFolderPath(sourceEntityId, targetEntityId);
-        FileService.createDirectory(folderPath);
+    createMatchWithFolder({ requirementId, offeringId }) {
+        const folderPath = this._fileService.prepareStagingDirectory(`match-${requirementId}-${offeringId}`);
 
-        const matchId = matchRepo.createMatch(sourceEntityId, targetEntityId, null, null, folderPath, 'pending');
+        const req = this._entityRepo.getEntityById(requirementId);
+        const off = this._entityRepo.getEntityById(offeringId);
 
-        queueService.enqueue(QUEUE_TASKS.ASSESS_ENTITY_MATCH, { sourceEntityId, targetEntityId, matchId });
+        const reqName = req?.nicename || 'Unknown Requirement';
+        const offName = off?.nicename || 'Unknown Offering';
 
-        const newMatch = matchRepo.getMatchById(matchId);
+        const reqLine1 = req?.niceNameLine1 || reqName;
+        const offLine1 = off?.niceNameLine1 || offName;
+
+        const hash = HashGenerator.generateUniqueHash();
+        const matchDto = {
+            requirementId,
+            offeringId,
+            nicename: `Match: ${reqName} - ${offName}`,
+            niceNameLine1: reqLine1,
+            niceNameLine2: offLine1,
+            matchScore: null,
+            reportPath: null,
+            folderPath: folderPath,
+            status: 'pending',
+            hash
+        };
+
+        const matchId = this._matchRepo.createMatch(matchDto);
+
+        const newMatch = this._matchRepo.getMatchById(matchId);
         if (newMatch) {
-            eventService.emit(APP_EVENTS.MATCH_UPDATE, newMatch);
+            this._eventService.emit(APP_EVENTS.RESOURCE_STATE_CHANGED, newMatch);
         }
 
         return matchId;
@@ -264,7 +246,7 @@ class MatchService {
      * 
      * @workflow_steps
      * 1. Retrieves the match to check for folder path.
-     * 2. Moves match folder to TRASHED_DIR using FileService.
+     * 2. Moves match folder to TRASHED_DIR using this._fileService.
      * 3. Deletes the match record from database.
      * 
      * @socexplanation
@@ -274,7 +256,7 @@ class MatchService {
      *   with file system operations.
      */
     deleteMatchWithFolder(id) {
-        const match = matchRepo.getMatchById(id);
+        const match = this._matchRepo.getMatchById(id);
         if (!match) {
             throw new Error('Match not found');
         }
@@ -282,13 +264,13 @@ class MatchService {
         if (match.folder_path) {
             const trashPath = path.join(TRASHED_DIR, `Match_${id}_${Date.now()}`);
             try {
-                FileService.moveDirectory(match.folder_path, trashPath);
+                this._fileService.moveDirectory(match.folder_path, trashPath);
             } catch (err) {
-                logService.logTerminal(LOG_LEVELS.ERROR, LOG_SYMBOLS.ERROR, 'MatchService', `Failed to move match folder to trash: ${err.message}`);
+                this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'MatchService', message: `Failed to move match folder to trash: ${err.message}` });
             }
         }
 
-        matchRepo.deleteMatch(id);
+        this._matchRepo.deleteMatch(id);
     }
 
     /**
@@ -298,32 +280,32 @@ class MatchService {
      * @returns {void}
      * 
      * @socexplanation
-     * - Delegates native OS operations to FileService.
+     * - Delegates native OS operations to this._fileService.
      * - Protects against missing folders or invalid match IDs.
      */
     openMatchFolder(id) {
-        const match = matchRepo.getMatchById(id);
+        const match = this._matchRepo.getMatchById(id);
         if (!match || !match.folder_path) {
-            logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'MatchService', 'Cannot open folder: match not found or has no folder path');
+            this._logService.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'MatchService', message: 'Cannot open folder: match not found or has no folder path' });
             return;
         }
-        FileService.openFolderInOS(match.folder_path);
+        this._fileService.openFolderInOS(match.folder_path);
     }
 
     /**
      * Registers a document record for a match.
      * @method registerDocumentRecord
-     * @param {number} matchId - The match ID.
-     * @param {string} docType - The document type.
-     * @param {string} fileName - The document filename.
-     * @param {string} filePath - The full path to the document file.
+     * @param {Object} documentDto - The DTO containing document data
+     * @param {number} documentDto.matchId - The match ID
+     * @param {string} documentDto.docType - The document type
+     * @param {string} documentDto.fileName - The document filename
      * @returns {number} The ID of the newly created document record.
      * @socexplanation
      * - Delegates to MatchRepo.registerDocumentRecord.
      * - Exposes document registration at the Service layer.
      */
-    registerDocumentRecord(matchId, docType, fileName, filePath) {
-        return matchRepo.registerDocumentRecord(matchId, docType, fileName, filePath);
+    registerDocumentRecord({ matchId, docType, fileName }) {
+        return this._matchRepo.registerDocumentRecord({ entityId: matchId, docType, fileName });
     }
 
     /**
@@ -336,28 +318,25 @@ class MatchService {
      * - Exposes document retrieval at the Service layer.
      */
     getDocumentsForMatch(matchId) {
-        return matchRepo.getDocumentsForMatch(matchId);
+        return this._matchRepo.getDocuments(matchId);
     }
 
     /**
-     * Retries a failed match assessment by resetting error state, status, and re-queuing the task.
+     * Retries a failed match assessment by resetting error state, status.
      * @method retryMatchAssessment
      * @param {number} matchId - The match ID to retry.
-     * @returns {void}
+     * @returns {Object} The match object.
      * 
      * @workflow_steps
      * 1. Fetches the match by ID. Throws if not found.
      * 2. Clears the error state (sets error string to null).
      * 3. Resets the queue status to 'pending'.
-     * 4. Re-enqueues the assessment task with the original entity IDs and matchId.
-     * 5. Adds an activity log entry indicating the retry.
-     * 
+     * 4. Adds an activity log entry indicating the retry.
+     *
      * @socexplanation
-     * - Encapsulates queue re-entry logic for failed match assessments.
+     * - Encapsulates state reset logic for failed match assessments.
      * - Delegates data access and persistence to MatchRepo.
-     * - Delegates queueing to QueueService.
-     * - This method is the domain-level retry orchestration, keeping Controllers
-     *   focused purely on HTTP transport and error forwarding.
+     * - Queue orchestration has been delegated to the Controller to prevent circular dependencies and enforce strict domain boundaries.
      */
     retryMatchAssessment(matchId) {
         const match = this.getMatchById(matchId);
@@ -365,119 +344,18 @@ class MatchService {
             throw new Error('Match not found');
         }
 
-        this.updateMatchError(matchId, null);
-        this.updateMatchStatus(matchId, 'pending');
+        this.updateState(matchId, { status: 'pending', error: null });
 
-        queueService.enqueue(QUEUE_TASKS.ASSESS_ENTITY_MATCH, {
-            sourceEntityId: match.requirement_id,
-            targetEntityId: match.offering_id,
-            matchId
-        });
+        this._logService.addActivityLog({
+                entityType: 'Match',
+                entityId: matchId,
+                logType: LOG_LEVELS.INFO,
+                message: 'Retrying match assessment.',
+                folderPath: match.folder_path
+            });
 
-        logService.addActivityLog('Match', matchId, LOG_LEVELS.INFO, 'Retrying match assessment.', match.folder_path);
-    }
-
-    /**
-     * Evaluates a paginated chunk of potential matches for an entity using pure vector math.
-     * @method evaluateMatchesChunk
-     * @param {number} entityId - The base entity ID to find matches for.
-     * @param {number} offset - The offset for pagination (0-indexed).
-     * @param {number} limit - The number of entities to evaluate in this chunk.
-     * @returns {Object} Object containing evaluatedChunk array and totalOpposites count.
-     * 
-     * @architectural_reasoning
-     * - This method bypasses the heavy AI report generation (criteriaManagerWorkflow.calculateCriteriaMatch)
-     *   which invokes AiReportGenerator. Instead, it directly calls MatchingEngine.calculateFastMatchScore()
-     *   to obtain the pure mathematical vector similarity score without generating JSON reports.
-     * - By working in chunks (offset/limit), it prevents blocking the Node.js event loop and enables
-     *   progressive UI updates as chunks are processed.
-     * - The frontend recursively fetches chunks until all entities are evaluated, maintaining a running
-     *   top-20 list that updates dynamically.
-     * - Uses dimension weights from the database to compute weighted match scores per dimension.
-     * 
-     * @dry_principles
-     * - Delegates to MatchingEngine.calculateFastMatchScore() which reuses evaluateCriteriaPair internally.
-     * - Reuses existing repository methods for criteria and entity retrieval.
-     * - Fetches active dimensions once per chunk and reuses across all evaluations in that chunk.
-     * 
-     * @boundary_rules
-     * - ✅ MAY call MatchingEngine for pure vector math.
-     * - ✅ MAY call entityRepo, criteriaRepo, and dimensionRepo for data retrieval.
-     * - ✅ MAY call SettingsManager for threshold configuration.
-     * - ❌ MUST NOT call criteriaManagerWorkflow (which triggers AI report generation).
-     * - ❌ MUST NOT call MatchingEngine.calculate() or buildRawComparison() (generates heavy JSON).
-     */
-    evaluateMatchesChunk(entityId, offset = 0, limit = 20) {
-        const entity = entityRepo.getEntityById(entityId);
-        if (!entity) throw new Error('Entity not found');
-
-        const oppositeType = entity.type === ENTITY_ROLES.REQUIREMENT ? ENTITY_ROLES.OFFERING : ENTITY_ROLES.REQUIREMENT;
-
-        const baseCriteria = criteriaRepo.getCriteriaWithEmbeddingsForEntity(entityId);
-        if (!baseCriteria || baseCriteria.length === 0) {
-            throw new Error('Base entity has no criteria with embeddings to match against.');
-        }
-
-        const activeDimensions = dimensionRepo.getActiveDimensions();
-        
-        const minimumFloor = parseFloat(SettingsManager.get('minimum_match_floor')) || 0.50;
-        const perfectScore = parseFloat(SettingsManager.get('perfect_match_score')) || 0.85;
-
-        const page = Math.floor(offset / limit) + 1;
-        const { entities: opposites, meta } = entityRepo.getAllEntities({
-            type: oppositeType,
-            page: page,
-            limit: limit
-        });
-
-        if (!opposites || opposites.length === 0) {
-            return {
-                evaluatedChunk: [],
-                totalOpposites: meta.total
-            };
-        }
-
-        const evaluatedChunk = [];
-
-        for (const opp of opposites) {
-            try {
-                const reqId = entity.type === ENTITY_ROLES.REQUIREMENT ? entity.id : opp.id;
-                const offId = entity.type === ENTITY_ROLES.OFFERING ? entity.id : opp.id;
-
-                const oppositeCriteria = criteriaRepo.getCriteriaWithEmbeddingsForEntity(opp.id);
-                if (!oppositeCriteria || oppositeCriteria.length === 0) {
-                    continue;
-                }
-
-                const reqCriteria = entity.type === ENTITY_ROLES.REQUIREMENT ? baseCriteria : oppositeCriteria;
-                const offCriteria = entity.type === ENTITY_ROLES.REQUIREMENT ? oppositeCriteria : baseCriteria;
-
-                const fastScore = MatchingEngine.calculateFastMatchScore(
-                    reqCriteria,
-                    offCriteria,
-                    activeDimensions,
-                    minimumFloor,
-                    perfectScore
-                );
-
-                const existingMatch = matchRepo.getMatchByRequirementAndOffering(reqId, offId);
-
-                evaluatedChunk.push({
-                    entity: opp,
-                    score: fastScore,
-                    existingMatchId: existingMatch ? existingMatch.id : null,
-                    existingMatchStatus: existingMatch ? existingMatch.status : null
-                });
-            } catch(e) {
-                continue;
-            }
-        }
-
-        return {
-            evaluatedChunk,
-            totalOpposites: meta.total
-        };
+        return match;
     }
 }
 
-module.exports = new MatchService();
+module.exports = MatchService;

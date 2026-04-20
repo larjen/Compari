@@ -5,41 +5,25 @@ echo ========================================
 echo Installing Compari...
 echo ========================================
 
-REM Install backend dependencies
+REM Install all workspace dependencies
 echo.
-echo [1/3] Installing backend dependencies...
-cd backend
-call npm install
+echo [1/2] Installing all dependencies...
+call npm run setup
 if errorlevel 1 (
-    echo ERROR: Backend installation failed!
-    cd ..
-    pause
-    exit /b 1
-)
-cd ..
-
-REM Install frontend dependencies and build
-echo.
-echo [2/3] Installing frontend dependencies...
-cd frontend
-call npm install
-if errorlevel 1 (
-    echo ERROR: Frontend installation failed!
-    cd ..
+    echo ERROR: Installation failed!
     pause
     exit /b 1
 )
 
+REM Build the project
 echo.
-echo [3/3] Building frontend for production...
+echo [2/2] Building frontend for production...
 call npm run build
 if errorlevel 1 (
-    echo ERROR: Frontend build failed!
-    cd ..
+    echo ERROR: Build failed!
     pause
     exit /b 1
 )
-cd ..
 
 echo.
 echo ========================================

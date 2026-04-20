@@ -25,7 +25,7 @@
  * </BaseCard>
  */
 
-import { RefreshCw } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Button, DeleteAction } from '@/components/ui';
 import { StatusIndicator } from './StatusIndicator';
 import { useTaskLifecycle } from '@/hooks/useTaskLifecycle';
@@ -46,8 +46,6 @@ interface BaseCardProps {
   taskName: string;
   /** Error message to display when hasError is true */
   errorMessage?: string | undefined;
-  /** Current processing step name (optional, for detailed status) */
-  processingStep?: string | undefined;
   /** Callback when the card is clicked */
   onClick: () => void;
   /** Callback for retrying a failed task */
@@ -82,7 +80,6 @@ export function BaseCard({
   startTime,
   taskName,
   errorMessage,
-  processingStep,
   onClick,
   onRetry,
   onDelete,
@@ -139,7 +136,6 @@ export function BaseCard({
             taskName={taskName}
             startTime={startTime}
             errorMessage={errorMessage}
-            processingStep={processingStep}
           />
         </div>
 
@@ -179,7 +175,7 @@ export function BaseCard({
               className="text-red-600 hover:bg-red-50 hover:text-red-700"
               title="Retry processing"
             >
-              <RefreshCw className="w-4 h-4 mr-2" />
+              <DOMAIN_ICONS.REFRESH className="w-4 h-4 mr-2" />
               Retry
             </Button>
           )}

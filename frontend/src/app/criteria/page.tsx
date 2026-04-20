@@ -8,13 +8,16 @@ import { useEntities } from '@/hooks/useEntities';
 import { useModal } from '@/hooks/useModal';
 import { useDimensions } from '@/hooks/useDimensions';
 import { useFilterState } from '@/hooks/useFilterState';
-import { Loader2, ListChecks } from 'lucide-react';
+import { useDeepLinkedResource } from '@/hooks/useDeepLinkedResource';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { EmptyState, ContentLoader } from '@/components/shared/PageStates';
 import { Criterion } from '@/lib/types';
 import { CriterionDetailModal, EntityDetailModal } from '@/components/modals';
 import { Pagination } from '@/components/shared/Pagination';
 import { FilterBar } from '@/components/shared/FilterBar';
 import { CriteriaViewer } from '@/components/shared/CriteriaViewer';
+import { AnimatedPageHeader } from '@/components/shared/AnimatedPageHeader';
+import { criteriaApi } from '@/lib/api/criteriaApi';
 
 /**
  * Global variants for the criteria results list.
@@ -45,38 +48,28 @@ function CriteriaPageContent() {
   const { closeModal } = useModal();
 
   const { search, setSearch, debouncedSearch, status: selectedDimension, setStatus: setSelectedDimension, page, setPage } = useFilterState('all');
-  
+
   const LIMIT = 200;
-  
-  const { 
-    criteria, 
-    totalPages, 
+
+  const {
+    criteria,
+    totalPages,
     totalCount,
-    loading, 
-    error, 
-    refetch, 
-    deleteCriterion 
-  } = useCriteria({ 
-    page, 
-    limit: LIMIT, 
-    search: debouncedSearch, 
+    loading,
+    error,
+    refetch,
+    deleteCriterion
+  } = useCriteria({
+    page,
+    limit: LIMIT,
+    search: debouncedSearch,
     dimension: selectedDimension === 'all' ? undefined : selectedDimension,
     immediate: true
   });
 
-  const [isReady, setIsReady] = useState(false);
-  const [deepLinkedCriterion, setDeepLinkedCriterion] = useState<Criterion | null>(null);
-  const [isFetchingDeepLink, setIsFetchingDeepLink] = useState(false);
-
   const criterionIdParam = searchParams.get('criterionId');
   const sourceIdParam = searchParams.get('sourceId');
   const targetIdParam = searchParams.get('targetId');
-
-  useEffect(() => {
-    if (!loading) {
-      setIsReady(true);
-    }
-  }, [loading]);
 
   const { entities: allEntities, loading: entitiesLoading, refetch: refetchEntities } = useEntities({ immediate: !!(sourceIdParam || targetIdParam) });
   const { dimensions } = useDimensions();
@@ -112,37 +105,7 @@ function CriteriaPageContent() {
   // RENDER LOGIC BLOCK
   // =============================================================================
 
-  // Deep-link fallback: fetch criterion directly if not in local array
-  const criterionId = criterionIdParam ? parseInt(criterionIdParam, 10) : null;
-  const localCriterion = criterionId ? criteria.find((c: any) => c.id === criterionId) : null;
-
-  useEffect(() => {
-    if (criterionId && !localCriterion && !deepLinkedCriterion && !isFetchingDeepLink) {
-      const fetchDeepLink = async () => {
-        setIsFetchingDeepLink(true);
-        try {
-          const response = await fetch(`/api/criteria/${criterionId}`);
-          if (response.ok) {
-            const data = await response.json();
-            setDeepLinkedCriterion(data);
-          }
-        } catch (error) {
-          console.error("Failed to fetch deep-linked criterion:", error);
-        } finally {
-          setIsFetchingDeepLink(false);
-        }
-      };
-      fetchDeepLink();
-    }
-  }, [criterionId, localCriterion, deepLinkedCriterion, isFetchingDeepLink]);
-
-  useEffect(() => {
-    if (!criterionId && deepLinkedCriterion) {
-      setDeepLinkedCriterion(null);
-    }
-  }, [criterionId, deepLinkedCriterion]);
-
-  const selectedCriterion = localCriterion || deepLinkedCriterion;
+  const selectedCriterion = useDeepLinkedResource(criterionIdParam, criteria, 'id', criteriaApi.getCriterion);
 
   const inspectedSource = sourceIdParam
     ? allEntities.find(e => e.id === Number(sourceIdParam)) || null
@@ -154,7 +117,7 @@ function CriteriaPageContent() {
   return (
     <div className="flex-1 p-6">
       <div className="max-w-7xl mx-auto w-full min-h-full">
-        <div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 transition-opacity duration-500 ease-in-out ${isReady ? 'opacity-100' : 'opacity-0'}`}>
+        <AnimatedPageHeader loading={loading}>
           <FilterBar
             searchTerm={search}
             onSearchChange={setSearch}
@@ -167,15 +130,15 @@ function CriteriaPageContent() {
             ]}
             className="flex-1"
           />
-          
+
           {totalPages > 1 && (
-            <Pagination 
-              currentPage={page} 
-              totalPages={totalPages} 
-              onPageChange={setPage} 
+            <Pagination
+              currentPage={page}
+              totalPages={totalPages}
+              onPageChange={setPage}
             />
           )}
-        </div>
+        </AnimatedPageHeader>
 
         {loading && criteria.length === 0 ? (
           <ContentLoader text="Loading criteria..." />
@@ -190,7 +153,7 @@ function CriteriaPageContent() {
           />
         ) : (
           <EmptyState
-            icon={ListChecks}
+            icon="CRITERIA"
             title={search ? "No matching criteria" : "No criteria yet"}
             subtitle={search ? "Try a different search term" : "Criteria will be extracted from entities automatically"}
           />

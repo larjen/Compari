@@ -7,7 +7,8 @@
 
 import { useState } from 'react';
 import { Entity, BlueprintField } from '@/lib/types';
-import { Pencil, X, Save } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
+import { FIELD_TYPES } from '@/lib/constants';
 import { Button } from '@/components/ui';
 import { DetailItem } from '@/components/shared/DetailItem';
 import { cn } from '@/lib/utils';
@@ -76,13 +77,13 @@ export function MetadataEditor({ entity, metadataFields, onSave }: MetadataEdito
     }
   };
 
-  const getInputType = (type?: string): 'text' | 'number' | 'date' | 'checkbox' => {
+  const getInputType = (type?: string) => {
     switch (type) {
-      case 'date':
+      case FIELD_TYPES.DATE:
         return 'date';
-      case 'number':
+      case FIELD_TYPES.NUMBER:
         return 'number';
-      case 'boolean':
+      case FIELD_TYPES.BOOLEAN:
         return 'checkbox';
       default:
         return 'text';
@@ -130,9 +131,9 @@ export function MetadataEditor({ entity, metadataFields, onSave }: MetadataEdito
               <div className="flex items-center gap-2 mt-1">
                 <input
                   type={getInputType(fieldType) as 'text' | 'number' | 'date'}
-                  checked={fieldType === 'boolean' && isBooleanValue(editValue)}
-                  value={fieldType === 'boolean' ? undefined : editValue}
-                  onChange={(e) => setEditValue(fieldType === 'boolean' ? (e.target.checked ? 'true' : 'false') : e.target.value)}
+                  checked={fieldType === FIELD_TYPES.BOOLEAN && isBooleanValue(editValue)}
+                  value={fieldType === FIELD_TYPES.BOOLEAN ? undefined : editValue}
+                  onChange={(e) => setEditValue(fieldType === FIELD_TYPES.BOOLEAN ? (e.target.checked ? 'true' : 'false') : e.target.value)}
                   className="flex-1 min-w-0 px-2 py-1 text-sm border border-accent-sage/30 rounded bg-themed-input-bg text-themed-fg-main focus:outline-none focus:border-accent-forest"
                   disabled={isSaving}
                 />
@@ -145,7 +146,7 @@ export function MetadataEditor({ entity, metadataFields, onSave }: MetadataEdito
                   {isSaving ? (
                     <div className="w-4 h-4 border-2 border-accent-forest border-t-transparent rounded-full animate-spin" />
                   ) : (
-                    <Save className="w-4 h-4" />
+                    <DOMAIN_ICONS.SAVE className="w-4 h-4" />
                   )}
                 </Button>
                 <Button
@@ -154,12 +155,12 @@ export function MetadataEditor({ entity, metadataFields, onSave }: MetadataEdito
                   variant="ghost"
                   size="icon"
                 >
-                  <X className="w-4 h-4" />
+                  <DOMAIN_ICONS.CLOSE className="w-4 h-4" />
                 </Button>
               </div>
             ) : (
               <div className="flex items-center gap-2 mt-1 min-w-0">
-                {fieldType === 'boolean' ? (
+                {fieldType === FIELD_TYPES.BOOLEAN ? (
                   <span
                     className={cn(
                       'text-sm',
@@ -198,7 +199,7 @@ export function MetadataEditor({ entity, metadataFields, onSave }: MetadataEdito
                   size="icon"
                   className="text-accent-forest/50 hover:text-accent-forest shrink-0 relative z-10"
                 >
-                  <Pencil className="w-3.5 h-3.5" />
+                  <DOMAIN_ICONS.EDIT className="w-3.5 h-3.5" />
                 </Button>
               </div>
             )}

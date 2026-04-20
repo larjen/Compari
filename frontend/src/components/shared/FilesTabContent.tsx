@@ -9,7 +9,7 @@
 import { motion } from 'framer-motion';
 import { FileViewer } from '@/components/shared/FileViewer';
 
-export interface FilesTabContentProps {
+interface FilesTabContentProps {
   /** The folder path where files are stored */
   folderPath: string | null;
   /** List of files in the folder */

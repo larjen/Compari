@@ -11,6 +11,7 @@
  */
 
 import { Prompt } from '../types';
+import { HTTP_METHODS } from '../constants';
 import { fetchWrapper } from './apiClient';
 
 export const promptApi = {
@@ -21,8 +22,7 @@ export const promptApi = {
 
   async updatePrompt(id: number, prompt: string): Promise<Prompt> {
     const data = await fetchWrapper<{ prompt: Prompt }>(`/prompts/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      method: HTTP_METHODS.PUT,
       body: JSON.stringify({ prompt }),
     });
     return data.prompt;

@@ -1,20 +1,24 @@
 /**
  * @module MatchController
  * @description HTTP Controller responsible for handling HTTP requests related to matches.
- * 
+ *
  * @responsibility
  * - Extract HTTP parameters and body from incoming requests (req).
  * - Delegate actual data access to Domain Services (MatchService).
  * - Format and return HTTP responses (res) with appropriate status codes and JSON payloads.
  * - Handle error catching by delegating to global error middleware via next(error).
- * 
+ *
  * @boundary_rules
  * - ❌ MUST NOT contain business rules.
  * - ❌ MUST NOT interact directly with Repositories.
  * - ❌ MUST NOT handle file system operations (path, FileService, MATCH_REPORTS_DIR, TRASHED_DIR).
  * - ✅ All data access MUST go through Services.
  * - ✅ All errors MUST be passed to next(error) for centralized handling.
- * 
+ *
+ * @dependency_injection
+ * All services (matchService, queueService, fileService) are injected via constructor.
+ * No global service locator is used - dependencies are explicitly provided.
+ *
  * @socexplanation
  * - Standardizes error handling by delegating ALL errors to the global error middleware.
  * - This ensures consistent error responses and centralized error logging.
@@ -22,40 +26,46 @@
  * - Uses asyncHandler to eliminate try/catch boilerplate.
  */
 
-const matchService = require('../services/MatchService');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const { handleFileDownload } = require('../utils/fileHandler');
-const { HTTP_STATUS } = require('../config/constants');
+const { HTTP_STATUS, QUEUE_TASKS } = require('../config/constants');
 
 class MatchController {
     /**
+     * @param {Object} dependencies
+     * @param {Object} dependencies.matchService - Match service instance
+     * @param {Object} dependencies.queueService - Queue service instance
+     * @param {Object} dependencies.fileService - File service instance
+     * @param {Object} dependencies.matchAnalyticsWorkflow - MatchAnalyticsWorkflow instance
+     */
+    constructor({ matchService, queueService, fileService, matchAnalyticsWorkflow }) {
+        this._matchService = matchService;
+        this._queueService = queueService;
+        this._fileService = fileService;
+        this._matchAnalyticsWorkflow = matchAnalyticsWorkflow;
+    }
+
+    /**
      * GET /api/matches
      * Retrieves matches with pagination, search, and status filtering.
-     * @param {Object} req - Express request object
-     * @param {Object} res - Express response object
-     * @param {Function} next - Express next function for error handling
      */
-    static getAll = asyncHandler(async (req, res) => {
+    getAll = asyncHandler(async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const search = req.query.search || '';
         const status = req.query.status || '';
 
-        const result = matchService.getPaginatedMatches(page, limit, search, status);
+        const result = this._matchService.getPaginatedMatches({ page, limit, search, status });
         res.json(result);
     });
 
     /**
      * GET /api/matches/:id
-     * Retrieves a specific match by ID.
-     * @param {Object} req - Express request object
-     * @param {Object} res - Express response object
-     * @param {Function} next - Express next function for error handling
      */
-    static getById = asyncHandler(async (req, res) => {
+    getById = asyncHandler(async (req, res) => {
         const { id } = req.params;
-        const match = matchService.getMatchById(id);
+        const match = this._matchService.getMatchById(id);
         if (!match) {
             throw new AppError('Match not found', HTTP_STATUS.NOT_FOUND);
         }
@@ -68,17 +78,25 @@ class MatchController {
      * @param {Object} req - Express request object (req.body.sourceEntityId, req.body.targetEntityId)
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
-     * 
+     *
      * @socexplanation
      * - Delegates file system operations to MatchService.createMatchWithFolder.
      * - Controller only handles HTTP transport: parameter extraction and response formatting.
+     * - Controller orchestrates the queueing to maintain SoC and prevent circular dependencies.
      */
-    static create = asyncHandler(async (req, res) => {
-        // Frontend sends requirementEntityId/offeringEntityId per the new domain terminology.
-        // The underlying service still uses source/target naming internally (createMatchWithFolder).
+    create = asyncHandler(async (req, res) => {
         const { requirementEntityId, offeringEntityId } = req.body;
 
-        const matchId = matchService.createMatchWithFolder(requirementEntityId, offeringEntityId);
+        const matchId = this._matchService.createMatchWithFolder({
+            requirementId: requirementEntityId,
+            offeringId: offeringEntityId
+        });
+
+        this._queueService.enqueue(QUEUE_TASKS.ASSESS_ENTITY_MATCH, {
+            sourceEntityId: requirementEntityId,
+            targetEntityId: offeringEntityId,
+            matchId
+        });
 
         res.json({ success: true, matchId });
     });
@@ -89,15 +107,15 @@ class MatchController {
      * @param {Object} req - Express request object
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
-     * 
+     *
      * @socexplanation
      * - Delegates file system operations to MatchService.deleteMatchWithFolder.
      * - Controller only handles HTTP transport: parameter extraction and response formatting.
      */
-    static delete = asyncHandler(async (req, res) => {
+    delete = asyncHandler(async (req, res) => {
         const { id } = req.params;
 
-        matchService.deleteMatchWithFolder(id);
+        this._matchService.deleteMatchWithFolder(id);
 
         res.json({ success: true });
     });
@@ -113,9 +131,9 @@ class MatchController {
      * - Delegates file system logic to MatchService.
      * - Controller purely handles the HTTP transport and response payload.
      */
-    static openFolder = asyncHandler(async (req, res) => {
+    openFolder = asyncHandler(async (req, res) => {
         const { id } = req.params;
-        matchService.openMatchFolder(id);
+        this._matchService.openMatchFolder(id);
         res.json({ success: true });
     });
 
@@ -126,15 +144,15 @@ class MatchController {
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
      */
-    static getFiles = asyncHandler(async (req, res) => {
+    getFiles = asyncHandler(async (req, res) => {
         const { id } = req.params;
-        const match = matchService.getMatchById(id);
+        const match = this._matchService.getMatchById(id);
 
         if (!match) {
             throw new AppError('Match not found', HTTP_STATUS.NOT_FOUND);
         }
 
-        const docs = matchService.getDocumentsForMatch(id);
+        const docs = this._matchService.getDocumentsForMatch(id);
         const files = docs.map(d => d.file_name);
         res.json({ files });
     });
@@ -146,10 +164,16 @@ class MatchController {
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
      */
-    static getFile = asyncHandler(async (req, res) => {
+    getFile = asyncHandler(async (req, res) => {
         const { id, filename } = req.params;
-        const match = matchService.getMatchById(id);
-        return handleFileDownload(res, match, filename, 'folder_path');
+        const match = this._matchService.getMatchById(id);
+        return handleFileDownload({
+            fileService: this._fileService,
+            res,
+            entity: match,
+            fileName: filename,
+            folderPathKey: 'folder_path'
+        });
     });
 
     /**
@@ -161,51 +185,35 @@ class MatchController {
      * 
      * @socexplanation
      * - Delegates retry orchestration to MatchService.retryMatchAssessment.
+     * - Controller orchestrates the queueing to maintain SoC and prevent circular dependencies.
      * - Controller only handles HTTP transport: parameter extraction and response formatting.
      */
-    static retryProcessing = asyncHandler(async (req, res) => {
+    retryProcessing = asyncHandler(async (req, res) => {
         const { id } = req.params;
-        matchService.retryMatchAssessment(id);
+        const match = this._matchService.retryMatchAssessment(id);
+        this._queueService.enqueue(QUEUE_TASKS.ASSESS_ENTITY_MATCH, {
+            sourceEntityId: match.requirement_id,
+            targetEntityId: match.offering_id,
+            matchId: id
+        });
         res.json({ success: true, message: 'Queued for retry' });
     });
 
-    static downloadPdf = asyncHandler(async (req, res) => {
+    /**
+     * GET /api/matches/:id/pdf
+     * Downloads the match report as a PDF.
+     * @param {Object} req - Express request object
+     * @param {Object} res - Express response object
+     * @param {Function} next - Express next function for error handling
+     *
+     * @socexplanation
+     * - Delegates PDF generation to MatchService.
+     * - Controller only handles HTTP transport: response headers and streaming.
+     */
+    downloadPdf = asyncHandler(async (req, res) => {
         const matchId = parseInt(req.params.id);
-        const match = matchService.getMatchById(matchId);
-        
-        if (!match) {
-            throw new AppError('Match not found', HTTP_STATUS.NOT_FOUND);
-        }
 
-        const safeReqName = (match.requirement_name || "Requirement").replace(/[/\\?%*:|"<>]/g, '-');
-        const safeOffName = (match.offering_name || "Offering").replace(/[/\\?%*:|"<>]/g, '-');
-        const pdfFileName = `Match - ${safeReqName} - ${safeOffName}.pdf`;
-        
-        let pdfBuffer;
-        let pdfPath = null;
-        const fs = require('fs');
-        const path = require('path');
-
-        if (match.folder_path) {
-            pdfPath = path.join(match.folder_path, pdfFileName);
-            if (fs.existsSync(pdfPath)) {
-                pdfBuffer = fs.readFileSync(pdfPath);
-            }
-        }
-
-        if (!pdfBuffer) {
-            const PdfGeneratorService = require('../services/PdfGeneratorService');
-            const rawPdfData = await PdfGeneratorService.generateMatchReport(matchId);
-            pdfBuffer = Buffer.from(rawPdfData);
-
-            if (match.folder_path) {
-                fs.writeFileSync(pdfPath, pdfBuffer);
-                const existingDocs = matchService.getDocumentsForMatch(matchId);
-                if (!existingDocs.some(d => d.file_name === pdfFileName)) {
-                    matchService.registerDocumentRecord(matchId, 'Match Report PDF', pdfFileName, pdfPath);
-                }
-            }
-        }
+        const { pdfBuffer, pdfFileName } = await this._matchAnalyticsWorkflow.generateAndGetMatchPdf(matchId);
 
         res.set({
             'Content-Type': 'application/pdf',
@@ -213,7 +221,7 @@ class MatchController {
             'Content-Length': pdfBuffer.length,
             'Access-Control-Expose-Headers': 'Content-Disposition'
         });
-        
+
         res.end(pdfBuffer);
     });
 }

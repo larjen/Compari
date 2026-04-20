@@ -11,6 +11,7 @@
  */
 
 import { Settings } from '../types';
+import { HTTP_METHODS } from '../constants';
 import { fetchWrapper } from './apiClient';
 
 export const settingsApi = {
@@ -33,7 +34,7 @@ export const settingsApi = {
    */
   async updateSetting(key: string, value: string): Promise<void> {
     return fetchWrapper('/settings', {
-      method: 'POST',
+      method: HTTP_METHODS.POST,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, value }),
     });
@@ -47,8 +48,7 @@ export const settingsApi = {
    */
   async testAI(message: string): Promise<string> {
     const data = await fetchWrapper<{ reply: string }>('/settings/test-ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: HTTP_METHODS.POST,
       body: JSON.stringify({ message }),
     });
     return data.reply;

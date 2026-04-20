@@ -28,9 +28,17 @@ ollama pull bge-m3
 
 ### Installation
 
-I have provided automated setup scripts to make installation frictionless:
+Compari utilizes npm workspaces to manage dependencies across the frontend and backend simultaneously.
+
+I have provided automated setup scripts to make installation frictionless. These scripts will initialize the workspace and build the production bundles:
 * **Windows:** Double-click `setup.bat`
 * **Mac/Linux:** Run `bash setup.sh` in your terminal.
+
+*Manual Installation Alternative:* If you prefer not to use the scripts, you can manually initialize the project by running `npm run setup` followed by `npm run build` in the root directory.
+
+### Clean Command
+
+> **WARNING:** `npm run clean` is a destructive operation intended to reset the environment. It removes the `Data` folder, all `node_modules` directories, and the `frontend/.next` build directory. Use with caution!
 
 ### Running the App
 

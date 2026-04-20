@@ -13,21 +13,15 @@ import { useFilterState } from '@/hooks/useFilterState';
 import { useToast } from '@/hooks/useToast';
 import { useModal } from '@/hooks/useModal';
 import { useSSE } from '@/hooks/useSSE';
-import { Loader2, FileSearch } from 'lucide-react';
+import { useDeepLinkedResource } from '@/hooks/useDeepLinkedResource';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { EmptyState, ContentLoader } from '@/components/shared/PageStates';
 import { AnimatedDataGrid } from '@/components/shared/AnimatedDataGrid';
+import { AnimatedPageHeader } from '@/components/shared/AnimatedPageHeader';
 import { EntityMatch } from '@/lib/types';
 import { UI_CONFIG } from '@/lib/constants';
 import { matchApi } from '@/lib/api/matchApi';
-import { ENTITY_STATUS, TOAST_TYPES, MODAL_TYPES } from '@/lib/constants';
-
-const STATUS_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: ENTITY_STATUS.PENDING, label: 'Queued' },
-  { value: ENTITY_STATUS.PROCESSING, label: 'Processing' },
-  { value: ENTITY_STATUS.COMPLETED, label: 'Completed' },
-  { value: ENTITY_STATUS.FAILED, label: 'Failed' }
-];
+import { ENTITY_STATUS, TOAST_TYPES, MODAL_TYPES, STATUS_FILTER_OPTIONS } from '@/lib/constants';
 
 function MatchesPageContent() {
   const router = useRouter();
@@ -46,48 +40,9 @@ function MatchesPageContent() {
     status,
   });
 
-  useEffect(() => {
-    if (!loading) {
-      setIsReady(true);
-    }
-  }, [loading]);
-
   const [createMatchOpen, setCreateMatchOpen] = useState(false);
-  const [isReady, setIsReady] = useState(false);
-  const [deepLinkedMatch, setDeepLinkedMatch] = useState<EntityMatch | null>(null);
-  const [isFetchingDeepLink, setIsFetchingDeepLink] = useState(false);
 
-  // Deep-link fallback: fetch match directly if not in local array
-  const matchId = matchIdParam ? parseInt(matchIdParam, 10) : null;
-  const localMatch = matchId ? matches.find((m: any) => m.id === matchId) : null;
-
-  useEffect(() => {
-    if (matchId && !localMatch && !deepLinkedMatch && !isFetchingDeepLink) {
-      const fetchDeepLink = async () => {
-        setIsFetchingDeepLink(true);
-        try {
-          const response = await fetch(`/api/matches/${matchId}`);
-          if (response.ok) {
-            const data = await response.json();
-            setDeepLinkedMatch(data);
-          }
-        } catch (error) {
-          console.error("Failed to fetch deep-linked match:", error);
-        } finally {
-          setIsFetchingDeepLink(false);
-        }
-      };
-      fetchDeepLink();
-    }
-  }, [matchId, localMatch, deepLinkedMatch, isFetchingDeepLink]);
-
-  useEffect(() => {
-    if (!matchId && deepLinkedMatch) {
-      setDeepLinkedMatch(null);
-    }
-  }, [matchId, deepLinkedMatch]);
-
-  const selectedMatchData = localMatch || deepLinkedMatch;
+  const selectedMatchData = useDeepLinkedResource(matchIdParam, matches, 'id', matchApi.getMatch);
 
   useEffect(() => {
     if (activeModal === MODAL_TYPES.CREATE_MATCH) {
@@ -136,14 +91,14 @@ function MatchesPageContent() {
   return (
     <div className="flex-1 p-6">
       <div className="max-w-7xl mx-auto min-h-full">
-        <div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 transition-opacity duration-500 ease-in-out ${isReady ? 'opacity-100' : 'opacity-0'}`}>
+        <AnimatedPageHeader loading={loading}>
           <FilterBar
             searchTerm={search}
             onSearchChange={setSearch}
             searchPlaceholder="Search matches..."
             filterValue={status}
             onFilterChange={setStatus}
-            filterOptions={STATUS_OPTIONS}
+            filterOptions={STATUS_FILTER_OPTIONS}
             className="flex-1"
           />
 
@@ -154,7 +109,7 @@ function MatchesPageContent() {
               onPageChange={setPage}
             />
           )}
-        </div>
+        </AnimatedPageHeader>
 
         {loading && matches.length === 0 ? (
           <ContentLoader />
@@ -176,7 +131,7 @@ function MatchesPageContent() {
             )}
           />
         ) : (
-          <EmptyState icon={FileSearch} title="No matches found" subtitle="Try adjusting your search or filter criteria" />
+          <EmptyState icon="MATCH" title="No matches found" subtitle="Try adjusting your search or filter criteria" />
         )}
       </div>
 

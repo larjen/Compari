@@ -19,18 +19,10 @@
 'use client';
 
 import { useElapsedTime } from './useElapsedTime';
-import { ENTITY_STATUS } from '@/lib/constants';
-
-/**
- * SoC Note: The database schema includes CHECK constraints that enforce
- * ENTITY_STATUS values (pending, processing, completed, failed).
- * This guarantees we will never receive an unexpected status string,
- * allowing the frontend to safely rely on exhaustive switch/if statements.
- */
-type EntityStatusType = 'pending' | 'processing' | 'completed' | 'failed' | null | undefined;
+import { ENTITY_STATUS, type EntityStatus } from '@/lib/constants';
 
 interface UseTaskLifecycleProps {
-  status: EntityStatusType;
+  status: EntityStatus | string | null | undefined;
   startTime: string | null | undefined;
   error?: string | null;
 }
@@ -44,21 +36,33 @@ interface UseTaskLifecycleReturn {
 }
 
 /**
+ * @description Derives UI lifecycle states specifically from the centralized ENTITY_STATUS constants
+ * to maintain alignment with the document processing pipeline.
  * Custom hook for deriving UI lifecycle states from backend status.
- * @param {string | null | undefined} status - The current status from the backend (pending, processing, completed, failed)
+ * @param {EntityStatus | string | null | undefined} status - The current status from the backend (pending, processing, completed, failed)
  * @param {string | null | undefined} startTime - The timestamp when processing started (for elapsed time calculation)
  * @param {string | null | undefined} error - Optional error message string
  * @returns {UseTaskLifecycleReturn} Object containing boolean lifecycle states and elapsed time
  */
 export function useTaskLifecycle(
-  status: string | null | undefined,
+  status: EntityStatus | string | null | undefined,
   startTime: string | null | undefined,
   error?: string | null
 ): UseTaskLifecycleReturn {
-  const isPending = status === ENTITY_STATUS.PENDING;
-  const isProcessing = status === ENTITY_STATUS.PROCESSING;
-  const hasError = status === ENTITY_STATUS.FAILED || status === 'error' || !!error;
-  const isCompleted = status === ENTITY_STATUS.COMPLETED;
+  const s = status?.toLowerCase();
+
+  /**
+   * SoC Policy: Strict state separation.
+   * - isPending: Specifically waiting in the queue.
+   * - isCompleted: Terminal success.
+   * - hasError: Terminal failure.
+   * - isProcessing: Any non-terminal, non-pending state (granular pipeline stages).
+   */
+  const isPending = s === ENTITY_STATUS.PENDING;
+  const isCompleted = s === ENTITY_STATUS.COMPLETED;
+  const hasError = s === ENTITY_STATUS.FAILED || !!error;
+
+  const isProcessing = !!s && !isPending && !isCompleted && !hasError;
 
   const elapsedTime = useElapsedTime(isProcessing ? startTime : undefined);
 

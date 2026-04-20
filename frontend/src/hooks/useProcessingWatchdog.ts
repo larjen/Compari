@@ -11,19 +11,19 @@ const WATCHDOG_TIMEOUT_MS = 60000;
  * Monitors items for stale processing states and triggers a refetch if a timeout is reached.
  * @param items - Array of domain entities (Matches, Entities, etc.)
  * @param statusField - The key on the item that holds its status (e.g., 'status')
- * @param processingValue - The string value that indicates it is processing (e.g., 'processing')
+ * @param processingValues - The array of string values that indicate it is processing (e.g., ['processing', 'parsing_document'])
  * @param refetchFn - The function to call to resync the data
  */
 export function useProcessingWatchdog<T>(
   items: T[] | null,
   statusField: keyof T,
-  processingValue: string,
+  processingValues: string[],
   refetchFn: () => Promise<void> | void
 ) {
   useEffect(() => {
     if (!items || items.length === 0) return;
 
-    const hasProcessingItems = items.some(item => item[statusField] === processingValue);
+    const hasProcessingItems = items.some(item => processingValues.includes(item[statusField] as string));
 
     if (hasProcessingItems) {
       const timer = setTimeout(() => {
@@ -33,5 +33,5 @@ export function useProcessingWatchdog<T>(
 
       return () => clearTimeout(timer);
     }
-  }, [items, statusField, processingValue, refetchFn]);
+  }, [items, statusField, processingValues, refetchFn]);
 }

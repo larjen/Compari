@@ -10,6 +10,7 @@
  * - Updated to use requirementEntityId/offeringEntityId.
  */
 import { EntityMatch } from '../types';
+import { HTTP_METHODS } from '../constants';
 import { fetchWrapper } from './apiClient';
 
 export interface MatchFiles {
@@ -88,8 +89,7 @@ export const matchApi = {
    */
   async createMatch(requirementEntityId: number, offeringEntityId: number): Promise<number> {
     const data = await fetchWrapper<{ matchId: number }>('/matches', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: HTTP_METHODS.POST,
       body: JSON.stringify({ requirementEntityId, offeringEntityId }),
     });
     return data.matchId;
@@ -102,7 +102,7 @@ export const matchApi = {
    * @throws {Error} If the request fails.
    */
   async deleteMatch(id: number): Promise<void> {
-    return fetchWrapper(`/matches/${id}`, { method: 'DELETE' });
+    return fetchWrapper(`/matches/${id}`, { method: HTTP_METHODS.DELETE });
   },
 
   /**
@@ -127,7 +127,7 @@ export const matchApi = {
   },
 
   async openFolder(id: number): Promise<void> {
-    return fetchWrapper(`/matches/${id}/folder/open`, { method: 'POST' });
+    return fetchWrapper(`/matches/${id}/folder/open`, { method: HTTP_METHODS.POST });
   },
 
   /**
@@ -136,6 +136,44 @@ export const matchApi = {
    * @returns {Promise<void>}
    */
   async retryProcessing(id: number): Promise<void> {
-    await fetchWrapper(`/matches/${id}/retry`, { method: 'POST' });
+    await fetchWrapper(`/matches/${id}/retry`, { method: HTTP_METHODS.POST });
+  },
+
+  /**
+   * Downloads the Match Report PDF directly to the user's device.
+   * @param {number} id - The match ID.
+   * @throws {Error} If the generation or download fails.
+   */
+  async downloadMatchReportPdf(id: number): Promise<void> {
+    const response = await fetch(`/api/matches/${id}/pdf`);
+    
+    if (!response.ok) {
+      let errorMessage = "Failed to generate PDF";
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+      } catch (e) {}
+      throw new Error(errorMessage);
+    }
+    
+    const blob = await response.blob();
+    const contentDisposition = response.headers.get('Content-Disposition');
+    let filename = `Compari_Match_Report_${id}.pdf`;
+    if (contentDisposition && contentDisposition.includes('filename=')) {
+      const matches = /filename="([^"]+)"/.exec(contentDisposition);
+      if (matches != null && matches) { 
+        filename = matches[1];
+      }
+    }
+
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   },
 };

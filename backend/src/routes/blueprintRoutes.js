@@ -15,20 +15,20 @@
 const express = require('express');
 const router = express.Router();
 
-const BlueprintController = require('../controllers/BlueprintController');
+const { blueprintController } = require('../config/container').getContainer();
 const { validate } = require('../middlewares/validateZod');
 const { blueprintSchema } = require('../validators/schemas');
 
-router.get('/', BlueprintController.getAll);
+router.get('/', blueprintController.getAll);
 
-router.get('/:id', BlueprintController.getById);
+router.get('/:id', blueprintController.getById);
 
-router.post('/', validate(blueprintSchema), BlueprintController.create);
+router.post('/', validate(blueprintSchema), blueprintController.create);
 
-router.put('/:id', BlueprintController.update);
+router.put('/:id', blueprintController.update);
 
-router.patch('/:id/set-active', BlueprintController.setActive);
+router.patch('/:id/set-active', blueprintController.setActive);
 
-router.delete('/:id', BlueprintController.delete);
+router.delete('/:id', blueprintController.delete);
 
 module.exports = router;

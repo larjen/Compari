@@ -1,18 +1,19 @@
-import { CornerDownRight } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { CriterionPill } from '@/components/shared/CriterionPill';
 import { formatPercentage } from '@/lib/utils';
 import { RawMatchItem } from './types';
+import { MatchCategory, MATCH_CATEGORIES } from '@/lib/constants';
 
-function FlatMatchCard({ matchItem, fallbackDimensionId, matchType }: { matchItem: RawMatchItem; fallbackDimensionId: number; matchType: 'perfect' | 'partial' | 'missed' }) {
+function FlatMatchCard({ matchItem, fallbackDimensionId, matchType }: { matchItem: RawMatchItem; fallbackDimensionId: number; matchType: MatchCategory }) {
     const percentageStr = matchItem.offCriteria === null
         ? '0%'
         : formatPercentage(matchItem.similarityScore);
 
     // Enforce black text and add subtle matching borders for all states
     let circleBgClass = "bg-accent-sand/20 text-black border border-accent-sand/30";
-    if (matchType === 'perfect') circleBgClass = "bg-emerald-100 text-black border border-emerald-200";
-    else if (matchType === 'partial') circleBgClass = "bg-amber-100 text-black border border-amber-200";
-    else if (matchType === 'missed') circleBgClass = "bg-rose-100 text-black border border-rose-200";
+    if (matchType === MATCH_CATEGORIES.PERFECT) circleBgClass = "bg-emerald-100 text-black border border-emerald-200";
+    else if (matchType === MATCH_CATEGORIES.PARTIAL) circleBgClass = "bg-amber-100 text-black border border-amber-200";
+    else if (matchType === MATCH_CATEGORIES.MISSED) circleBgClass = "bg-rose-100 text-black border border-rose-200";
 
     const actualDimensionId = matchItem.dimensionId ?? fallbackDimensionId;
 
@@ -36,7 +37,7 @@ function FlatMatchCard({ matchItem, fallbackDimensionId, matchType }: { matchIte
                 </div>
 
                 <div className="flex items-center gap-2 min-w-0 w-full">
-                    <CornerDownRight className="w-4 h-4 text-gray-400 shrink-0" />
+                    <DOMAIN_ICONS.INDENT className="w-4 h-4 text-gray-400 shrink-0" />
                     {matchItem.offCriteria === null ? (
                         <div className="px-2.5 py-1 print:px-2 print:py-0.5 rounded-full text-xs print:text-[8px] font-medium border bg-white/60 text-gray-500 border-gray-200 max-w-full truncate">
                             No match found

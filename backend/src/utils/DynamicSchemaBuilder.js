@@ -9,15 +9,34 @@
  * - ✅ MUST be imported by workflows that need dynamic schema generation.
  * - ❌ MUST NOT contain business logic - only schema construction.
  * 
+ * @dependency_injection
+ * Enforces constructor injection per ARCHITECTURE.md Section 2.
+ * logService is received via constructor for validation warnings.
+ * 
  * @separation_of_concerns
  * Uses logService.logTerminal for validation warnings. This is infrastructure-level
  * logging (schema validation failures) that doesn't need file persistence.
  */
 
-const logService = require('../services/LogService');
 const { ENTITY_ROLES, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 class DynamicSchemaBuilder {
+    /**
+     * @dependency_injection
+     * Enforces constructor injection per ARCHITECTURE.md Section 2.
+     * @param {Object} options - Dependency object
+     * @param {Object} options.logService - The LogService instance (must be injected)
+     */
+    constructor({ logService }) {
+        this._logService = logService;
+    }
+
+    _log(message, level = LOG_LEVELS.WARN, symbol = LOG_SYMBOLS.WARNING) {
+        if (this._logService) {
+            this._logService.logTerminal(level, symbol, 'DynamicSchemaBuilder', message);
+        }
+    }
+
     /**
      * Builds a JSON Schema for extracting criteria across active dimensions.
      * The schema mandates an object where keys are dimension names and values are arrays of strings.
@@ -55,7 +74,7 @@ class DynamicSchemaBuilder {
 
         for (const dimension of activeDimensions) {
             if (!dimension.name) {
-                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'DynamicSchemaBuilder', `Skipping dimension with missing name: ${JSON.stringify(dimension)}`);
+                this._log(`Skipping dimension with missing name: ${JSON.stringify(dimension)}`);
                 continue;
             }
 
@@ -159,7 +178,7 @@ class DynamicSchemaBuilder {
             const isRequired = field.isRequired || field.is_required;
             
             if (!fieldName || !fieldType) {
-                logService.logTerminal(LOG_LEVELS.WARN, LOG_SYMBOLS.WARNING, 'DynamicSchemaBuilder', `Skipping field with missing name or type: ${JSON.stringify(field)}`);
+                this._log(`Skipping field with missing name or type: ${JSON.stringify(field)}`);
                 continue;
             }
 
@@ -187,4 +206,4 @@ class DynamicSchemaBuilder {
     }
 }
 
-module.exports = new DynamicSchemaBuilder();
+module.exports = DynamicSchemaBuilder;

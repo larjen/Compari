@@ -11,21 +11,21 @@
  * - ❌ MUST NOT make direct database calls.
  * - All requests go through the REST API endpoints.
  */
-import { Entity, EntityFiles, EntityMatch, Criterion } from '../types';
-import { ENTITY_ROLES } from '../constants';
+import { Entity, EntityFiles, EntityMatch, Criterion, EntityType, EntityStatus } from '../types';
+import { ENTITY_ROLES, HTTP_METHODS } from '../constants';
 import { fetchWrapper } from './apiClient';
 
 export interface CreateEntityData {
-  type: typeof ENTITY_ROLES.REQUIREMENT | typeof ENTITY_ROLES.OFFERING;
+  type: EntityType;
   name: string;
   description?: string;
   folderPath?: string;
   metadata?: Record<string, unknown>;
   blueprintId?: number;
-  entityRole?: typeof ENTITY_ROLES.REQUIREMENT | typeof ENTITY_ROLES.OFFERING;
+  entityRole?: EntityType;
 }
 
-export interface UpdateEntityData {
+interface UpdateEntityData {
   metadata?: Record<string, unknown>;
 }
 
@@ -33,7 +33,7 @@ export interface UpdateEntityData {
  * Parameters for querying entities with pagination, search, and status filtering.
  */
 export interface EntityQueryParams {
-  type?: typeof ENTITY_ROLES.REQUIREMENT | typeof ENTITY_ROLES.OFFERING;
+  type?: EntityType;
   page?: number;
   limit?: number;
   search?: string;
@@ -100,7 +100,7 @@ export const entityApi = {
    */
   async createEntity(data: CreateEntityData): Promise<number> {
     const response = await fetchWrapper<{ entityId: number }>('/entities', {
-      method: 'POST',
+      method: HTTP_METHODS.POST,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
@@ -116,7 +116,7 @@ export const entityApi = {
    */
   async updateEntity(id: number, data: UpdateEntityData): Promise<void> {
     return fetchWrapper(`/entities/${id}`, {
-      method: 'PUT',
+      method: HTTP_METHODS.PUT,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
@@ -129,7 +129,7 @@ export const entityApi = {
    * @throws {Error} If the request fails.
    */
   async deleteEntity(id: number): Promise<void> {
-    return fetchWrapper(`/entities/${id}`, { method: 'DELETE' });
+    return fetchWrapper(`/entities/${id}`, { method: HTTP_METHODS.DELETE });
   },
 
   /**
@@ -143,7 +143,7 @@ export const entityApi = {
     const formData = new FormData();
     formData.append('document', file);
     const data = await fetchWrapper<{ path: string }>(`/entities/${entityId}/upload`, {
-      method: 'POST',
+      method: HTTP_METHODS.POST,
       body: formData,
     });
     return data.path;
@@ -160,7 +160,7 @@ export const entityApi = {
     const formData = new FormData();
     files.forEach(f => formData.append('documents', f));
     const data = await fetchWrapper<{ paths: string[] }>(`/entities/${entityId}/upload`, {
-      method: 'POST',
+      method: HTTP_METHODS.POST,
       body: formData,
     });
     return data.paths;
@@ -190,11 +190,11 @@ export const entityApi = {
   /**
    * Fetches matches for a specific entity.
    * @param {number} entityId - The entity ID.
-   * @param {('requirement' | 'offering')} [role] - Optional role filter.
+   * @param {EntityType} [role] - Optional role filter.
    * @returns {Promise<EntityMatch[]>} Array of EntityMatch objects.
    * @throws {Error} If the request fails.
    */
-  async getMatches(entityId: number, role?: typeof ENTITY_ROLES.REQUIREMENT | typeof ENTITY_ROLES.OFFERING): Promise<EntityMatch[]> {
+  async getMatches(entityId: number, role?: EntityType): Promise<EntityMatch[]> {
     const data = await fetchWrapper<{ matches: EntityMatch[] }>(`/entities/${entityId}/matches`, {
       params: role ? { role } : undefined,
     });
@@ -208,7 +208,7 @@ export const entityApi = {
    * @throws {Error} If the request fails.
    */
   async openFolder(id: number): Promise<void> {
-    return fetchWrapper(`/entities/${id}/folder/open`, { method: 'POST' });
+    return fetchWrapper(`/entities/${id}/folder/open`, { method: HTTP_METHODS.POST });
   },
 
   /**
@@ -220,8 +220,7 @@ export const entityApi = {
    */
   async extractCriteria(entityId: number, fileName: string): Promise<void> {
     return fetchWrapper(`/entities/${entityId}/extract`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: HTTP_METHODS.POST,
       body: JSON.stringify({ fileName }),
     });
   },
@@ -233,7 +232,7 @@ export const entityApi = {
    * @throws {Error} If the request fails.
    */
   async cancelExtraction(entityId: number): Promise<void> {
-    return fetchWrapper(`/entities/${entityId}/extract`, { method: 'DELETE' });
+    return fetchWrapper(`/entities/${entityId}/extract`, { method: HTTP_METHODS.DELETE });
   },
 
   /**
@@ -244,7 +243,7 @@ export const entityApi = {
    * @returns {Promise<{ evaluatedChunk: any[], totalOpposites: number }>} Chunk of evaluated matches with total count.
    * @throws {Error} If the request fails.
    */
-  async getTopMatches(entityId: number, offset: number, limit: number): Promise<{ evaluatedChunk: { entity: Entity; score: number; existingMatchId: number | null; existingMatchStatus: 'pending' | 'processing' | 'completed' | 'error' | null }[], totalOpposites: number }> {
+  async getTopMatches(entityId: number, offset: number, limit: number): Promise<{ evaluatedChunk: { entity: Entity; score: number; existingMatchId: number | null; existingMatchStatus: EntityStatus | 'error' | null }[], totalOpposites: number }> {
     const data = await fetchWrapper<{ evaluatedChunk: any[], totalOpposites: number }>(
       `/entities/${entityId}/top-matches?offset=${offset}&limit=${limit}`
     );
@@ -257,6 +256,6 @@ export const entityApi = {
    * @returns {Promise<void>}
    */
   retryProcessing: async (id: number): Promise<void> => {
-    await fetchWrapper(`/entities/${id}/retry`, { method: 'POST' });
+    await fetchWrapper(`/entities/${id}/retry`, { method: HTTP_METHODS.POST });
   },
 };

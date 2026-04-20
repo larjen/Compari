@@ -2,7 +2,7 @@
 
 import { ReactNode, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { cn } from '@/lib/utils';
 import { Badge } from './Badge';
 
@@ -93,7 +93,7 @@ export function Dialog({
                     onClick={onClose}
                     className="p-1.5 rounded-lg text-accent-forest/60 hover:text-accent-forest hover:bg-accent-sand/20 transition-colors"
                   >
-                    <X className="w-5 h-5" />
+                    <DOMAIN_ICONS.CLOSE className="w-5 h-5" />
                   </button>
                 </div>
               </div>

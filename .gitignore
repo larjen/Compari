@@ -139,7 +139,7 @@ dist
 # BACKEND DATA & LOCAL FILES
 # ==========================================
 # Ignore the SQLite database and career archives
-data/
+Data/
 
 # Ignore local AI settings
 backend/settings.json
@@ -149,3 +149,6 @@ backend/settings.json
 compari-release/
 .swp
 backend/tsc-errors.txt
+.vscode
+.ai_cache
+knip_report.txt

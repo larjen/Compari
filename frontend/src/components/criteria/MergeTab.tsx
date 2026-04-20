@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, Merge } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Criterion } from '@/lib/types';
 import { criteriaApi } from '@/lib/api/criteriaApi';
 import { useToast } from '@/hooks/useToast';
@@ -50,7 +50,7 @@ export function MergeTab({ criterion, onMerged }: MergeTabProps) {
     }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-40"><Loader2 className="w-6 h-6 animate-spin text-accent-sage" /></div>;
+  if (loading) return <div className="flex items-center justify-center h-40"><DOMAIN_ICONS.LOADING className="w-6 h-6 animate-spin text-accent-sage" /></div>;
   if (similar.length === 0) return <div className="text-center py-10 text-accent-forest/40">No similar criteria found.</div>;
 
   return (
@@ -89,7 +89,7 @@ export function MergeTab({ criterion, onMerged }: MergeTabProps) {
                     onClick={() => handleMerge(item.criterion.id)} 
                     disabled={isProcessing}
                   >
-                    {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm'}
+                    {isProcessing ? <DOMAIN_ICONS.LOADING className="w-4 h-4 animate-spin" /> : 'Confirm'}
                   </Button>
                   <Button 
                     variant="ghost" 
@@ -106,7 +106,7 @@ export function MergeTab({ criterion, onMerged }: MergeTabProps) {
                   size="sm" 
                   onClick={() => setConfirmId(item.criterion.id)}
                 >
-                  <Merge className="w-4 h-4 mr-2" />
+                  <DOMAIN_ICONS.MERGE className="w-4 h-4 mr-2" />
                   Merge
                 </Button>
               )}

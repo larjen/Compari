@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Loader2, ListChecks } from 'lucide-react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Criterion } from '@/lib/types';
 import { getDimensionLabel } from '@/lib/utils';
 import { CriterionPill } from '@/components/shared/CriterionPill';
@@ -23,9 +23,9 @@ interface CriteriaViewerProps {
  * @description A shared, animated grid for rendering criteria grouped by dimension.
  * @responsibility Consolidates grouping and animation logic so criteria look identical whether viewed on a full page or inside an entity modal.
  */
-export function CriteriaViewer({ 
-  criteria, 
-  isLoading = false, 
+export function CriteriaViewer({
+  criteria,
+  isLoading = false,
   emptyMessage = 'No criteria found.',
   page = 1,
   search = '',
@@ -67,7 +67,7 @@ export function CriteriaViewer({
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-accent-forest/50 py-8">
-        <Loader2 className="w-4 h-4 animate-spin" />
+        <DOMAIN_ICONS.LOADING className="w-4 h-4 animate-spin" />
         <span>Loading criteria...</span>
       </div>
     );
@@ -76,7 +76,7 @@ export function CriteriaViewer({
   if (criteria.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-8 text-accent-forest/40">
-        <ListChecks className="w-10 h-10 mb-3 opacity-50" />
+        <DOMAIN_ICONS.CRITERIA className="w-10 h-10 mb-3 opacity-50" />
         <p className="text-sm italic">{emptyMessage}</p>
       </div>
     );

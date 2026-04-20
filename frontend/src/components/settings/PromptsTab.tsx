@@ -1,35 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { MessageSquareText, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Prompt } from '@/lib/types';
-import { promptApi } from '@/lib/api/promptApi';
+import { usePrompts } from '@/hooks/usePrompts';
 import { Button } from '@/components/ui/Button';
 import { SaveButton } from '@/components/ui/SaveButton';
 import { EditButton } from '@/components/ui/EditButton';
 
 export function PromptsTab() {
-  const [prompts, setPrompts] = useState<Prompt[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { prompts, loading, updatePrompt } = usePrompts();
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editText, setEditText] = useState('');
-
-  useEffect(() => {
-    loadPrompts();
-  }, []);
-
-  const loadPrompts = async () => {
-    try {
-      setLoading(true);
-      const data = await promptApi.getPrompts();
-      setPrompts(data);
-    } catch (err) {
-      console.error('Failed to load prompts:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const startEditing = (prompt: Prompt) => {
     setEditingId(prompt.id);
@@ -46,8 +29,7 @@ export function PromptsTab() {
 
     setSaving(true);
     try {
-      await promptApi.updatePrompt(id, editText);
-      await loadPrompts();
+      await updatePrompt(id, editText);
       setEditingId(null);
       setEditText('');
     } catch (err) {
@@ -60,7 +42,7 @@ export function PromptsTab() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-accent-sage" />
+        <DOMAIN_ICONS.LOADING className="w-6 h-6 animate-spin text-accent-sage" />
       </div>
     );
   }
@@ -72,10 +54,10 @@ export function PromptsTab() {
         <div key={prompt.id} className="p-6 bg-themed-inner border border-themed-border rounded-xl">
           <div className="mb-4">
             <div className="flex items-center gap-2">
-              <MessageSquareText className="w-4 h-4 text-accent-sage" />
-              <h3 className="text-lg font-bold text-themed-fg-main">{prompt.title}</h3>
+              <DOMAIN_ICONS.PROMPT className="w-4 h-4 text-accent-sage" />
+              <h3 className="text-lg font-bold text-themed-fg-main truncate" title={prompt.title}>{prompt.title}</h3>
             </div>
-            <p className="text-sm text-themed-fg-muted">{prompt.description}</p>
+            <p className="text-sm text-themed-fg-muted truncate" title={prompt.description}>{prompt.description}</p>
           </div>
 
           {editingId === prompt.id ? (
@@ -95,7 +77,7 @@ export function PromptsTab() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="font-mono text-sm text-themed-fg-main whitespace-pre-wrap bg-themed-inner p-4 rounded-md border border-themed-border">
+              <div className="font-mono text-sm text-themed-fg-main whitespace-pre-wrap bg-themed-inner p-4 rounded-md border border-themed-border break-words">
                 {prompt.prompt}
               </div>
               <div className="flex justify-end pt-4 mt-2">
