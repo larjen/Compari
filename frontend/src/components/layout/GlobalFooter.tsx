@@ -29,7 +29,7 @@ export function GlobalFooter() {
                 href="https://github.com/larjen/Compari"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full py-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 opacity-80 hover:opacity-100 transition-opacity cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent-sage/50"
+                className="w-full py-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 opacity-80 hover:opacity-100 transition-opacity cursor-pointer outline-hidden focus-visible:ring-2 focus-visible:ring-accent-sage/50"
             >
                 <Logo width={100} height={24} className="grayscale opacity-50 shrink-0" />
 

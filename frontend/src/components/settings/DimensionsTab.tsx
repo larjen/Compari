@@ -257,13 +257,13 @@ export function DimensionsTab({ isCreating, setIsCreating }: { isCreating: boole
                   <div className="space-y-4">
                     <div>
                       <FormLabel>Requirement Instruction</FormLabel>
-                      <div className="font-mono text-sm text-themed-fg-main whitespace-pre-wrap bg-themed-inner p-4 rounded-md border border-themed-border break-words">
+                      <div className="font-mono text-sm text-themed-fg-main whitespace-pre-wrap bg-themed-inner p-4 rounded-md border border-themed-border wrap-break-word">
                         {dim.requirementInstruction || <span className="text-themed-fg-muted italic">No instruction provided.</span>}
                       </div>
                     </div>
                     <div>
                       <FormLabel>Offering Instruction</FormLabel>
-                      <div className="font-mono text-sm text-themed-fg-main whitespace-pre-wrap bg-themed-inner p-4 rounded-md border border-themed-border break-words">
+                      <div className="font-mono text-sm text-themed-fg-main whitespace-pre-wrap bg-themed-inner p-4 rounded-md border border-themed-border wrap-break-word">
                         {dim.offeringInstruction || <span className="text-themed-fg-muted italic">No instruction provided.</span>}
                       </div>
                     </div>

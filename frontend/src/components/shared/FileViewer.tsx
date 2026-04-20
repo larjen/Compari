@@ -45,7 +45,7 @@ export function FileViewer({
             className="w-full flex items-center gap-3 p-2 rounded-lg border border-border-light bg-accent-sand/10 hover:bg-accent-sand/20 group transition-all text-left cursor-pointer"
             title="Open Folder Externally"
           >
-            <div className="p-2 bg-white rounded border border-border-light text-accent-forest/40 group-hover:text-accent-forest/60 transition-colors shrink-0">
+            <div className="p-2 bg-white rounded-sm border border-border-light text-accent-forest/40 group-hover:text-accent-forest/60 transition-colors shrink-0">
               <DOMAIN_ICONS.FOLDER className="w-4 h-4" />
             </div>
 
@@ -61,7 +61,7 @@ export function FileViewer({
           </button>
         ) : (
           <div className="w-full flex items-center gap-3 p-2 rounded-lg border border-border-light bg-accent-sand/10 text-left">
-            <div className="p-2 bg-white rounded border border-border-light text-accent-forest/40 shrink-0">
+            <div className="p-2 bg-white rounded-sm border border-border-light text-accent-forest/40 shrink-0">
               <DOMAIN_ICONS.FOLDER className="w-4 h-4" />
             </div>
             <span className="text-sm text-accent-forest/70 truncate flex-1 font-medium">
@@ -91,7 +91,7 @@ export function FileViewer({
 
             const PillContent = () => (
               <>
-                <div className="p-2 bg-white rounded border border-border-light text-accent-forest/40 group-hover:text-accent-forest/60 transition-colors shrink-0">
+                <div className="p-2 bg-white rounded-sm border border-border-light text-accent-forest/40 group-hover:text-accent-forest/60 transition-colors shrink-0">
                   <DOMAIN_ICONS.FILE className="w-4 h-4" />
                 </div>
 

@@ -100,7 +100,7 @@ class PdfGeneratorService {
                     origin: 'PdfGeneratorService', 
                     message: `Timeout waiting for frontend to render PDF content at ${frontendUrl}. Error: ${err.message}` 
                 });
-                throw new Error(`Failed to render PDF: The frontend at ${frontendUrl} timed out or failed to display the report.`);
+                throw new Error(`Failed to render PDF: The frontend at ${frontendUrl} timed out or failed to display the report.`, { cause: err });
             }
 
             await new Promise(resolve => setTimeout(resolve, 1000));

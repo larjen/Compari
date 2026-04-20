@@ -1,8 +1,109 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap') layer(base);
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+/* SAFELIST: Dimension Colors
+  These classes are used dynamically in DIMENSION_COLORS (utils.ts).
+  Tailwind v4 scans this comment and ensures these classes are compiled.
+  
+  bg-blue-50 text-blue-700 border-blue-200 border-blue-400
+  bg-purple-50 text-purple-700 border-purple-200 border-purple-400
+  bg-green-50 text-green-700 border-green-200 border-green-400
+  bg-orange-50 text-orange-700 border-orange-200 border-orange-400
+  bg-pink-50 text-pink-700 border-pink-200 border-pink-400
+  bg-gray-50 text-gray-700 border-gray-200 border-gray-400
+  bg-indigo-50 text-indigo-700 border-indigo-200 border-indigo-400
+  bg-teal-50 text-teal-700 border-teal-200 border-teal-400
+  bg-rose-50 text-rose-700 border-rose-200 border-rose-400
+  bg-amber-50 text-amber-700 border-amber-200 border-amber-400
+  bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200 border-fuchsia-400
+  bg-cyan-50 text-cyan-700 border-cyan-200 border-cyan-400
+  bg-violet-50 text-violet-700 border-violet-200 border-violet-400
+*/
+
+@theme {
+  /* Colors */
+  --color-background: #FAF9F6;
+  --color-foreground: #1A2F24;
+  --color-foreground-muted: #4A5568;
+  
+  --color-accent-sage: #8FA98F;
+  --color-accent-sage-light: #B5C9B4;
+  --color-accent-sand: #D4C5A9;
+  --color-accent-forest: #2D4A3A;
+  --color-accent-forest-light: #3D634E;
+  
+  --color-card: #FFFFFF;
+  --color-card-hover: #F7F6F4;
+  
+  --color-border: #E8E5DF;
+  --color-border-light: #F0EDE8;
+  
+  --color-status-waiting: #D4C5A9;
+  --color-status-preparing: #8FA98F;
+  --color-status-sent: #6B8E7D;
+  --color-status-finished: #1A2F24;
+  
+  /* Themed CSS Variables */
+  --color-themed-bg: var(--theme-bg);
+  --color-themed-border: var(--theme-border);
+  --color-themed-fg-main: var(--theme-fg-main);
+  --color-themed-fg-muted: var(--theme-fg-muted);
+  --color-themed-input-bg: var(--theme-input-bg);
+  --color-themed-input-border: var(--theme-input-border);
+  --color-themed-input-placeholder: var(--theme-input-placeholder);
+  --color-themed-inner: var(--theme-inner-box);
+
+  /* Fonts */
+  --font-serif: "Playfair Display", "Merriweather", "Georgia", serif;
+  --font-sans: "Inter", system-ui, sans-serif;
+
+  /* Backdrop Blur */
+  --blur-xs: 2px;
+
+  /* Animations */
+  --animate-fade-in: fadeIn 0.3s ease-out;
+  --animate-slide-up: slideUp 0.4s ease-out;
+  --animate-slide-down: slideDown 0.3s ease-out;
+  --animate-scale-in: scaleIn 0.2s ease-out;
+
+  /* Keyframes */
+  @keyframes fadeIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+  @keyframes slideUp {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideDown {
+    0% { opacity: 0; transform: translateY(-10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes scaleIn {
+    0% { opacity: 0; transform: scale(0.95); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
 
 @layer base {
   :root {
@@ -42,7 +143,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: 'Playfair Display', Georgia, serif;
 }
 

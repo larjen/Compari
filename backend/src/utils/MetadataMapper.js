@@ -101,7 +101,7 @@ class MetadataMapper {
      * - Never throws - always returns a valid object.
      */
     parseAndMapMetadata(metadataJsonString, blueprintFields) {
-        let parsedJson = {};
+        let parsedJson;
 
         try {
             parsedJson = JSON.parse(metadataJsonString);

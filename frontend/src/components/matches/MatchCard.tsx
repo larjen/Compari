@@ -89,11 +89,11 @@ export function MatchCard({ match, onClick, onDelete, onRetry }: MatchCardProps)
 
       <div className="flex flex-col items-center gap-2 w-full mt-1 mb-2">
         <div className="flex items-center justify-center gap-1.5 text-sm text-accent-forest/60 w-full min-w-0">
-          <DOMAIN_ICONS.REQUIREMENT className="w-3.5 h-3.5 flex-shrink-0" />
+          <DOMAIN_ICONS.REQUIREMENT className="w-3.5 h-3.5 shrink-0" />
           <span className="font-medium text-accent-forest truncate whitespace-nowrap">{reqPrimaryName}</span>
         </div>
         <div className="flex items-center justify-center gap-1.5 text-sm text-accent-forest/60 w-full min-w-0">
-          <DOMAIN_ICONS.OFFERING className="w-3.5 h-3.5 flex-shrink-0" />
+          <DOMAIN_ICONS.OFFERING className="w-3.5 h-3.5 shrink-0" />
           <span className="truncate whitespace-nowrap">{offPrimaryName}</span>
         </div>
       </div>

@@ -118,7 +118,7 @@ export function BaseCard({
       )}
     >
       {/* Left-side ID sidebar */}
-      <div className="flex-shrink-0 w-10 bg-accent-sage/10 flex items-center justify-center border-r border-border-light rounded-l-xl">
+      <div className="shrink-0 w-10 bg-accent-sage/10 flex items-center justify-center border-r border-border-light rounded-l-xl">
         <span className="text-sm font-bold text-accent-forest/70 rotate-180 [writing-mode:vertical-lr]">
           #{id}
         </span>
@@ -130,7 +130,7 @@ export function BaseCard({
          * Top Row - StatusIndicator section.
          * Fixed height of 24px (h-6) to ensure consistent positioning.
          */}
-        <div className="h-6 flex-shrink-0 w-full">
+        <div className="h-6 shrink-0 w-full">
           <StatusIndicator
             status={status}
             taskName={taskName}
@@ -152,7 +152,7 @@ export function BaseCard({
          * Fixed height of 32px (h-8) to always reserve space for actions.
          */}
         <div 
-          className="h-8 mt-2 flex items-center justify-center gap-2 flex-shrink-0"
+          className="h-8 mt-2 flex items-center justify-center gap-2 shrink-0"
           onClick={(e) => e.stopPropagation()}
         >
           {isProcessing && onCancel && (

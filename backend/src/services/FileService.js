@@ -333,7 +333,9 @@ class FileService {
         // Safely extract local time components to guarantee OS file path compatibility
         const date = new Date();
         const pad = (n) => String(n).padStart(2, '0');
-        const timestamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+        const ms = String(date.getMilliseconds()).padStart(3, '0');
+        const randomId = Math.random().toString(36).substring(2, 6);
+        const timestamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}-${ms}-${randomId}`;
         
         const safeLine1 = (line1 || "Unknown").replace(/[\/\\:*?"<>|]/g, '-').trim();
         const safeLine2 = (line2 || "Unknown").replace(/[\/\\:*?"<>|]/g, '-').trim();

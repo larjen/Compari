@@ -49,7 +49,7 @@ export function FilterBar({
           */}
           <div className="relative flex-1 md:flex-none">
             <select
-              className="w-full md:w-auto bg-themed-input-bg border border-themed-input-border rounded-lg pl-4 pr-9 py-2.5 text-sm text-themed-fg-main cursor-pointer appearance-none transition-all duration-200 focus:outline-none"
+              className="w-full md:w-auto bg-themed-input-bg border border-themed-input-border rounded-lg pl-4 pr-9 py-2.5 text-sm text-themed-fg-main cursor-pointer appearance-none transition-all duration-200 focus:outline-hidden"
               value={filterValue}
               onFocus={(e) => e.target.blur()}
               // SoC: Purely presentational focus management to maintain the "Flat" UI aesthetic by preventing the browser's default focus ring on click.

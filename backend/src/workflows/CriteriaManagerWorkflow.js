@@ -93,7 +93,7 @@ class CriteriaManagerWorkflow {
             parsed = JSON.parse(responseString);
         } catch (e) {
             this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'CriteriaManagerWorkflow', message: `JSON Parse Error: ${e.message}` });
-            throw new Error(`Failed to parse dimension JSON. AI returned: ${responseString.substring(0, 100)}...`);
+            throw new Error(`Failed to parse dimension JSON. AI returned: ${responseString.substring(0, 100)}...`, { cause: e });
         }
 
         const sanitizeArray = (arr) => {

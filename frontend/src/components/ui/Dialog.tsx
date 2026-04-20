@@ -68,7 +68,7 @@ export function Dialog({
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ duration: 0.2 }}
             className={cn(
-              'relative flex flex-col overflow-hidden w-full h-[100dvh] md:w-full md:max-w-5xl md:h-full',
+              'relative flex flex-col overflow-hidden w-full h-dvh md:w-full md:max-w-5xl md:h-full',
               'md:rounded-2xl bg-white/95 backdrop-blur-md md:shadow-2xl border border-border-light md:border-none',
               className
             )}

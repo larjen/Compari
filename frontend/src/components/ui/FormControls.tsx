@@ -42,7 +42,7 @@ export const FormInput = forwardRef<HTMLInputElement, FormInputProps>(
       <input
         ref={ref}
         className={cn(
-          'w-full px-3 py-2 border border-themed-input-border rounded-lg bg-themed-input-bg text-themed-fg-main focus:ring-2 focus:ring-accent-sage/50 outline-none text-sm',
+          'w-full px-3 py-2 border border-themed-input-border rounded-lg bg-themed-input-bg text-themed-fg-main focus:ring-2 focus:ring-accent-sage/50 outline-hidden text-sm',
           className
         )}
         {...props}
@@ -66,7 +66,7 @@ export const FormSelect = forwardRef<HTMLSelectElement, FormSelectProps>(
       <select
         ref={ref}
         className={cn(
-          'w-full px-3 py-2 border border-themed-input-border rounded-lg bg-themed-input-bg text-themed-fg-main focus:ring-2 focus:ring-accent-sage/50 outline-none text-sm',
+          'w-full px-3 py-2 border border-themed-input-border rounded-lg bg-themed-input-bg text-themed-fg-main focus:ring-2 focus:ring-accent-sage/50 outline-hidden text-sm',
           className
         )}
         {...props}
@@ -92,7 +92,7 @@ export const FormTextarea = forwardRef<HTMLTextAreaElement, FormTextareaProps>(
       <textarea
         ref={ref}
         className={cn(
-          'w-full px-3 py-2 border border-themed-input-border rounded-lg bg-themed-input-bg text-themed-fg-main focus:ring-2 focus:ring-accent-sage/50 outline-none text-sm',
+          'w-full px-3 py-2 border border-themed-input-border rounded-lg bg-themed-input-bg text-themed-fg-main focus:ring-2 focus:ring-accent-sage/50 outline-hidden text-sm',
           className
         )}
         {...props}

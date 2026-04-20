@@ -199,7 +199,7 @@ Every JSDoc block MUST include:
 * **Violation Example:**
   ```typescript
   // ❌ STRICTLY FORBIDDEN - The "Const Class Anti-Pattern"
-  const inputClass = "w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
+  const inputClass = "w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
   
   function MyForm() {
     return <input className={inputClass} />;
@@ -233,3 +233,13 @@ Every JSDoc block MUST include:
     );
   }
   ```
+
+## 9. Tailwind CSS v4 Architecture
+
+**THE LAW:** The frontend uses the Tailwind CSS v4 (Oxide engine). All JavaScript-based styling configuration is strictly outlawed. The styling architecture is CSS-first.
+
+* **Configuration SSoT (`src/app/globals.css`):** All theme extensions, custom colors, fonts, and base layer overrides MUST be defined using the `@theme` directive and native CSS variables inside `globals.css`.
+* **The Config Ban:** * ❌ STRICTLY FORBIDDEN: Developers and AI agents MUST NOT create or use a `tailwind.config.js` or `tailwind.config.ts` file under any circumstances.
+  * ❌ STRICTLY FORBIDDEN: Do not use old v3 directives like `@tailwind base;`. Use `@import "tailwindcss";` exclusively.
+* **PostCSS Requirement:** The project processes styles via `@tailwindcss/postcss`. 
+  * ✅ MANDATORY: If modifying build tools, ensure `postcss.config.js` maintains `@tailwindcss/postcss` and NEVER the legacy `tailwindcss` plugin.

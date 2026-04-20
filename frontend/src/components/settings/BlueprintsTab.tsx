@@ -334,12 +334,12 @@ function BlueprintEditor({ data, setData, dimensions, onAddField, onUpdateField,
                   </div>
                   <div className="pb-2">
                     <label className="flex items-center gap-2 text-sm text-themed-fg-muted whitespace-nowrap cursor-pointer">
-                      <input type="checkbox" checked={field.isRequired} onChange={(e) => onUpdateField(index, { ...field, isRequired: e.target.checked })} className="w-4 h-4 rounded focus:ring-accent-sage border-themed-input-border text-accent-sage" />
+                      <input type="checkbox" checked={field.isRequired} onChange={(e) => onUpdateField(index, { ...field, isRequired: e.target.checked })} className="w-4 h-4 rounded-sm focus:ring-accent-sage border-themed-input-border text-accent-sage" />
                       Required
                     </label>
                   </div>
                   <div className="pb-2">
-                    <button type="button" onClick={() => onRemoveField(index)} className="text-red-400 opacity-70 hover:opacity-100 hover:bg-red-400/10 p-1 rounded">
+                    <button type="button" onClick={() => onRemoveField(index)} className="text-red-400 opacity-70 hover:opacity-100 hover:bg-red-400/10 p-1 rounded-sm">
                       <DOMAIN_ICONS.DELETE className="w-4 h-4" />
                     </button>
                   </div>

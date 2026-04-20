@@ -20,7 +20,7 @@ function FlatMatchCard({ matchItem, fallbackDimensionId, matchType }: { matchIte
     return (
         <div className="flex items-center gap-4 print:gap-3 pt-3 pb-0 print:pt-1.5 print:pb-0 print:break-inside-avoid">
             {/* Screen circle remains 50px, print circle shrinks proportionally to 36px */}
-            <div className={`flex items-center justify-center w-[50px] h-[50px] print:w-[36px] print:h-[36px] rounded-full shrink-0 shadow-sm print:shadow-none ${circleBgClass}`}>
+            <div className={`flex items-center justify-center w-[50px] h-[50px] print:w-[36px] print:h-[36px] rounded-full shrink-0 shadow-xs print:shadow-none ${circleBgClass}`}>
                 <span className="text-[0.7rem] print:text-[10px] font-medium pl-[5px] print:pl-[3px]">
                     {percentageStr}
                 </span>
@@ -32,7 +32,7 @@ function FlatMatchCard({ matchItem, fallbackDimensionId, matchType }: { matchIte
                         id={matchItem.reqId}
                         label={matchItem.reqCriteria}
                         dimensionId={actualDimensionId}
-                        className="max-w-full truncate bg-white shadow-sm text-xs px-2.5 py-1 print:px-2 print:py-0.5 print:text-[8px]"
+                        className="max-w-full truncate bg-white shadow-xs text-xs px-2.5 py-1 print:px-2 print:py-0.5 print:text-[8px]"
                     />
                 </div>
 
@@ -48,7 +48,7 @@ function FlatMatchCard({ matchItem, fallbackDimensionId, matchType }: { matchIte
                                 id={matchItem.offId!}
                                 label={matchItem.offCriteria}
                                 dimensionId={actualDimensionId}
-                                className="max-w-full truncate bg-white shadow-sm text-xs px-2.5 py-1 print:px-2 print:py-0.5 print:text-[8px]"
+                                className="max-w-full truncate bg-white shadow-xs text-xs px-2.5 py-1 print:px-2 print:py-0.5 print:text-[8px]"
                             />
                         </div>
                     )}

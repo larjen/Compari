@@ -134,7 +134,7 @@ export function MetadataEditor({ entity, metadataFields, onSave }: MetadataEdito
                   checked={fieldType === FIELD_TYPES.BOOLEAN && isBooleanValue(editValue)}
                   value={fieldType === FIELD_TYPES.BOOLEAN ? undefined : editValue}
                   onChange={(e) => setEditValue(fieldType === FIELD_TYPES.BOOLEAN ? (e.target.checked ? 'true' : 'false') : e.target.value)}
-                  className="flex-1 min-w-0 px-2 py-1 text-sm border border-accent-sage/30 rounded bg-themed-input-bg text-themed-fg-main focus:outline-none focus:border-accent-forest"
+                  className="flex-1 min-w-0 px-2 py-1 text-sm border border-accent-sage/30 rounded-sm bg-themed-input-bg text-themed-fg-main focus:outline-hidden focus:border-accent-forest"
                   disabled={isSaving}
                 />
                 <Button

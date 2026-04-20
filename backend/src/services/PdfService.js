@@ -91,8 +91,25 @@ class PdfService {
                 }
                 return '';
             }
-            const data = await pdf(dataBuffer, { pagerender: this._renderPage.bind(this) });
-            return data.text;
+            
+            // Handle v2 (Class API)
+            if (pdf && pdf.PDFParse) {
+                const parser = new pdf.PDFParse({ data: dataBuffer });
+                // Pass pagerender into getText's ParseParameters
+                const result = await parser.getText({ pagerender: this._renderPage.bind(this) });
+                await parser.destroy(); // Mandatory in v2 to prevent memory leaks
+                return result.text;
+            } 
+            // Handle v1 (Function API fallback)
+            else if (typeof pdf === 'function' || typeof (pdf.default || pdf) === 'function') {
+                const legacyPdf = pdf.default || pdf;
+                const data = await legacyPdf(dataBuffer, { pagerender: this._renderPage.bind(this) });
+                return data.text;
+            } 
+            // Fallback for unknown export structures
+            else {
+                throw new Error('Unrecognized pdf-parse export structure. Cannot parse PDF.');
+            }
         } catch (error) {
             if (this._logService) {
                 this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'PdfService', message: `Failed to extract text from PDF: ${error.message}` });

@@ -1,6 +1,6 @@
 {
     "name": "compari",
-    "version": "0.7.8",
+    "version": "0.7.11",
     "private": true,
     "workspaces": [
         "backend",
@@ -14,13 +14,14 @@
         "build": "npm run lint:backend && cd frontend && npm run build",
         "start": "concurrently -n \"API,WEB\" -c \"blue.bold,green.bold\" --kill-others \"cd backend && npm start\" \"cd frontend && npm start\"",
         "knip": "knip",
-        "clean": "node -e \"const fs = require('fs'); ['Data', 'frontend/node_modules', 'backend/node_modules', 'node_modules', 'frontend/.next'].forEach(p => { if(fs.existsSync(p)) { console.log('Deleting ' + p); fs.rmSync(p, { recursive: true, force: true }); } })\""
+        "clean": "node -e \"const fs = require('fs'); ['Data', 'frontend/node_modules', 'backend/node_modules', 'node_modules', 'frontend/.next'].forEach(p => { if(fs.existsSync(p)) { console.log('Deleting ' + p); fs.rmSync(p, { recursive: true, force: true }); } })\"",
+        "bump:patch": "npm version patch --workspaces --include-workspace-root",
+        "bump:minor": "npm version minor --workspaces --include-workspace-root",
+        "bump:major": "npm version major --workspaces --include-workspace-root"
     },
     "devDependencies": {
-        "@types/node": "^22.0.0",
-        "concurrently": "^8.2.2",
-        "knip": "^6.5.0",
-        "typescript": "^5.7.0"
+        "concurrently": "^9.2.1",
+        "knip": "^6.5.0"
     },
     "knip": {
         "workspaces": {

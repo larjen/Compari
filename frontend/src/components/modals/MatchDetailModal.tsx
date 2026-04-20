@@ -100,7 +100,7 @@ export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: Mat
             itemName="PDF"
             onClick={handleDownloadPdf} 
             variant="secondary" 
-            className="bg-white border-accent-sand/30 hover:bg-accent-sand/10 shadow-sm"
+            className="bg-white border-accent-sand/30 hover:bg-accent-sand/10 shadow-xs"
           />
           {onEdit && <EditButton entityName="Match" onClick={onEdit} />}
           <DeleteAction onDelete={handleDelete} />

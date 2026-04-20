@@ -194,7 +194,7 @@ class AiService {
      * - Uses explicit dependency injection to eliminate circular dependencies.
      */
     _getModelConfigForTask(taskType) {
-        let settingKey = null;
+        let settingKey;
 
         switch (taskType) {
             case AI_TASK_TYPES.GENERAL:

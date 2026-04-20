@@ -192,7 +192,7 @@ export function MatchReportViewer({ reportData, matchId, isPrintMode = false }: 
                         if (!dimMatchScore?.formula) return null;
 
                         return (
-                            <div key={`calc-${dimKey}`} className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6 shadow-sm print:break-inside-avoid">
+                            <div key={`calc-${dimKey}`} className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6 shadow-xs print:break-inside-avoid">
                                 <h4 className="font-bold text-gray-900 mb-3 border-b border-gray-300 pb-2 text-sm uppercase tracking-wider">
                                     {dimensionName} Score Calculation
                                 </h4>

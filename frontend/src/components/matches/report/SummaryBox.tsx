@@ -27,7 +27,7 @@ function SummaryBox({ content, smaller = false }: { content?: string; smaller?: 
                     h2: ({ node, ...props }) => <h2 className={cn("font-serif font-medium text-accent-forest mb-3 print:mb-1.5 mt-8 print:mt-4 first:mt-0 print:break-after-avoid", headerSize)} {...props} />,
                     h3: ({ node, ...props }) => <h3 className={cn("font-semibold text-accent-forest uppercase tracking-wider mb-3 print:mb-1 mt-6 print:mt-3 first:mt-0 print:break-after-avoid", subHeaderSize)} {...props} />,
                     blockquote: ({ node, ...props }) => <blockquote className={cn("border-l-2 border-accent-sage/50 pl-5 print:pl-3 py-1 print:py-0.5 mb-4 print:mb-2 italic", fontClass, textSize, "text-accent-forest/70 bg-accent-sage/5 rounded-r-lg")} {...props} />,
-                    code: ({ node, ...props }) => <code className="text-[11px] font-mono bg-black/5 px-1 py-0.5 rounded" {...props} />,
+                    code: ({ node, ...props }) => <code className="text-[11px] font-mono bg-black/5 px-1 py-0.5 rounded-sm" {...props} />,
                     pre: ({ node, ...props }) => <pre className="bg-transparent p-0 m-0 overflow-x-auto" {...props} />
                 }}
             >

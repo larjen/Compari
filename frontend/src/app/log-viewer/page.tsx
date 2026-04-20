@@ -51,7 +51,7 @@ function LogViewerContent() {
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-5xl mx-auto">
         <h1 className="text-2xl font-serif font-semibold text-accent-forest mb-6">
-          Viewing Log: <span className="font-mono text-lg font-normal bg-accent-sage/20 px-2 py-1 rounded">{fileName || 'Unknown File'}</span>
+          Viewing Log: <span className="font-mono text-lg font-normal bg-accent-sage/20 px-2 py-1 rounded-sm">{fileName || 'Unknown File'}</span>
         </h1>
 
         <div className="space-y-6">
@@ -92,7 +92,7 @@ function LogViewerContent() {
             </div>
           ) : (
             logs.map((log, index) => (
-              <div key={index} className="bg-white p-6 rounded-xl shadow-sm border border-border-light space-y-4">
+              <div key={index} className="bg-white p-6 rounded-xl shadow-xs border border-border-light space-y-4">
                 {log.unparseable ? (
                   <div className="text-red-500 font-mono text-sm whitespace-pre-wrap">{log.unparseable}</div>
                 ) : (
@@ -102,7 +102,7 @@ function LogViewerContent() {
                         Timestamp: {log.timestamp || 'Unknown'}
                       </span>
                       {log.level && (
-                         <span className={`text-xs font-bold px-2 py-1 rounded uppercase ${log.level === 'ERROR' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'}`}>
+                         <span className={`text-xs font-bold px-2 py-1 rounded-sm uppercase ${log.level === 'ERROR' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'}`}>
                            {log.level}
                          </span>
                       )}
@@ -113,7 +113,7 @@ function LogViewerContent() {
                     )}
                     
                     {log.error && (
-                        <div className="text-xs text-red-600 font-mono whitespace-pre-wrap bg-red-50 p-4 rounded border border-red-100 mt-2">
+                        <div className="text-xs text-red-600 font-mono whitespace-pre-wrap bg-red-50 p-4 rounded-sm border border-red-100 mt-2">
                             {log.error}
                         </div>
                     )}
@@ -123,7 +123,7 @@ function LogViewerContent() {
                         <h4 className="text-xs font-bold text-accent-forest/50 uppercase tracking-wide">AI Request</h4>
                         {log.requestMessages.map((msg: any, i: number) => (
                           <div key={i} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                            <span className="inline-block px-2 py-1 bg-gray-200 text-gray-600 text-[10px] font-bold rounded mb-2 uppercase">
+                            <span className="inline-block px-2 py-1 bg-gray-200 text-gray-600 text-[10px] font-bold rounded-sm mb-2 uppercase">
                               Role: {msg.role}
                             </span>
                             <div className="text-xs text-accent-forest/70 font-mono whitespace-pre-wrap">

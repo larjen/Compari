@@ -77,7 +77,7 @@ export function PromptsTab() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="font-mono text-sm text-themed-fg-main whitespace-pre-wrap bg-themed-inner p-4 rounded-md border border-themed-border break-words">
+              <div className="font-mono text-sm text-themed-fg-main whitespace-pre-wrap bg-themed-inner p-4 rounded-md border border-themed-border wrap-break-word">
                 {prompt.prompt}
               </div>
               <div className="flex justify-end pt-4 mt-2">

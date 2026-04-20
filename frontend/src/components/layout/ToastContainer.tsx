@@ -52,11 +52,11 @@ export function ToastContainer() {
                 styleClass
               )}
             >
-              <Icon className={cn('w-5 h-5 flex-shrink-0 mt-0.5', iconStyleClass)} />
+              <Icon className={cn('w-5 h-5 shrink-0 mt-0.5', iconStyleClass)} />
               <p className="flex-1 text-sm font-medium">{toast.message}</p>
               <button
                 onClick={() => removeToast(toast.id)}
-                className="flex-shrink-0 p-0.5 hover:bg-black/5 rounded transition-colors"
+                className="shrink-0 p-0.5 hover:bg-black/5 rounded-sm transition-colors"
               >
                 <DOMAIN_ICONS.CLOSE className="w-4 h-4" />
               </button>
