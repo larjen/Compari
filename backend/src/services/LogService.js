@@ -21,12 +21,15 @@
  * - Is it a system fault that needs permanent audit trail? -> Use logTerminal() + logErrorFile().
  * - Is it a major workflow milestone that needs historical tracking (non-production)? -> Use logTerminal() + logSystemFile().
  *
+ * @socexplanation
+ * - This service centralizes the application's logging strategy, enforcing a strict separation between terminal output and persistent storage.
+ * - It enables dynamic debug levels and ensures that critical errors are always audited regardless of the environment.
+ *
  * @dependency_injection
  * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
  */
 
-const { LOGS_DIR } = require('../config/constants');
-const fs = require('fs');
+const { LOGS_DIR, LOG_LEVELS } = require('../config/constants');
 
 class LogService {
     /**
@@ -35,8 +38,9 @@ class LogService {
      * @param {Object} deps.fileService - The FileService instance
      * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
      */
-    constructor({ fileService }) {
+    constructor({ fileService, settingsManager } = {}) {
         this._fileService = fileService;
+        this._settingsManager = settingsManager;
 
         this.SYMBOLS = {
             CHECKMARK: '\x1b[32m✓\x1b[0m',
@@ -46,6 +50,10 @@ class LogService {
             LIGHTNING: '\x1b[36m✧\x1b[0m',
             NONE: ' '
         };
+    }
+
+    _isDebugEnabled() {
+        return this._settingsManager && this._settingsManager.get('debug_mode') === 'true';
     }
 
     formatDuration(ms) {
@@ -183,11 +191,16 @@ class LogService {
         const originTag = origin ? `\x1b[90m[${origin}]\x1b[0m ` : '';
         let terminalMessage = ` ${symbol} ${originTag}${message}`;
 
-        if (errorObj && errorObj.stack) {
-            terminalMessage += `\n${errorObj.stack}`;
+        if (errorObj) {
+            if (this._isDebugEnabled() && errorObj.stack) {
+                terminalMessage += `\n${errorObj.stack}`;
+            } else if (errorObj.message) {
+                terminalMessage += ` - ${errorObj.message}`;
+            }
         }
 
         const printMethod = status === 'ERROR' ? 'error' : status === 'WARN' ? 'warn' : 'log';
+        // eslint-disable-next-line no-console
         console[printMethod](terminalMessage);
     }
 
@@ -219,7 +232,7 @@ class LogService {
      * For persistent error logging in production, use logErrorFile() instead.
      */
     logSystemFile(origin, message, details = null) {
-        if (process.env.NODE_ENV === 'production') {
+        if (!this._isDebugEnabled()) {
             return;
         }
 
@@ -233,9 +246,7 @@ class LogService {
         };
 
         const fileService = this._fileService;
-        if (!fs.existsSync(LOGS_DIR)) {
-            fs.mkdirSync(LOGS_DIR, { recursive: true });
-        }
+        this._fileService.createDirectory(LOGS_DIR);
         fileService.appendToFile(LOGS_DIR, 'system.jsonl', this._safeStringify(logEntry) + '\n');
     }
 
@@ -286,9 +297,7 @@ class LogService {
         };
 
         const fileService = this._fileService;
-        if (!fs.existsSync(LOGS_DIR)) {
-            fs.mkdirSync(LOGS_DIR, { recursive: true });
-        }
+        this._fileService.createDirectory(LOGS_DIR);
         fileService.appendToFile(LOGS_DIR, 'errors.jsonl', this._safeStringify(logEntry) + '\n');
     }
 
@@ -312,7 +321,11 @@ class LogService {
             return null;
         }
 
-        const isDevMode = process.env.NODE_ENV === 'development' || process.env.DEBUG_MODE === 'true';
+        const debugMode = this._settingsManager.get('debug_mode');
+
+        if (debugMode !== 'true') {
+            return null;
+        }
 
         const logEntry = {
             timestamp: new Date().toISOString(),
@@ -320,7 +333,7 @@ class LogService {
             entityId,
             logType,
             message,
-            verboseDetails: (isDevMode && verboseDetails) ? (verboseDetails instanceof Error ? verboseDetails.stack : verboseDetails) : undefined
+            verboseDetails: verboseDetails ? (verboseDetails instanceof Error ? verboseDetails.stack : verboseDetails) : undefined
         };
 
         if (folderPath) {
@@ -364,6 +377,64 @@ class LogService {
         };
 
         fileService.appendToFile(entityFolderPath, 'ai_interactions.jsonl', this._safeStringify(logEntry) + '\n');
+    }
+
+    /**
+     * Consolidated system event logger that writes to both terminal and system file.
+     * Calls logTerminal internally, then conditionally calls logSystemFile for INFO/WARN status.
+     *
+     * @method logSystemEvent
+     * @memberof LogService
+     * @param {Object} eventDto - Data Transfer Object containing all log parameters.
+     * @param {string} eventDto.status - The log status level ('INFO', 'WARN', 'ERROR').
+     * @param {string} eventDto.symbolKey - The symbol key for the log symbol (e.g., 'CHECKMARK', 'WARNING').
+     * @param {string} eventDto.origin - The origin of the log message (e.g., 'QueueService.js').
+     * @param {string} eventDto.message - The log message.
+     * @param {Object|null} [eventDto.details] - Optional details object to include in the log entry.
+     * @returns {void}
+     *
+     * @description
+     * DRY consolidation method that combines terminal and file logging for system events.
+     * Automatically determines whether to write to system.jsonl based on status.
+     *
+     * @socexplanation
+     * This method centralizes the DRY violation where callers were duplicating the
+     * logTerminal + logSystemFile call pattern. It enforces consistent logging
+     * behavior and reduces boilerplate in calling services.
+     */
+    logSystemEvent({ status, symbolKey, origin, message, details = null }) {
+        this.logTerminal({ status, symbolKey, origin, message });
+
+        if (status === LOG_LEVELS.INFO || status === LOG_LEVELS.WARN) {
+            this.logSystemFile(origin, message, details);
+        }
+    }
+
+    /**
+     * Consolidated system fault logger that writes to both terminal and error file.
+     * Calls logTerminal with ERROR status internally, then calls logErrorFile.
+     *
+     * @method logSystemFault
+     * @memberof LogService
+     * @param {Object} faultDto - Data Transfer Object containing all fault log parameters.
+     * @param {string} faultDto.origin - The origin of the log message (e.g., 'QueueService.js').
+     * @param {string} faultDto.message - The error message.
+     * @param {Error|null} [faultDto.errorObj] - Optional Error object for error details.
+     * @param {Object|null} [faultDto.details] - Optional additional details object.
+     * @returns {void}
+     *
+     * @description
+     * DRY consolidation method that combines terminal and file logging for system faults.
+     * Always writes to terminal with ERROR status and writes to errors.jsonl regardless of environment.
+     *
+     * @socexplanation
+     * This method centralizes the DRY violation where callers were duplicating the
+     * logTerminal (ERROR) + logErrorFile call pattern. It enforces consistent error
+     * logging behavior and reduces boilerplate in calling services.
+     */
+    logSystemFault({ origin, message, errorObj = null, details = null }) {
+        this.logTerminal({ status: 'ERROR', symbolKey: 'ERROR', origin, message, errorObj });
+        this.logErrorFile({ origin, message, errorObj, details });
     }
 }
 

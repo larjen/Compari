@@ -74,7 +74,7 @@ class BlueprintController extends BaseCrudController {
      * @override update - Requires extracting fields and dimensionIds from req.body
      */
     update = asyncHandler(async (req, res) => {
-        const id = parseInt(req.params.id);
+        const id = this._extractId(req);
         const { fields, dimensionIds, ...blueprintDto } = req.body;
 
         const existing = this._blueprintService.getBlueprintById(id);
@@ -97,7 +97,7 @@ class BlueprintController extends BaseCrudController {
      * Sets a blueprint as the active one (exclusive active blueprint).
      */
     setActive = asyncHandler(async (req, res) => {
-        const id = parseInt(req.params.id);
+        const id = this._extractId(req);
 
         const existing = this._blueprintService.getBlueprintById(id);
         if (!existing) {

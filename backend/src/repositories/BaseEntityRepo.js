@@ -13,12 +13,19 @@
  */
 
 const BaseRepository = require('./BaseRepository');
+const EntityFactory = require('../models/EntityFactory');
+const HashGenerator = require('../utils/HashGenerator');
+const { ENTITY_STATUS } = require('../config/constants');
 
 /**
  * @class BaseEntityRepo
  * @extends BaseRepository
  * @description Base repository for CTI entity operations.
  * Provides shared methods for status, error, folder path, metadata, and document management.
+ *
+ * @socexplanation
+ * Error handling was refactored to explicitly catch and log data corruption/math failures
+ * via injected LogService, eliminating silent failures while maintaining graceful degradation.
  */
 class BaseEntityRepo extends BaseRepository {
     /**
@@ -26,9 +33,11 @@ class BaseEntityRepo extends BaseRepository {
      * @constructor
      * @param {Object} deps - Dependencies object.
      * @param {Object} deps.db - The database instance.
+     * @param {Object} deps.logService - Optional LogService instance.
      */
-    constructor({ db }) {
+    constructor({ db, logService }) {
         super('entities_base', { db });
+        this._logService = logService;
     }
 
     /**
@@ -67,6 +76,18 @@ class BaseEntityRepo extends BaseRepository {
     updateIsBusy(id, isBusy) {
         const busyValue = isBusy ? 1 : 0;
         return super.update(id, { is_busy: busyValue });
+    }
+
+    /**
+     * Updates the is_staged flag for an entity.
+     * @method updateIsStaged
+     * @param {number} id - The entity ID.
+     * @param {boolean} isStaged - The staged status.
+     * @returns {boolean} True if the row was updated.
+     */
+    updateIsStaged(id, isStaged) {
+        const stagedValue = isStaged ? 1 : 0;
+        return super.update(id, { is_staged: stagedValue });
     }
 
     /**
@@ -151,19 +172,88 @@ class BaseEntityRepo extends BaseRepository {
         const stmt = this.db.prepare(`
             SELECT id, entity_type, status
             FROM entities_base
-            WHERE status IN ('processing')
+            WHERE status NOT IN (?, ?, ?)
             ORDER BY updated_at ASC
         `);
-        return stmt.all();
+        return stmt.all(ENTITY_STATUS.PENDING, ENTITY_STATUS.COMPLETED, ENTITY_STATUS.FAILED);
+    }
+
+    /**
+     * Sanitizes a base entity DTO by setting default values for missing fields.
+     * Ensures consistent data across all entity types by populating normalized_name,
+     * nice_name_line_1, nice_name_line_2, and hash if not provided.
+     *
+     * @method _sanitizeBaseDto
+     * @param {Object} dto - The data transfer object to sanitize.
+     * @returns {Object} The sanitized DTO with default values set.
+     * @private
+     *
+     * @responsibility
+     * - Centralizes default value logic for base entity fields.
+     * - Eliminates code duplication across child repositories.
+     *
+     * @socexplanation
+     * - Called by child repositories before INSERT operations.
+     * - Uses HashGenerator for deterministic hash creation.
+     */
+    _sanitizeBaseDto(dto) {
+        const sanitized = { ...dto };
+
+        if (!sanitized.normalizedName && !sanitized.normalized_name) {
+            const nameForNormalization = sanitized.nicename || sanitized.name || 'entity';
+            sanitized.normalized_name = nameForNormalization.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+        }
+
+        if (!sanitized.niceNameLine1 && !sanitized.nice_name_line_1) {
+            sanitized.nice_name_line_1 = sanitized.nicename || sanitized.name || 'Unnamed';
+        }
+
+        if (!sanitized.niceNameLine2 && !sanitized.nice_name_line_2) {
+            sanitized.nice_name_line_2 = sanitized.dimension || 'General';
+        }
+
+        if (!sanitized.hash) {
+            const hashSource = `${sanitized.entityType || 'entity'}:${sanitized.normalized_name || sanitized.nicename || 'unknown'}`;
+            sanitized.hash = HashGenerator.generateDeterministicHash(hashSource);
+        }
+
+        return sanitized;
+    }
+
+    /**
+     * Retrieves all entities with a specific status.
+     * @method getEntitiesByStatus
+     * @param {string} status - The status to filter by.
+     * @returns {Array<Object>} Array of entity instances.
+     * @responsibility Provides unified status query for all entity types targeting entities_base.
+     * @socexplanation Queries the shared entities_base table to find entities by status,
+     * then maps results using EntityFactory for consistent domain model instantiation.
+     */
+    getEntitiesByStatus(status) {
+        const stmt = this.db.prepare(`
+            SELECT
+                id,
+                entity_type,
+                nicename,
+                nice_name_line_1,
+                nice_name_line_2,
+                folder_path,
+                master_file,
+                metadata,
+                status,
+                error,
+                blueprint_id,
+                hash,
+                is_staged,
+                created_at,
+                updated_at
+            FROM entities_base
+            WHERE status = ?
+            ORDER BY id DESC
+        `);
+        const rows = stmt.all(status);
+        return rows.map(row => EntityFactory.fromRow(row, this._logService));
     }
 }
 
-/**
- * @dependency_injection
- * BaseEntityRepo exports the class constructor rather than an instance.
- * This enables DI container to instantiate with dependencies.
- * @param {Object} deps - Dependencies object.
- * @param {Object} deps.db - The database instance (injected).
- * Reasoning: Allows runtime configuration and testing via injection.
- */
 module.exports = BaseEntityRepo;

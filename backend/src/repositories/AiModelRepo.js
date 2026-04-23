@@ -173,12 +173,4 @@ class AiModelRepo extends BaseRepository {
     }
 }
 
-/**
- * @dependency_injection
- * AiModelRepo exports the class constructor rather than an instance.
- * This enables DI container to instantiate with dependencies.
- * @param {Object} deps - Dependencies object.
- * @param {Object} deps.db - The database instance (injected).
- * Reasoning: Allows runtime configuration and testing via injection.
- */
 module.exports = AiModelRepo;

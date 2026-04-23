@@ -6,14 +6,18 @@ import { DeleteAction, EditButton, DownloadButton } from '@/components/ui';
 import { EntityMatch } from '@/lib/types';
 import { formatDate, cn, getEntityDisplayNames, parseMatchEntities, formatPercentage } from '@/lib/utils';
 import { useUrlTabs } from '@/hooks/useUrlTabs';
-import { useMatchFiles, useMatchReport } from '@/hooks/useMatchData';
-import { useToast } from '@/hooks/useToast';
+import { useMatchReport } from '@/hooks/useMatchData';
+import { useFiles } from '@/hooks/useEntityData';
+import { useMatchOperations } from '@/hooks/useMatchOperations';
+import { useTerminology } from '@/hooks/useTerminology';
 import { matchApi } from '@/lib/api/matchApi';
-import { TOAST_TYPES } from '@/lib/constants';
 import { FileViewer } from '@/components/shared/FileViewer';
 import { FilesTabContent } from '@/components/shared/FilesTabContent';
 import { EntityDetailLayout } from '@/components/shared/EntityDetailLayout';
 import { MatchReportViewer } from '@/components/matches/MatchReportViewer';
+import { useSettings } from '@/hooks/useSettings';
+import { SettingsCard } from '@/components/shared/SettingsCard';
+import { SharedDebugTab } from '@/components/shared/SharedDebugTab';
 
 interface MatchDetailModalProps {
   match: EntityMatch | null;
@@ -26,50 +30,44 @@ interface MatchDetailModalProps {
 const MATCH_TABS = {
   INFO: 'info',
   FILES: 'files',
-  REPORT: 'report'
+  REPORT: 'report',
+  DEBUG: 'debug'
 } as const;
 type TabId = typeof MATCH_TABS[keyof typeof MATCH_TABS];
 
-const tabs = [
+const baseTabs = [
   { id: MATCH_TABS.INFO, label: 'General Info', icon: DOMAIN_ICONS.INFO },
   { id: MATCH_TABS.REPORT, label: 'Report', icon: DOMAIN_ICONS.FILE },
   { id: MATCH_TABS.FILES, label: 'Files', icon: DOMAIN_ICONS.FILES },
 ];
-
 export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: MatchDetailModalProps) {
   const router = useRouter();
   const { activeTab, handleTabChange } = useUrlTabs(MATCH_TABS.INFO);
+  const { activeLabels } = useTerminology();
 
-  const { files, loading: loadingFiles } = useMatchFiles(match?.id);
+  const { files, loading: loadingFiles } = useFiles(match?.id, 'match');
   const { reportData, loading: loadingReport } = useMatchReport(match?.id, match?.report_path);
-  const { addToast } = useToast();
+  const { settings } = useSettings(open);
+
+  const { 
+    deleteWithToast, 
+    downloadPdfWithToast, 
+    writeMasterFileWithToast,
+    fetchMasterFileWithToast 
+  } = useMatchOperations({ deleteMatchFn: onDelete });
+
+  const tabs = settings.debug_mode === 'true'
+    ? [...baseTabs, { id: MATCH_TABS.DEBUG, label: 'Debug', icon: DOMAIN_ICONS.SETTINGS }]
+    : baseTabs;
 
   if (!match) return null;
-
-  const handleDelete = async () => {
-    try {
-      await onDelete(match.id);
-      onClose();
-    } catch (err) {
-      console.error('Failed to delete match:', err);
-    }
-  };
-
-  const handleDownloadPdf = async () => {
-    try {
-      await matchApi.downloadMatchReportPdf(match.id);
-    } catch (error) {
-      console.error(error);
-      addToast(TOAST_TYPES.ERROR, error instanceof Error ? error.message : "There was an error downloading the PDF.");
-    }
-  };
 
   const { reqEntity, offEntity } = parseMatchEntities(match);
   const { primary: reqName } = getEntityDisplayNames(reqEntity);
   const { primary: offName } = getEntityDisplayNames(offEntity);
 
-  const reqLabel = 'Requirement';
-  const offLabel = 'Offering';
+  const reqLabel = activeLabels.requirement.singular;
+  const offLabel = activeLabels.offering.singular;
 
   const customTitle = (
     <div className="flex flex-col gap-1.5 pt-1 w-full overflow-hidden">
@@ -98,12 +96,12 @@ export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: Mat
         <div className="flex items-center gap-3">
           <DownloadButton 
             itemName="PDF"
-            onClick={handleDownloadPdf} 
+            onClick={() => downloadPdfWithToast(match.id)} 
             variant="secondary" 
             className="bg-white border-accent-sand/30 hover:bg-accent-sand/10 shadow-xs"
           />
           {onEdit && <EditButton entityName="Match" onClick={onEdit} />}
-          <DeleteAction onDelete={handleDelete} />
+          <DeleteAction onDelete={() => deleteWithToast(match.id, onClose)} />
         </div>
       }
     >
@@ -175,6 +173,12 @@ export function MatchDetailModal({ match, open, onClose, onDelete, onEdit }: Mat
             onOpenFolder={() => matchApi.openFolder(match.id)}
           />
         )}
+        {activeTab === MATCH_TABS.DEBUG && settings.debug_mode === 'true' && (
+          <SharedDebugTab
+            rawData={match}
+            onGenerateMasterFile={() => writeMasterFileWithToast(match.id, () => {})}
+            onFetchMasterFile={() => fetchMasterFileWithToast(match.id)}
+          />        )}
       </>
     </EntityDetailLayout>
   );

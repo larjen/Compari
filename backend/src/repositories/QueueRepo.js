@@ -142,6 +142,22 @@ class QueueRepo extends BaseRepository {
     }
 
     /**
+     * Removes all terminal tasks (completed or failed) from the queue.
+     * @returns {number} The number of tasks deleted.
+     * @description
+     * Acts as a garbage collector on startup to prevent the ephemeral job_queue table 
+     * from bloating over time. Pending tasks are left untouched.
+     */
+    garbageCollect() {
+        const stmt = this.db.prepare(`
+            DELETE FROM job_queue 
+            WHERE status IN (?, ?)
+        `);
+        const info = stmt.run(QUEUE_STATUSES.COMPLETED, QUEUE_STATUSES.FAILED);
+        return info.changes;
+    }
+
+    /**
      * Wipes the job queue only.
      * @returns {number} The number of tasks deleted from the queue.
      * @description

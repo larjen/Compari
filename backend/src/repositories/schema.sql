@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS entities_base (
     master_file TEXT,
     status TEXT DEFAULT 'pending' CHECK(status IN ({{ENTITY_STATUS_LIST}})),
     is_busy INTEGER DEFAULT 0 CHECK(is_busy IN (0, 1)),
+    is_staged INTEGER DEFAULT 1 CHECK(is_staged IN (0, 1)),
     metadata TEXT,
     error TEXT,
     blueprint_id INTEGER,
@@ -51,7 +52,6 @@ CREATE TABLE IF NOT EXISTS entities_match (
     requirement_id INTEGER NOT NULL,
     offering_id INTEGER NOT NULL,
     match_score REAL,
-    report_path TEXT,
     FOREIGN KEY (entity_id) REFERENCES entities_base(id) ON DELETE CASCADE,
     FOREIGN KEY (requirement_id) REFERENCES entities_base(id) ON DELETE CASCADE,
     FOREIGN KEY (offering_id) REFERENCES entities_base(id) ON DELETE CASCADE

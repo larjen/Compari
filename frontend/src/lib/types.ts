@@ -133,6 +133,18 @@ export interface Settings {
    * Disable for local models (e.g., Ollama) to prevent queue thrashing.
    */
   allow_concurrent_ai?: string;
+/**
+    * Controls whether AI responses are cached locally to save API costs and time.
+    * When set to 'true', identical AI requests return a cached response.
+    * @description Stored as a string ('true'/'false') to match backend storage.
+    */
+  use_ai_cache?: string;
+/**
+   * Controls verbose HTTP logging and UI debug features.
+   * This is the single source of truth for debug state across the application.
+   * @description Stored as a string ('true'/'false') to match backend storage.
+   */
+  debug_mode?: string;
 }
 
 export interface Toast {
@@ -197,6 +209,7 @@ export interface Criterion {
   id: number;
   normalizedName: string;
   displayName: string;
+  folderPath?: string | null;
   dimension: string;
   dimensionId?: number;
   embedding?: number[];

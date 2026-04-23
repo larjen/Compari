@@ -15,7 +15,8 @@
 const express = require('express');
 const router = express.Router();
 
-const { settingController } = require('../config/container').getContainer();
+const container = require('../config/container').getContainer();
+const settingController = container.resolve('settingController');
 
 router.get('/', settingController.getAllSettings);
 

@@ -16,21 +16,13 @@
  *
  * @dependency_injection
  * This module is executed in Phase 2 of server.js to create tables BEFORE the DI container
- * is initialized in Phase 2.5. Therefore, it creates a temporary logger instance using
- * the same pattern as ProcessGuard.js to log schema initialization and seeding progress.
- * This follows the DTO pattern to avoid top-level requires of services not yet initialized.
+ * is initialized in Phase 2.5. The logger instance is passed from server.js during boot.
  */
 
 const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
-const FileService = require('../services/FileService');
-const LogService = require('../services/LogService');
-const { DB_DIR, LOG_LEVELS, LOG_SYMBOLS, ENTITY_STATUS, ENTITY_TYPES } = require('../config/constants');
-
-const tempPdfService = null;
-const tempFileService = new FileService({ pdfService: tempPdfService, logService: null });
-const logger = new LogService({ fileService: tempFileService });
+const { DB_DIR, ENTITY_STATUS, ENTITY_TYPES } = require('../config/constants');
 
 class DatabaseConnection {
     constructor() {
@@ -69,10 +61,11 @@ class DatabaseConnection {
  * After schema creation, seeds are run via the Seeder module.
  *
  * @param {Database} db - The active database connection instance.
+ * @param {Object} logger - The LogService instance to use for boot logging.
  * @returns {void}
  * @throws {Error} If schema.sql cannot be read or executed.
  */
-function initializeSchema(db) {
+function initializeSchema(db, logger) {
     const schemaPath = path.join(__dirname, 'schema.sql');
 
     try {
@@ -88,8 +81,10 @@ function initializeSchema(db) {
 
         db.exec(sql);
     } catch (err) {
-        logger.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'Database', message: `FATAL: Failed to read or execute schema.sql: ${err.message}` });
-        logger.logErrorFile({ origin: 'Database', message: 'Failed to read or execute schema.sql', errorObj: err });
+        /** @socexplanation Error handling consolidated to logSystemFault to prevent swallowed stack traces and enforce DRY principles. */
+        if (logger) {
+            logger.logSystemFault({ origin: 'Database', message: 'Failed to read or execute schema.sql', errorObj: err });
+        }
         throw err;
     }
 

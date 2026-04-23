@@ -40,7 +40,7 @@
  * This is intentional to avoid circular dependency issues.
  */
 
-const { QUEUE_TASKS } = require('../config/constants');
+const { QUEUE_TASKS, ENTITY_STATUS } = require('../config/constants');
 
 /**
  * Registers all task handlers with the QueueService instance.
@@ -79,7 +79,7 @@ function registerAllTasks({ queueService, entityService, matchService, docProces
         },
         onError: async (payload, errorMsg) => {
             if (payload.entityId) {
-                entityService.updateState(payload.entityId, { status: 'failed', error: errorMsg });
+                entityService.updateState(payload.entityId, { status: ENTITY_STATUS.FAILED, error: errorMsg });
             }
         },
         successMessage: 'Document processed successfully.',
@@ -104,7 +104,7 @@ function registerAllTasks({ queueService, entityService, matchService, docProces
         },
         onError: async (payload, errorMsg) => {
             if (payload.matchId) {
-                matchService.updateState(payload.matchId, { status: 'failed', error: errorMsg });
+                matchService.updateState(payload.matchId, { status: ENTITY_STATUS.FAILED, error: errorMsg });
             }
         },
         successMessage: 'Match assessment completed successfully.',
@@ -149,7 +149,7 @@ function registerAllTasks({ queueService, entityService, matchService, docProces
         },
         onError: async (payload, errorMsg) => {
             if (payload.entityId) {
-                entityService.updateState(payload.entityId, { status: 'failed', error: errorMsg });
+                entityService.updateState(payload.entityId, { status: ENTITY_STATUS.FAILED, error: errorMsg });
             }
         },
         successMessage: 'Criteria extracted successfully.',

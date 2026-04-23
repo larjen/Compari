@@ -3,27 +3,29 @@ const path = require('path');
 const { LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 /**
- * Service for generating PDF match reports using Puppeteer.
- * Uses proper browser lifecycle management - launches, uses, and closes
- * browser within each request to prevent memory leaks and zombie processes.
+ * @module PdfGeneratorService
+ * @description Infrastructure Service for generating PDF match reports using Puppeteer.
  *
- * @dependency_injection This is an instantiable service class that should be
- * injected via the DI container. Instantiate with `new PdfGeneratorService({ logService, fileService })`
- * and register as a singleton in the container.
+ * @responsibility
+ * - Handles PDF generation by converting HTML pages to PDF documents using Puppeteer.
+ * - Robustly manages browser lifecycle (launch, use, close) to prevent memory leaks.
+ * - Captures frontend render errors by piping console logs and page errors to LogService.
+ * - Delegates file I/O to FileService to ensure strict Separation of Concerns.
+ *
+ * @boundary_rules
+ * - ✅ MAY call Infrastructure Services (FileService, LogService).
+ * - ❌ MUST NOT call Domain Services.
+ * - ❌ MUST NOT handle HTTP request/response objects directly.
+ *
+ * @socexplanation
+ * - This service abstracts the Puppeteer browser lifecycle and PDF rendering logic.
+ * - It follows the Infrastructure Service pattern, providing technical capabilities to domain services without being aware of domain logic.
+ * - It includes robust error-capturing mechanisms to help diagnose frontend rendering failures during PDF generation.
+ *
+ * @dependency_injection
+ * Dependencies are injected strictly via the constructor.
+ * Defensive getters are not required as instantiation guarantees dependency presence.
  * Reasoning: Constructor Injection ensures LogService and FileService are available immediately.
- * Removed hidden fs dependency - delegated to FileService for pure testability and strict Separation of Concerns.
- *
- * @responsibility Handles PDF generation as an infrastructure service,
- * converting HTML pages to PDF documents using Puppeteer.
- * Robustly manages browser lifecycle and captures frontend render errors by piping
- * console logs and page errors to the backend LogService for debugging timeouts.
- *
- * @socexplanation This service follows the Infrastructure Service pattern,
- * providing a technical capability (PDF generation) to domain services.
- * It abstracts the Puppeteer browser lifecycle and PDF rendering logic.
- * Includes error capturing mechanisms to diagnose frontend render failures,
- * piping console.error/warning and pageerror events to LogService for debugging.
- * Delegated file I/O to FileService to ensure pure testability and strict Separation of Concerns.
  */
 class PdfGeneratorService {
     /**
@@ -70,21 +72,21 @@ class PdfGeneratorService {
             // Harden: Pipe frontend console logs to backend logger to diagnose render failures
             page.on('console', msg => {
                 if (msg.type() === 'error' || msg.type() === 'warning') {
-                    this._logService.logTerminal({ 
-                        status: LOG_LEVELS.WARN, 
-                        symbolKey: LOG_SYMBOLS.WARNING, 
-                        origin: 'Puppeteer/Frontend', 
-                        message: `[${msg.type()}] ${msg.text()}` 
+                    this._logService.logTerminal({
+                        status: LOG_LEVELS.WARN,
+                        symbolKey: LOG_SYMBOLS.WARNING,
+                        origin: 'Puppeteer/Frontend',
+                        message: `[${msg.type()}] ${msg.text()}`
                     });
                 }
             });
 
             page.on('pageerror', err => {
-                this._logService.logTerminal({ 
-                    status: LOG_LEVELS.ERROR, 
-                    symbolKey: LOG_SYMBOLS.ERROR, 
-                    origin: 'Puppeteer/Frontend', 
-                    message: `Page Crash: ${err.message}` 
+                this._logService.logTerminal({
+                    status: LOG_LEVELS.ERROR,
+                    symbolKey: LOG_SYMBOLS.ERROR,
+                    origin: 'Puppeteer/Frontend',
+                    message: `Page Crash: ${err.message}`
                 });
             });
 
@@ -94,11 +96,15 @@ class PdfGeneratorService {
                 await page.goto(frontendUrl, { waitUntil: 'networkidle2', timeout: 60000 });
                 await page.waitForSelector('#match-report-content', { visible: true, timeout: 60000 });
             } catch (err) {
-                this._logService.logTerminal({ 
-                    status: LOG_LEVELS.ERROR, 
-                    symbolKey: LOG_SYMBOLS.ERROR, 
-                    origin: 'PdfGeneratorService', 
-                    message: `Timeout waiting for frontend to render PDF content at ${frontendUrl}. Error: ${err.message}` 
+                /** * @socexplanation 
+                 * Stack trace preservation enforced. errorObj passed explicitly to prevent 
+                 * swallowed stack traces during Puppeteer timeout failures.
+                 * Using logSystemFault to ensure permanent audit trail in errors.jsonl.
+                 */
+                this._logService.logSystemFault({
+                    origin: 'PdfGeneratorService',
+                    message: `Timeout waiting for frontend to render PDF content at ${frontendUrl}`,
+                    errorObj: err
                 });
                 throw new Error(`Failed to render PDF: The frontend at ${frontendUrl} timed out or failed to display the report.`, { cause: err });
             }
@@ -108,7 +114,7 @@ class PdfGeneratorService {
             const logoPath = path.join(__dirname, '../../../frontend/public/compari.svg');
             let logoBase64 = '';
             if (this._fileService.validatePath(logoPath)) {
-                const logoBuffer = this._fileService.readBuffer(logoPath);
+                const logoBuffer = await this._fileService.readBuffer(logoPath);
                 logoBase64 = `data:image/svg+xml;base64,${logoBuffer.toString('base64')}`;
             }
 

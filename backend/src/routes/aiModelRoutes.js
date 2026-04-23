@@ -14,7 +14,8 @@
 const express = require('express');
 const router = express.Router();
 
-const { aiModelController } = require('../config/container').getContainer();
+const container = require('../config/container').getContainer();
+const aiModelController = container.resolve('aiModelController');
 const { validate } = require('../middlewares/validateZod');
 const { aiModelSchema } = require('../validators/schemas');
 

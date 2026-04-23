@@ -115,4 +115,41 @@ export const criteriaApi = {
     const data = await fetchWrapper<{ criterion: Criterion }>(`/criteria/${id}`);
     return data.criterion;
   },
+
+  /**
+   * Manually regenerates the criterion master markdown file.
+   * @param {number} id - The criterion ID.
+   * @returns {Promise<void>}
+   * @throws {Error} If the request fails.
+   */
+  async writeMasterFile(id: number): Promise<void> {
+    return fetchWrapper(`/criteria/${id}/master-file`, { method: HTTP_METHODS.POST });
+  },
+
+/**
+   * Fetches the generated master markdown file content for a criterion.
+    * @param {number} id - The criterion ID.
+    * @returns {Promise<string>} The master file markdown content.
+    * @throws {Error} If the master file has not been generated yet.
+    */
+  async getMasterFile(id: number): Promise<string> {
+    const data = await fetchWrapper<{ success: boolean; data: string }>(`/criteria/${id}/master-file`);
+    return data.data;
+  },
+
+  /**
+   * Fetches all files in a criterion's folder.
+   * @param {number} id - The criterion ID.
+   */
+  async getFiles(id: number): Promise<{ files: string[] }> {
+    return fetchWrapper<{ files: string[] }>(`/criteria/${id}/files`);
+  },
+
+  /**
+   * Opens the criterion's folder in the native OS file manager.
+   * @param {number} id - The criterion ID.
+   */
+  async openFolder(id: number): Promise<void> {
+    return fetchWrapper(`/criteria/${id}/folder/open`, { method: HTTP_METHODS.POST });
+  },
 };

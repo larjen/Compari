@@ -14,7 +14,7 @@
 const BaseRepository = require('./BaseRepository');
 const Blueprint = require('../models/Blueprint');
 const BlueprintField = require('../models/BlueprintField');
-const { ENTITY_ROLES } = require('../config/constants');
+const { ENTITY_TYPES } = require('../config/constants');
 
 /**
  * @class BlueprintRepo
@@ -225,7 +225,7 @@ class BlueprintRepo extends BaseRepository {
                         field.fieldType || 'string',
                         field.description,
                         field.isRequired ? 1 : 0,
-                        field.entityRole || ENTITY_ROLES.REQUIREMENT
+                        field.entityRole || ENTITY_TYPES.REQUIREMENT
                     );
                 }
             }
@@ -240,54 +240,7 @@ class BlueprintRepo extends BaseRepository {
                 }
             }
         })();
-    }
-
-/**
-     * Updates an existing blueprint, replacing its fields and dimension links.
-
-                blueprintDto.name,
-                blueprintDto.requirementLabelSingular,
-                blueprintDto.requirementLabelPlural,
-                blueprintDto.offeringLabelSingular,
-                blueprintDto.offeringLabelPlural,
-                blueprintDto.requirementDocTypeLabel || null,
-                blueprintDto.offeringDocTypeLabel || null,
-                blueprintDto.description,
-                blueprintDto.isActive ? 1 : 0,
-                id
-            );
-
-            this.db.prepare('DELETE FROM blueprint_metadata_fields WHERE blueprint_id = ?').run(id);
-            this.db.prepare('DELETE FROM blueprint_dimensions WHERE blueprint_id = ?').run(id);
-
-            if (fieldsData && fieldsData.length > 0) {
-                const insertField = this.db.prepare(`
-                    INSERT INTO blueprint_metadata_fields (blueprint_id, field_name, field_type, description, is_required, entity_role)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                `);
-                for (const field of fieldsData) {
-                    insertField.run(
-                        id,
-                        field.fieldName,
-                        field.fieldType || 'string',
-                        field.description,
-                        field.isRequired ? 1 : 0,
-                        field.entityRole || ENTITY_ROLES.REQUIREMENT
-                    );
-                }
-            }
-
-            if (dimensionIds && dimensionIds.length > 0) {
-                const insertDimension = this.db.prepare(`
-                    INSERT INTO blueprint_dimensions (blueprint_id, dimension_id)
-                    VALUES (?, ?)
-                `);
-                for (const dimensionId of dimensionIds) {
-                    insertDimension.run(id, dimensionId);
-                }
-            }
-        })();
-    }
+}
 
     /**
      * Sets a blueprint as the active one using a transaction.
@@ -312,12 +265,4 @@ class BlueprintRepo extends BaseRepository {
     }
 }
 
-/**
- * @dependency_injection
- * BlueprintRepo exports the class constructor rather than an instance.
- * This enables DI container to instantiate with dependencies.
- * @param {Object} deps - Dependencies object.
- * @param {Object} deps.db - The database instance (injected).
- * Reasoning: Allows runtime configuration and testing via injection.
- */
 module.exports = BlueprintRepo;

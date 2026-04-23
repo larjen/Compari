@@ -1,6 +1,6 @@
 {
     "name": "compari",
-    "version": "0.7.11",
+    "version": "0.8.0",
     "private": true,
     "workspaces": [
         "backend",
@@ -15,13 +15,20 @@
         "start": "concurrently -n \"API,WEB\" -c \"blue.bold,green.bold\" --kill-others \"cd backend && npm start\" \"cd frontend && npm start\"",
         "knip": "knip",
         "clean": "node -e \"const fs = require('fs'); ['Data', 'frontend/node_modules', 'backend/node_modules', 'node_modules', 'frontend/.next'].forEach(p => { if(fs.existsSync(p)) { console.log('Deleting ' + p); fs.rmSync(p, { recursive: true, force: true }); } })\"",
-        "bump:patch": "npm version patch --workspaces --include-workspace-root",
-        "bump:minor": "npm version minor --workspaces --include-workspace-root",
-        "bump:major": "npm version major --workspaces --include-workspace-root"
+        "bump:patch": "npm version patch --workspaces --include-workspace-root --no-git-tag-version && npm install --package-lock-only",
+        "bump:minor": "npm version minor --workspaces --include-workspace-root --no-git-tag-version && npm install --package-lock-only",
+        "bump:major": "npm version major --workspaces --include-workspace-root --no-git-tag-version && npm install --package-lock-only"
     },
     "devDependencies": {
+        "@testing-library/dom": "^10.4.1",
+        "@testing-library/jest-dom": "^6.9.1",
+        "@testing-library/react": "^16.3.2",
+        "@vitejs/plugin-react": "^6.0.1",
+        "@vitest/coverage-v8": "^4.1.5",
         "concurrently": "^9.2.1",
-        "knip": "^6.5.0"
+        "jsdom": "^29.0.2",
+        "knip": "^6.6.1",
+        "vitest": "^4.1.5"
     },
     "knip": {
         "workspaces": {

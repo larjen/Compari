@@ -11,7 +11,7 @@
  */
 
 const { z } = require('zod');
-const { ENTITY_ROLES, AI_MODEL_ROLES } = require('../config/constants');
+const { ENTITY_TYPES, AI_MODEL_ROLES } = require('../config/constants');
 
 /**
  * @typedef {Object} AiModelInput
@@ -90,7 +90,7 @@ const dimensionSchema = z.object({
  * @type {z.ZodSchema<EntityInput>}
  */
 const entitySchema = z.object({
-    type: z.enum(Object.values(ENTITY_ROLES)),
+    type: z.enum([ENTITY_TYPES.REQUIREMENT, ENTITY_TYPES.OFFERING]),
     name: z.string().min(1, 'name is required')
 });
 

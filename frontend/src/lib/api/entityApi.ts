@@ -258,4 +258,24 @@ export const entityApi = {
   retryProcessing: async (id: number): Promise<void> => {
     await fetchWrapper(`/entities/${id}/retry`, { method: HTTP_METHODS.POST });
   },
+
+  /**
+   * Triggers the generation of the master file for an entity (Debug).
+   * @param {number} id - The entity ID.
+   * @returns {Promise<void>}
+   */
+  async writeMasterFile(id: number): Promise<void> {
+    return fetchWrapper(`/entities/${id}/master-file`, { method: HTTP_METHODS.POST });
+  },
+
+  /**
+   * Fetches the generated master markdown file content for an entity.
+   * @param {number} id - The entity ID.
+   * @returns {Promise<string>} The master file markdown content.
+   * @throws {Error} If the master file has not been generated yet.
+   */
+  async getMasterFile(id: number): Promise<string> {
+    const data = await fetchWrapper<{ success: boolean; data: string }>(`/entities/${id}/master-file`);
+    return data.data;
+  },
 };

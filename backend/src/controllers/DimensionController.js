@@ -43,6 +43,11 @@ class DimensionController extends BaseCrudController {
         this._dimensionService = dimensionService;
     }
 
+    _extractDto(req) {
+        const { name, displayName, requirementInstruction, offeringInstruction, isActive, weight } = req.body;
+        return { name, displayName, requirementInstruction, offeringInstruction, isActive, weight };
+    }
+
     /**
      * GET /api/dimensions/active
      * Retrieves all active dimensions.
@@ -57,7 +62,7 @@ class DimensionController extends BaseCrudController {
      * Toggles the active status of a dimension.
      */
     toggleActive = asyncHandler(async (req, res) => {
-        const id = parseInt(req.params.id);
+        const id = this._extractId(req);
 
         const existing = this._dimensionService.getDimensionById(id);
         if (!existing) {

@@ -25,28 +25,34 @@
  * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
  */
 
-const { TRASHED_DIR, ENTITY_ROLES, APP_EVENTS, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
+const { APP_EVENTS, LOG_LEVELS, ENTITY_STATUS } = require('../config/constants');
 const path = require('path');
 const BaseEntityService = require('./BaseEntityService');
-const HashGenerator = require('../utils/HashGenerator');
 
 class MatchService extends BaseEntityService {
     /**
      * @constructor
      * @param {Object} deps - Dependencies object
      * @param {Object} deps.matchRepo - The MatchRepo instance
+     * @param {Object} deps.entityRepo - The EntityRepo instance
      * @param {Object} deps.fileService - The FileService instance
      * @param {Object} deps.logService - The LogService instance
      * @param {Object} deps.eventService - The EventService instance
+     * @param {Object} deps.hashGenerator - The HashGenerator utility
+     * @param {Object} deps.markdownGenerator - The MarkdownGenerator utility
+     * @param {Object} deps.entityTypes - The ENTITY_TYPES constants
      * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
      */
-    constructor({ matchRepo, entityRepo, fileService, logService, eventService }) {
-        super({ repository: matchRepo, eventService, logService, resourceName: 'Match', getByIdMethod: 'getMatchById' });
+    constructor({ matchRepo, entityRepo, fileService, logService, eventService, hashGenerator, markdownGenerator, entityTypes }) {
+        super({ repository: matchRepo, eventService, logService, fileService, resourceName: 'Match', getByIdMethod: 'getMatchById' });
         this._matchRepo = matchRepo;
         this._entityRepo = entityRepo;
         this._fileService = fileService;
         this._logService = logService;
         this._eventService = eventService;
+        this._hashGenerator = hashGenerator;
+        this._markdownGenerator = markdownGenerator;
+        this._entityTypes = entityTypes;
     }
 
     /**
@@ -91,9 +97,9 @@ class MatchService extends BaseEntityService {
      * @description Updated terminology: 'source' → 'requirement', 'target' → 'offering'
      */
     getMatchesForEntity(entityId, role) {
-        if (role === ENTITY_ROLES.REQUIREMENT) {
+        if (role === this._entityTypes.REQUIREMENT) {
             return this._matchRepo.getMatchesForRequirement(entityId);
-        } else if (role === ENTITY_ROLES.OFFERING) {
+        } else if (role === this._entityTypes.OFFERING) {
             return this._matchRepo.getMatchesForOffering(entityId);
         }
         return this._matchRepo.getMatchesForRequirement(entityId).concat(this._matchRepo.getMatchesForOffering(entityId));
@@ -116,7 +122,6 @@ class MatchService extends BaseEntityService {
      * @param {number} matchDto.requirementId - The requirement entity ID.
      * @param {number} matchDto.offeringId - The offering entity ID.
      * @param {number|null} [matchDto.matchScore] - The computed match score.
-     * @param {string|null} [matchDto.reportPath] - Path to the generated match report.
      * @param {string|null} [matchDto.folderPath] - Path to the match folder.
      * @param {string} [matchDto.status='pending'] - The match status.
      * @returns {number} The ID of the newly created match record.
@@ -135,21 +140,16 @@ class MatchService extends BaseEntityService {
     }
 
     /**
-     * Updates the match score for an existing match.
+     * Updates the match score for an existing match and broadcasts the change.
      * @param {number} id - The match record ID.
      * @param {number} matchScore - The new match score.
      */
     updateMatchScore(id, matchScore) {
-        return this._matchRepo.updateMatchScore(id, matchScore);
-    }
-
-    /**
-     * Updates the report path for an existing match.
-     * @param {number} id - The match record ID.
-     * @param {string} reportPath - The new report path.
-     */
-    updateReportPath(id, reportPath) {
-        return this._matchRepo.updateReportPath(id, reportPath);
+        this._matchRepo.updateMatchScore(id, matchScore);
+        const updated = this.getById(id);
+        if (updated) {
+            this._eventService.emit(APP_EVENTS.RESOURCE_STATE_CHANGED, updated);
+        }
     }
 
     /**
@@ -167,14 +167,13 @@ class MatchService extends BaseEntityService {
      * @description Updated terminology: 'source' → 'requirement', 'target' → 'offering'
      */
     deleteMatchesForEntity(entityId, role) {
-        if (role === ENTITY_ROLES.REQUIREMENT) {
-            return this._matchRepo.deleteMatchesForRequirement(entityId);
-        } else if (role === ENTITY_ROLES.OFFERING) {
-            return this._matchRepo.deleteMatchesForOffering(entityId);
+        if (role === this._entityTypes.REQUIREMENT) {
+            return this._matchRepo.deleteMatchesByEntityRole(entityId, 'requirement_id');
+        } else if (role === this._entityTypes.OFFERING) {
+            return this._matchRepo.deleteMatchesByEntityRole(entityId, 'offering_id');
         }
-        // If no role specified, delete matches where entity is either requirement or offering
-        this._matchRepo.deleteMatchesForRequirement(entityId);
-        this._matchRepo.deleteMatchesForOffering(entityId);
+        this._matchRepo.deleteMatchesByEntityRole(entityId, 'requirement_id');
+        this._matchRepo.deleteMatchesByEntityRole(entityId, 'offering_id');
     }
 
     /**
@@ -189,7 +188,7 @@ class MatchService extends BaseEntityService {
      *
      * @workflow_steps
      * 1. Creates a staging folder in UPLOADS_DIR using unified prepareStagingDirectory.
-     * 2. Creates the match folder using this._fileService.
+     * 2. Extracts basename before storing to prevent pwd leakage.
      * 3. Creates the match record in database.
      * 4. Emits matchUpdate event.
      *
@@ -198,41 +197,34 @@ class MatchService extends BaseEntityService {
      * - File system logic (folder creation, path generation) belongs in the Service layer,
      *   not in the Controller. This keeps the Controller focused purely on HTTP transport.
      * - Queue orchestration has been delegated to the Controller to prevent circular dependencies and enforce strict domain boundaries.
+     * - FIXED: Now extracts basename before storing to prevent pwd leakage.
+     * - Delegates staging lifecycle to base class createStagedEntity to eliminate duplicated boilerplate.
      */
-    createMatchWithFolder({ requirementId, offeringId }) {
-        const folderPath = this._fileService.prepareStagingDirectory(`match-${requirementId}-${offeringId}`);
-
+    async createMatchWithFolder({ requirementId, offeringId }) {
         const req = this._entityRepo.getEntityById(requirementId);
         const off = this._entityRepo.getEntityById(offeringId);
 
         const reqName = req?.nicename || 'Unknown Requirement';
         const offName = off?.nicename || 'Unknown Offering';
+        const niceNameString = `Match - ${reqName} - ${offName}`;
 
         const reqLine1 = req?.niceNameLine1 || reqName;
         const offLine1 = off?.niceNameLine1 || offName;
 
-        const hash = HashGenerator.generateUniqueHash();
-        const matchDto = {
+        const baseDto = {
+            entityType: this._entityTypes.MATCH,
+            nicename: niceNameString,
             requirementId,
             offeringId,
-            nicename: `Match: ${reqName} - ${offName}`,
             niceNameLine1: reqLine1,
             niceNameLine2: offLine1,
             matchScore: null,
-            reportPath: null,
-            folderPath: folderPath,
-            status: 'pending',
-            hash
+            status: ENTITY_STATUS.PENDING
         };
 
-        const matchId = this._matchRepo.createMatch(matchDto);
-
-        const newMatch = this._matchRepo.getMatchById(matchId);
-        if (newMatch) {
-            this._eventService.emit(APP_EVENTS.RESOURCE_STATE_CHANGED, newMatch);
-        }
-
-        return matchId;
+        return this.createStagedEntity(baseDto, {
+            execute: (dto) => this._matchRepo.createMatch(dto)
+        });
     }
 
     /**
@@ -245,9 +237,8 @@ class MatchService extends BaseEntityService {
      * @returns {void}
      * 
      * @workflow_steps
-     * 1. Retrieves the match to check for folder path.
-     * 2. Moves match folder to TRASHED_DIR using this._fileService.
-     * 3. Deletes the match record from database.
+     * 1. Delegates folder lifecycle to base class method.
+     * 2. Deletes the match record from database.
      * 
      * @socexplanation
      * - File system logic (moving to trash) belongs in the Service layer,
@@ -261,64 +252,8 @@ class MatchService extends BaseEntityService {
             throw new Error('Match not found');
         }
 
-        if (match.folder_path) {
-            const trashPath = path.join(TRASHED_DIR, `Match_${id}_${Date.now()}`);
-            try {
-                this._fileService.moveDirectory(match.folder_path, trashPath);
-            } catch (err) {
-                this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'MatchService', message: `Failed to move match folder to trash: ${err.message}` });
-            }
-        }
-
+        this.deleteEntityFolder(id);
         this._matchRepo.deleteMatch(id);
-    }
-
-    /**
-     * Opens the match's folder in the native OS file manager.
-     * @method openMatchFolder
-     * @param {number|string} id - The match ID.
-     * @returns {void}
-     * 
-     * @socexplanation
-     * - Delegates native OS operations to this._fileService.
-     * - Protects against missing folders or invalid match IDs.
-     */
-    openMatchFolder(id) {
-        const match = this._matchRepo.getMatchById(id);
-        if (!match || !match.folder_path) {
-            this._logService.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'MatchService', message: 'Cannot open folder: match not found or has no folder path' });
-            return;
-        }
-        this._fileService.openFolderInOS(match.folder_path);
-    }
-
-    /**
-     * Registers a document record for a match.
-     * @method registerDocumentRecord
-     * @param {Object} documentDto - The DTO containing document data
-     * @param {number} documentDto.matchId - The match ID
-     * @param {string} documentDto.docType - The document type
-     * @param {string} documentDto.fileName - The document filename
-     * @returns {number} The ID of the newly created document record.
-     * @socexplanation
-     * - Delegates to MatchRepo.registerDocumentRecord.
-     * - Exposes document registration at the Service layer.
-     */
-    registerDocumentRecord({ matchId, docType, fileName }) {
-        return this._matchRepo.registerDocumentRecord({ entityId: matchId, docType, fileName });
-    }
-
-    /**
-     * Retrieves all document records for a specific match.
-     * @method getDocumentsForMatch
-     * @param {number} matchId - The match ID.
-     * @returns {Array<Object>} Array of document records.
-     * @socexplanation
-     * - Delegates to MatchRepo.getDocumentsForMatch.
-     * - Exposes document retrieval at the Service layer.
-     */
-    getDocumentsForMatch(matchId) {
-        return this._matchRepo.getDocuments(matchId);
     }
 
     /**
@@ -344,17 +279,120 @@ class MatchService extends BaseEntityService {
             throw new Error('Match not found');
         }
 
-        this.updateState(matchId, { status: 'pending', error: null });
+        this.updateState(matchId, { status: ENTITY_STATUS.PENDING, error: null });
 
-        this._logService.addActivityLog({
-                entityType: 'Match',
-                entityId: matchId,
+        this.logActivity(matchId, {
                 logType: LOG_LEVELS.INFO,
-                message: 'Retrying match assessment.',
-                folderPath: match.folder_path
+                message: 'Retrying match assessment.'
             });
 
         return match;
+    }
+
+    /**
+     * Manually regenerates the match master markdown file by re-reading the match_report.json
+     * and reconstructing the markdown content.
+     *
+     * @method writeMasterFile
+     * @param {number} matchId - The match ID.
+     * @returns {Object} The match object.
+     *
+     * @workflow_steps
+     * 1. Fetch the match by ID.
+     * 2. Read the existing match_report.json to extract ai_summary_executive and matched criteria.
+     * 3. Fetch source and target entities to get their folder names for Wiki Links.
+     * 4. Use MarkdownGenerator.generateMatchMaster to rebuild the markdown.
+     * 5. Use base class generateAndSaveMasterDocument for common lifecycle.
+     *
+     * @socexplanation
+     * - Encapsulates file system logic in Service layer to keep Controller thin.
+     * - Delegates markdown generation to MarkdownGenerator utility.
+     * - Uses base class generateAndSaveMasterDocument for common lifecycle.
+     */
+    async writeMasterFile(matchId) {
+        const match = this.getMatchById(matchId);
+        if (!match) {
+            throw new Error('Match not found');
+        }
+
+        const matchFolderPath = this.getEntityFolderPath(matchId);
+        if (!matchFolderPath) {
+            throw new Error('Match folder path is not set');
+        }
+
+        const generateMatchContent = ({ folderName }) => {
+            const reportPath = path.join(matchFolderPath, 'match_report.json');
+            const reportData = this._fileService.readJsonFile(reportPath);
+
+            const aiSummaryExecutive = reportData?.reportInfo?.ai_summary_executive || '';
+
+            const sourceEntity = this._entityRepo.getEntityById(match.requirement_id);
+            const targetEntity = this._entityRepo.getEntityById(match.offering_id);
+
+            const reqFolderName = this.getCleanLinkName(sourceEntity);
+            const offFolderName = this.getCleanLinkName(targetEntity);
+
+            const matchedCriteriaSet = new Set();
+            if (reportData && reportData.dimensions) {
+                for (const dim of Object.values(reportData.dimensions)) {
+                    const processMatch = (m) => {
+                        if (m.reqCriteria) matchedCriteriaSet.add(m.reqCriteria);
+                        if (m.offCriteria) matchedCriteriaSet.add(m.offCriteria);
+                    };
+                    if (Array.isArray(dim.perfectMatch)) dim.perfectMatch.forEach(processMatch);
+                    if (Array.isArray(dim.partialMatch)) dim.partialMatch.forEach(processMatch);
+                }
+            }
+            const matchedCriteriaLinks = Array.from(matchedCriteriaSet);
+
+            return this._markdownGenerator.generateMatchMaster({
+                matchFolderName: folderName,
+                reqFolderName,
+                offFolderName,
+                executiveSummary: aiSummaryExecutive,
+                matchId,
+                matchedCriteriaLinks
+            });
+        };
+
+        await this.generateAndSaveMasterDocument(matchId, generateMatchContent);
+
+        return match;
+    }
+
+    /**
+     * Generates a safe PDF filename for a match report.
+     * @param {number} matchId - The match ID.
+     * @returns {string} The formatted PDF filename.
+     */
+    getMatchPdfFileName(matchId) {
+        const match = this.getMatchById(matchId);
+        if (!match) return `Match_Report_${matchId}.pdf`;
+        
+        const NameGenerator = require('../utils/NameGenerator');
+        const safeReqName = NameGenerator.sanitizeForFileSystem(match.requirement_name || "Requirement");
+        const safeOffName = NameGenerator.sanitizeForFileSystem(match.offering_name || "Offering");
+        
+        return `Match - ${safeReqName} - ${safeOffName}.pdf`;
+    }
+
+    /**
+     * Ensures a match has a folder, creating and saving the path if it doesn't exist.
+     * @param {number} matchId - The match ID.
+     * @returns {string} The absolute folder path.
+     */
+    ensureMatchFolder(matchId) {
+        let folderPath = this.getEntityFolderPath(matchId);
+        if (!folderPath) {
+            const match = this.getMatchById(matchId);
+            const folderName = match.nicename || `${match.requirement_id} vs ${match.offering_id}`;
+            folderPath = this._fileService.prepareStagingDirectory(
+                this._entityTypes.MATCH,
+                folderName
+            );
+            this.updateFolderPath(matchId, folderPath);
+        }
+        return folderPath;
     }
 }
 

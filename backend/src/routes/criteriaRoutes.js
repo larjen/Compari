@@ -14,7 +14,8 @@
 const express = require('express');
 const router = express.Router();
 
-const { criteriaController } = require('../config/container').getContainer();
+const container = require('../config/container').getContainer();
+const criteriaController = container.resolve('criteriaController');
 
 router.get('/', criteriaController.getAll);
 router.get('/:id', criteriaController.getById);
@@ -26,5 +27,11 @@ router.delete('/:id', criteriaController.delete);
 router.get('/:id/similar', criteriaController.getSimilar);
 router.post('/:id/merge', criteriaController.merge);
 router.get('/:id/history', criteriaController.getHistory);
+router.post('/:id/master-file', criteriaController.writeMasterFile);
+router.get('/:id/master-file', criteriaController.getMasterFile);
+
+router.get('/:id/files', criteriaController.getFiles);
+router.get('/:id/files/:filename', criteriaController.getFile);
+router.post('/:id/folder/open', criteriaController.openFolder);
 
 module.exports = router;

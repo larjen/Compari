@@ -15,7 +15,8 @@
 const express = require('express');
 const router = express.Router();
 
-const { blueprintController } = require('../config/container').getContainer();
+const container = require('../config/container').getContainer();
+const blueprintController = container.resolve('blueprintController');
 const { validate } = require('../middlewares/validateZod');
 const { blueprintSchema } = require('../validators/schemas');
 
@@ -25,7 +26,7 @@ router.get('/:id', blueprintController.getById);
 
 router.post('/', validate(blueprintSchema), blueprintController.create);
 
-router.put('/:id', blueprintController.update);
+router.put('/:id', validate(blueprintSchema), blueprintController.update);
 
 router.patch('/:id/set-active', blueprintController.setActive);
 

@@ -20,6 +20,10 @@
  * - ❌ MUST NOT call Domain Services (e.g., JobListingService, WorkflowService).
  * - ❌ MUST NOT contain business logic or construct business-specific paths.
  *
+ * @socexplanation
+ * - This service implements a memory-safe observer pattern for real-time SSE updates.
+ * - It decouples event producers from consumers, ensuring the system remains responsive.
+ *
  * @dependency_injection
  * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
  */
@@ -48,12 +52,21 @@ class EventService extends EventEmitter {
         this.clients.delete(callback);
     }
 
+    /**
+     * Broadcasts an event to all subscribed client callbacks.
+     * @param {string} eventName - The name of the event to broadcast.
+     * @param {*} data - The data to send with the event.
+     *
+     * @socexplanation
+     * Error logging now includes the errorObj parameter to ensure full stack traces are visible
+     * in the terminal when debug_mode is enabled. This enables proper debugging of broadcast failures.
+     */
     broadcast(eventName, data) {
         for (const clientCallback of this.clients) {
             try {
                 clientCallback(eventName, data);
             } catch (err) {
-                this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'EventService', message: `Error broadcasting to client: ${err.message}` });
+                this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'EventService', message: `Error broadcasting to client: ${err.message}`, errorObj: err });
             }
         }
     }

@@ -107,8 +107,8 @@ class MetadataMapper {
             parsedJson = JSON.parse(metadataJsonString);
         } catch (parseError) {
             if (this._logService) {
-                this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'MetadataMapper', message: `JSON Parse Error: ${parseError.message}` });
-                this._logService.logErrorFile({ origin: 'MetadataMapper', message: 'Failed to parse metadata JSON', errorObj: parseError, details: { jsonString: metadataJsonString ? 'present (omitted)' : null } });
+                /** @socexplanation Error handling consolidated to logSystemFault to prevent swallowed stack traces and enforce DRY principles. */
+                this._logService.logSystemFault({ origin: 'MetadataMapper', message: 'Failed to parse metadata JSON', errorObj: parseError, details: { jsonString: metadataJsonString ? 'present (omitted)' : null } });
             }
             return this.mapRawAiResponseToBlueprint(null, blueprintFields);
         }

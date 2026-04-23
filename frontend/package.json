@@ -1,6 +1,6 @@
 {
   "name": "compari-frontend",
-  "version": "0.7.10",
+  "version": "0.8.0",
   "private": true,
   "description": "Next.js frontend for Compari",
   "scripts": {
@@ -12,8 +12,7 @@
   },
   "dependencies": {
     "@radix-ui/react-popover": "^1.1.15",
-    "@tailwindcss/postcss": "^4.2.2",
-    "tailwindcss": "^4.2.2",
+    "@tailwindcss/postcss": "^4.2.4",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "framer-motion": "^12.38.0",
@@ -27,11 +26,9 @@
   "devDependencies": {
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.5.0",
     "postcss": "^8.5.10",
-    "typescript": "^6.0.3",
-    "eslint": "^10.2.1",
-    "eslint-config-next": "^16.2.4",
-    "@types/react-dom": "^19.0.0"
+    "typescript": "^6.0.3"
   }
 }

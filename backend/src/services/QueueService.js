@@ -185,8 +185,7 @@ class QueueService {
      */
     enqueue(taskType, payload) {
         const taskId = this._queueRepo.enqueue(taskType, payload);
-        this._logService.logTerminal({ status: INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'QueueService.js', message: `Task #${taskId} (${taskType}) added to queue.` });
-        this._logService.logSystemFile('QueueService.js', `Task #${taskId} (${taskType}) added to queue.`);
+        this._logService.logSystemEvent({ status: INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'QueueService.js', message: `Task #${taskId} (${taskType}) added to queue.` });
 
         this.processNext();
 
@@ -197,18 +196,18 @@ class QueueService {
 
     /**
      * Starts the background worker to process queued tasks.
-     * Clears any stale tasks from a previous server run.
+     * Cleans up terminal tasks (completed/failed) from previous sessions,
+     * while automatically resuming any pending tasks.
      */
     start() {
-        const clearedCount = this._queueRepo.wipeQueue();
-        if (clearedCount > 0) {
-            this._logService.logTerminal({ status: WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'QueueService.js', message: `Wiped ${clearedCount} old task(s) on startup.` });
-            this._logService.logSystemFile('QueueService.js', `Wiped ${clearedCount} old task(s) on startup.`);
+        const cleanedCount = this._queueRepo.garbageCollect();
+        if (cleanedCount > 0) {
+            this._logService.logTerminal({ status: INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'QueueService.js', message: `Garbage collected ${cleanedCount} completed/failed task(s) on startup.` });
         }
 
         this._logService.logTerminal({ status: INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'QueueService.js', message: `Background worker started. Listening for tasks...` });
         this.workerInterval = setInterval(() => this.processNext(), 3000);
-        this.processNext();
+        this.processNext(); // Immediately process any pending tasks
     }
 
     /**
@@ -292,18 +291,21 @@ class QueueService {
                     lastError = error;
 
                     if (error.name === 'AbortError' || error.message === 'Task cancelled') {
-                        this._logService.logTerminal({ status: INFO, symbolKey: LOG_SYMBOLS.NONE, origin: 'QueueService.js', message: `Task ${task.id} was aborted by user.` });
-                        this.markFailed(task.id, { errorMsg: 'Task cancelled by user' });
+                        /** * @socexplanation Stack trace preservation enforced for aborted tasks. */
+                        this._logService.logTerminal({ status: INFO, symbolKey: LOG_SYMBOLS.NONE, origin: 'QueueService.js', message: `Task ${task.id} was aborted by user.`, errorObj: error });
+                        this.markFailed(task.id, { errorMsg: 'Task cancelled by user', verboseDetails: error });
                         return;
                     }
 
                     if (error.isFatalClientError) {
-                        this._logService.logTerminal({ status: WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'QueueService.js', message: `Halting retries for Task #${task.id}: Fatal Client Error.` });
+                        /** * @socexplanation Stack trace preservation enforced for fatal client errors. */
+                        this._logService.logTerminal({ status: WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'QueueService.js', message: `Halting retries for Task #${task.id}: Fatal Client Error.`, errorObj: error });
                         break;
                     }
 
                     if (error instanceof TypeError || error instanceof ReferenceError || error instanceof SyntaxError) {
-                        this._logService.logTerminal({ status: WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'QueueService.js', message: `Halting retries for Task #${task.id}: Fatal Programming Error (${error.name}).` });
+                        /** * @socexplanation Stack trace preservation enforced for fatal programming errors. */
+                        this._logService.logTerminal({ status: WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'QueueService.js', message: `Halting retries for Task #${task.id}: Fatal Programming Error (${error.name}).`, errorObj: error });
                         break;
                     }
 
@@ -315,12 +317,19 @@ class QueueService {
                     const delaySec = delayMs / 1000;
 
                     if (error.isConnectionError) {
-                        this._logService.logTerminal({ status: WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'QueueService.js', message: `Task #${task.id} connection lost. Retrying in ${delaySec}s...` });
+                        /** * @socexplanation Stack trace preservation enforced during connection retries. */
+                        this._logService.logTerminal({ status: WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'QueueService.js', message: `Task #${task.id} connection lost. Retrying in ${delaySec}s...`, errorObj: error });
                     } else {
-                        this._logService.logTerminal({ status: WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'QueueService.js', message: `${friendlyName} failed. Retrying in ${delaySec}s...` });
+                        /** * @socexplanation Stack trace preservation enforced during standard retries. */
+                        this._logService.logTerminal({ status: WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'QueueService.js', message: `${friendlyName} failed. Retrying in ${delaySec}s...`, errorObj: error });
                     }
 
                     await new Promise(resolve => setTimeout(resolve, delayMs));
+
+                    if (controller.signal.aborted) {
+                        lastError = new Error('Task cancelled');
+                        break;
+                    }
                 }
             }
 
@@ -348,7 +357,7 @@ class QueueService {
                     try {
                         await taskEntry.onError(payload, failureMessage);
                     } catch (err) {
-                        this._logService.logTerminal({ status: ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'QueueService.js', message: `onError hook failed for task ${task.id}: ${err.message}` });
+                        this._logService.logTerminal({ status: ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'QueueService.js', message: `onError hook failed for task ${task.id}`, errorObj: err });
                     }
                 }
 
@@ -371,8 +380,7 @@ class QueueService {
      */
     markCompleted(taskId) {
         this._queueRepo.markCompleted(taskId);
-        this._logService.logTerminal({ status: INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'QueueService.js', message: `Task #${taskId} completed successfully.` });
-        this._logService.logSystemFile('QueueService.js', `Task #${taskId} completed successfully.`);
+        this._logService.logSystemEvent({ status: INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'QueueService.js', message: `Task #${taskId} completed successfully.` });
     }
 
     /**
@@ -387,8 +395,7 @@ class QueueService {
     markFailed(taskId, failureDto = {}) {
         const { errorMsg, verboseDetails, payload } = failureDto;
         this._queueRepo.markFailed(taskId, errorMsg);
-        this._logService.logTerminal({ status: ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'QueueService.js', message: `Task #${taskId} failed: ${errorMsg}` });
-        this._logService.logErrorFile({ origin: 'QueueService.js', message: `Task #${taskId} failed: ${errorMsg}`, errorObj: verboseDetails, details: payload });
+        this._logService.logSystemFault({ origin: 'QueueService.js', message: `Task #${taskId} failed: ${errorMsg}`, errorObj: verboseDetails, details: payload });
 
         if (payload) {
             this._eventService.emit(APP_EVENTS.TASK_FAILED, { taskId, errorMsg, payload });
@@ -434,7 +441,12 @@ class QueueService {
                     }
                 }
             } catch (error) {
-                console.error('QueueService abort check failed:', error.stack || error);
+                /**
+                 * @socexplanation
+                 * Raw console.error was replaced with logSystemFault to ensure failures are captured
+                 * in the persistent audit trail, enforcing the strict logging policy.
+                 */
+                this._logService.logSystemFault({ origin: 'QueueService.js', message: `Abort check failed for task ${task.id}`, errorObj: error });
             }
         }
     }
@@ -478,7 +490,7 @@ class QueueService {
                             const payload = JSON.parse(task.payload);
                             await taskEntry.onError(payload, failureMessage);
                         } catch (err) {
-                            this._logService.logTerminal({ status: ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'QueueService.js', message: `Failed to execute onError for orphaned task ${task.id}: ${err.message}` });
+                            this._logService.logTerminal({ status: ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'QueueService.js', message: `Failed to execute onError for orphaned task ${task.id}`, errorObj: err });
                         }
                     }
 
@@ -507,7 +519,7 @@ class QueueService {
                             entityId: entity.id,
                             logType: ERROR,
                             message: INTERRUPTION_ERROR,
-                            folderPath: entity.folder_path || 'Unknown' // Note: SQL returns snake_case folder_path
+                            folderPath: this._entityService.getEntityFolderPath(entity.id) || null
                         });
                     }
                 }
@@ -515,16 +527,9 @@ class QueueService {
                 this._logService.logTerminal({ status: INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'QueueService.js', message: 'No orphaned domain entities found.' });
             }
         } catch (error) {
-            this._logService.logTerminal({ status: ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'QueueService.js', message: `Failed to execute orphaned task sweep: ${error.message}`, errorObj: error });
-            this._logService.logErrorFile({ origin: 'QueueService.js', message: 'Failed to execute orphaned task sweep', errorObj: error });
+            this._logService.logSystemFault({ origin: 'QueueService.js', message: 'Failed to execute orphaned task sweep', errorObj: error });
         }
     }
 }
 
-/**
- * @dependency_injection
- * QueueService exports the class constructor rather than an instance.
- * This enables DI container to instantiate with dependencies.
- * Reasoning: Allows runtime configuration and testing via injection.
- */
 module.exports = QueueService;

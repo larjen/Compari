@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useCallback, useRef, useState } from 'react';
-import { APP_EVENTS } from '@/lib/constants';
+import { APP_EVENTS, TOAST_TYPES } from '@/lib/constants';
 import { SSEEntityUpdate, SSENotification, QueueStatus, SSEMatchUpdate } from '@/lib/types';
+import { useToast } from '@/hooks/useToast';
 
 interface UseSSEOptions {
   onEntityUpdate?: (data: SSEEntityUpdate) => void;
@@ -95,6 +96,7 @@ export function useSSE({
   onBlueprintUpdate,
   onReconnect
 }: UseSSEOptions = {}) {
+  const { addToast } = useToast();
   const [isConnected, setIsConnected] = useState(false);
   const wasDisconnectedRef = useRef(false);
   const onReconnectRef = useRef(onReconnect);
@@ -126,7 +128,7 @@ export function useSSE({
     const handleReconnect = () => {
       setIsConnected(true);
       if (wasDisconnectedRef.current) {
-        console.log('[SSE] Reconnected to server. Triggering resync...');
+        addToast(TOAST_TYPES.SUCCESS, 'Reconnected to server. Refreshing data...');
         if (onReconnectRef.current) onReconnectRef.current();
       }
       wasDisconnectedRef.current = false;
@@ -149,7 +151,7 @@ export function useSSE({
         globalEventSource = null;
       }
     };
-  }, [onEntityUpdate, onNotification, onQueueUpdate, onMatchUpdate, onBlueprintUpdate]);
+  }, [onEntityUpdate, onNotification, onQueueUpdate, onMatchUpdate, onBlueprintUpdate, addToast]);
 
   const reconnect = useCallback(() => {
     if (globalEventSource) {

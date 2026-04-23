@@ -8,7 +8,8 @@
 const express = require('express');
 const router = express.Router();
 
-const { dimensionController } = require('../config/container').getContainer();
+const container = require('../config/container').getContainer();
+const dimensionController = container.resolve('dimensionController');
 const { validate } = require('../middlewares/validateZod');
 const { dimensionSchema } = require('../validators/schemas');
 
@@ -20,7 +21,7 @@ router.get('/:id', dimensionController.getById);
 
 router.post('/', validate(dimensionSchema), dimensionController.create);
 
-router.put('/:id', dimensionController.update);
+router.put('/:id', validate(dimensionSchema), dimensionController.update);
 
 router.delete('/:id', dimensionController.delete);
 

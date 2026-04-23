@@ -50,16 +50,6 @@ const ENTITY_TYPES = Object.freeze({
 });
 
 /**
- * Entity Role Definitions
- * Replaces hardcoded 'requirement' and 'offering' strings.
- * Ensures type safety and prevents typo-induced bugs across the application.
- */
-const ENTITY_ROLES = Object.freeze({
-    REQUIREMENT: 'requirement',
-    OFFERING: 'offering'
-});
-
-/**
  * AI Model Role Definitions
  * Replaces hardcoded 'chat' and 'embedding' strings.
  * Used by AiModelRepo, AiService, and frontend components.
@@ -93,10 +83,13 @@ const FIELD_TYPES = Object.freeze({
 });
 
 /**
- * System Setting Keys
- * Enforces strict key matching for database-driven application settings.
+ * @constant SETTING_KEYS
+ * @description Centralized dictionary for database setting keys.
+ * Enforces DRY principle and prevents magic string errors when accessing settings.
+ * @type {Readonly<Object>}
  */
 const SETTING_KEYS = Object.freeze({
+    DEBUG_MODE: 'debug_mode',
     AUTO_MERGE_THRESHOLD: 'auto_merge_threshold',
     MINIMUM_MATCH_FLOOR: 'minimum_match_floor',
     PERFECT_MATCH_SCORE: 'perfect_match_score',
@@ -107,8 +100,6 @@ const SETTING_KEYS = Object.freeze({
     MODEL_ROUTING_EMBEDDING: 'model_routing_embedding',
     MODEL_ROUTING_METADATA: 'model_routing_metadata',
     ALLOW_CONCURRENT_AI: 'allow_concurrent_ai',
-    OLLAMA_HOST: 'ollama_host',
-    OLLAMA_MODEL: 'ollama_model',
     USE_AI_CACHE: 'use_ai_cache'
 });
 
@@ -170,8 +161,6 @@ module.exports = {
     // Entity Types (CTI) (NEW)
     ENTITY_TYPES,
 
-    // Entity Roles (NEW)
-    ENTITY_ROLES,
     AI_MODEL_ROLES,
     AI_TASK_TYPES,
     FIELD_TYPES,

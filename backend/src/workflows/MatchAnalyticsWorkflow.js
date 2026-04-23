@@ -23,9 +23,13 @@
  * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
  */
 
-const path = require('path');
-const MatchingEngine = require('../utils/MatchingEngine');
-const { ENTITY_ROLES } = require('../config/constants');
+const { ENTITY_TYPES } = require('../config/constants');
+
+/**
+ * @socexplanation
+ * Error handling was refactored to explicitly catch and log data corruption/math failures
+ * via injected LogService, eliminating silent failures while maintaining graceful degradation.
+ */
 
 class MatchAnalyticsWorkflow {
     /**
@@ -34,22 +38,28 @@ class MatchAnalyticsWorkflow {
      * @param {Object} deps.matchService - The MatchService instance
      * @param {Object} deps.matchRepo - The MatchRepo instance
      * @param {Object} deps.entityRepo - The EntityRepo instance
+     * @param {Object} deps.entityService - The EntityService instance
      * @param {Object} deps.criteriaRepo - The CriteriaRepo instance
      * @param {Object} deps.dimensionRepo - The DimensionRepo instance
      * @param {Object} deps.settingsManager - The SettingsManager instance
      * @param {Object} deps.fileService - The FileService instance
      * @param {Object} deps.pdfGenerator - The PdfGeneratorService instance
+     * @param {Object} deps.logService - The LogService instance
+     * @param {Object} deps.matchingEngine - The MatchingEngine instance
      * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
      */
-    constructor({ matchService, matchRepo, entityRepo, criteriaRepo, dimensionRepo, settingsManager, fileService, pdfGenerator }) {
+    constructor({ matchService, matchRepo, entityRepo, entityService, criteriaRepo, dimensionRepo, settingsManager, fileService, pdfGeneratorService, logService, matchingEngine }) {
         this._matchService = matchService;
         this._matchRepo = matchRepo;
         this._entityRepo = entityRepo;
+        this._entityService = entityService;
         this._criteriaRepo = criteriaRepo;
         this._dimensionRepo = dimensionRepo;
         this._settingsManager = settingsManager;
         this._fileService = fileService;
-        this._pdfGenerator = pdfGenerator;
+        this._pdfGeneratorService = pdfGeneratorService;
+        this._logService = logService;
+        this._matchingEngine = matchingEngine;
     }
 
     /**
@@ -73,35 +83,27 @@ class MatchAnalyticsWorkflow {
      * - Uses FileService for file I/O to enforce SoC.
      */
     async generateAndGetMatchPdf(matchId) {
-        const match = this._matchService.getMatchById(matchId);
-        if (!match) {
-            throw new Error('Match not found');
-        }
+        this._matchService.assertExists(matchId);
 
-        const safeReqName = (match.requirement_name || "Requirement").replace(/[/\\?%*:|"<>]/g, '-');
-        const safeOffName = (match.offering_name || "Offering").replace(/[/\\?%*:|"<>]/g, '-');
-        const pdfFileName = `Match - ${safeReqName} - ${safeOffName}.pdf`;
-
+        const pdfFileName = this._matchService.getMatchPdfFileName(matchId);
         let pdfBuffer;
-        let pdfPath = null;
+        
+        const pdfPath = this._matchService.resolveEntityFilePath(matchId, pdfFileName);
 
-        if (match.folder_path) {
-            pdfPath = path.join(match.folder_path, pdfFileName);
-            if (this._fileService.validatePath(pdfPath)) {
-                pdfBuffer = this._fileService.readBuffer(pdfPath);
-            }
+        if (pdfPath && this._fileService.validatePath(pdfPath)) {
+            pdfBuffer = await this._fileService.readBuffer(pdfPath);
         }
 
         if (!pdfBuffer) {
-            const rawPdfData = await this._pdfGenerator.generateMatchReport(matchId);
+            const rawPdfData = await this._pdfGeneratorService.generateMatchReport(matchId);
             pdfBuffer = Buffer.from(rawPdfData);
 
-            if (match.folder_path && pdfPath) {
-                this._fileService.saveBuffer(pdfPath, pdfBuffer);
-                const existingDocs = this._matchService.getDocumentsForMatch(matchId);
+            if (pdfPath) {
+                await this._fileService.saveBuffer(pdfPath, pdfBuffer);
+                const existingDocs = this._matchService.getDocuments(matchId);
                 if (!existingDocs.some(d => d.file_name === pdfFileName)) {
                     this._matchService.registerDocumentRecord({
-                        matchId,
+                        entityId: matchId,
                         docType: 'Match Report PDF',
                         fileName: pdfFileName
                     });
@@ -144,10 +146,10 @@ class MatchAnalyticsWorkflow {
      * - ❌ MUST NOT call MatchingEngine.calculate() or buildRawComparison() (generates heavy JSON).
      */
     evaluateMatchesChunk(entityId, offset = 0, limit = 20) {
-        const entity = this._entityRepo.getEntityById(entityId);
-        if (!entity) throw new Error('Entity not found');
+        const entityRole = this._entityService.getEntityRole(entityId);
+        this._entityService.assertExists(entityId);
 
-        const oppositeType = entity.entityType === ENTITY_ROLES.REQUIREMENT ? ENTITY_ROLES.OFFERING : ENTITY_ROLES.REQUIREMENT;
+        const oppositeType = entityRole === ENTITY_TYPES.REQUIREMENT ? ENTITY_TYPES.OFFERING : ENTITY_TYPES.REQUIREMENT;
 
         const baseCriteria = this._criteriaRepo.getCriteriaWithEmbeddingsForEntity(entityId);
         if (!baseCriteria || baseCriteria.length === 0) {
@@ -180,16 +182,16 @@ class MatchAnalyticsWorkflow {
 
         for (const opp of opposites) {
             try {
-                const reqId = entity.type === ENTITY_ROLES.REQUIREMENT ? entity.id : opp.id;
-                const offId = entity.type === ENTITY_ROLES.OFFERING ? entity.id : opp.id;
+                const reqId = entityRole === ENTITY_TYPES.REQUIREMENT ? entityId : opp.id;
+                const offId = entityRole === ENTITY_TYPES.OFFERING ? entityId : opp.id;
 
                 const oppositeCriteria = allOppositeCriteria[opp.id] || [];
                 if (!oppositeCriteria || oppositeCriteria.length === 0) {
                     continue;
                 }
 
-                const reqCriteria = entity.type === ENTITY_ROLES.REQUIREMENT ? baseCriteria : oppositeCriteria;
-                const offCriteria = entity.type === ENTITY_ROLES.REQUIREMENT ? oppositeCriteria : baseCriteria;
+                const reqCriteria = entityRole === ENTITY_TYPES.REQUIREMENT ? baseCriteria : oppositeCriteria;
+                const offCriteria = entityRole === ENTITY_TYPES.REQUIREMENT ? oppositeCriteria : baseCriteria;
 
                 const evaluationDto = {
                     criteria: {
@@ -203,7 +205,7 @@ class MatchAnalyticsWorkflow {
                     }
                 };
 
-                const fastScore = MatchingEngine.calculateFastMatchScore(evaluationDto);
+                const fastScore = this._matchingEngine.calculateFastMatchScore(evaluationDto);
 
                 const existingMatch = this._matchRepo.getMatchByRequirementAndOffering(reqId, offId);
 
@@ -214,7 +216,12 @@ class MatchAnalyticsWorkflow {
                     existingMatchStatus: existingMatch ? existingMatch.status : null
                 });
             } catch(e) {
-                console.error(`MatchAnalyticsWorkflow chunk evaluation failed for entity ${entityId}:`, e.stack || e);
+                /**
+                 * @socexplanation
+                 * Raw console.error was replaced with logSystemFault to ensure failures are captured
+                 * in the persistent audit trail, enforcing the strict logging policy.
+                 */
+                this._logService.logSystemFault({ origin: 'MatchAnalyticsWorkflow', message: `Chunk evaluation failed for entity ${entityId}`, errorObj: e });
                 continue;
             }
         }

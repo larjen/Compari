@@ -13,7 +13,7 @@
 
 const BaseEntityRepo = require('./BaseEntityRepo');
 const EntityFactory = require('../models/EntityFactory');
-const HashGenerator = require('../utils/HashGenerator');
+const { ENTITY_TYPES } = require('../config/constants');
 
 /**
  * @class CriteriaRepo
@@ -22,6 +22,10 @@ const HashGenerator = require('../utils/HashGenerator');
  * Implements Class Table Inheritance (CTI) pattern where:
  * - Base data (id, normalized_name, nicename) lives in entities_base
  * - Specific data (dimension, embedding) lives in entities_criterion
+ *
+ * @socexplanation
+ * Error handling was refactored to explicitly catch and log data corruption/math failures
+ * via injected LogService, eliminating silent failures while maintaining graceful degradation.
  */
 class CriteriaRepo extends BaseEntityRepo {
 
@@ -30,29 +34,37 @@ class CriteriaRepo extends BaseEntityRepo {
      * @constructor
      * @param {Object} deps - Dependencies object.
      * @param {Object} deps.db - The database instance.
+     * @param {Object} deps.logService - Optional LogService instance.
      */
-    constructor({ db }) {
-        super({ db });
+    constructor({ db, logService }) {
+        super({ db, logService });
     }
     /**
      * Retrieves a criterion by its ID for deep-linking.
      * @param {number} id - The criterion ID.
      * @returns {Object|null} Criterion object with all fields.
+     * @returns {string} returns.folderPath - The folder path from entities_base (CTI).
+     * @returns {boolean} returns.isStaged - Whether the entity is in staging (CTI).
+     * @returns {string|null} returns.masterFile - The master file path from entities_base (CTI).
      */
     getCriterionByIdForApi(id) {
         const stmt = this.db.prepare(`
-            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, ec.embedding
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, c.entity_type, c.folder_path, c.is_staged, c.master_file, ec.dimension, ec.embedding
             FROM entities_base c
             JOIN entities_criterion ec ON c.id = ec.entity_id
-            WHERE c.id = ? AND c.entity_type = 'criterion'
+            WHERE c.id = ? AND c.entity_type = ?
         `);
-        const row = stmt.get(id);
+        const row = stmt.get(id, ENTITY_TYPES.CRITERION);
         if (!row) return null;
         return {
             id: row.id,
             normalizedName: row.normalized_name,
             displayName: row.display_name,
             hash: row.hash,
+            entityType: row.entity_type,
+            folderPath: row.folder_path,
+            isStaged: row.is_staged === 1,
+            masterFile: row.master_file,
             dimension: row.dimension,
             embedding: JSON.parse(row.embedding)
         };
@@ -71,24 +83,38 @@ class CriteriaRepo extends BaseEntityRepo {
      * - Embedding is now optional (nullable) to support the atomized extraction pipeline
      *   where criteria may be created before vectorization occurs.
      * - Passing null ensures valid SQL NULL instead of undefined, preventing constraint violations.
+     * - Uses _sanitizeBaseDto to ensure consistent base entity fields.
      * @why_not_base - Custom INSERT OR IGNORE with SELECT to return ID; requires JSON.stringify for embedding.
      */
     insertCriterion({ normalizedName, displayName, dimension, embeddingArray, dimensionDisplayName }) {
         const embeddingStr = embeddingArray ? JSON.stringify(embeddingArray) : null;
-        const hash = HashGenerator.generateDeterministicHash(`criterion:${normalizedName}`);
+
+        const baseDto = this._sanitizeBaseDto({
+            entityType: ENTITY_TYPES.CRITERION,
+            normalizedName,
+            nicename: displayName,
+            niceNameLine2: dimensionDisplayName || dimension
+        });
 
         const transaction = this.db.transaction(() => {
             const insertBaseStmt = this.db.prepare(`
-                INSERT OR IGNORE INTO entities_base (entity_type, normalized_name, nicename, nice_name_line_1, nice_name_line_2, hash)
-                VALUES ('criterion', ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO entities_base (entity_type, normalized_name, nicename, nice_name_line_1, nice_name_line_2, hash, is_staged)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             `);
-            const line2 = dimensionDisplayName || dimension;
-            insertBaseStmt.run(normalizedName, displayName, displayName, line2, hash);
+            insertBaseStmt.run(
+                baseDto.entityType,
+                baseDto.normalized_name,
+                baseDto.nicename,
+                baseDto.nice_name_line_1,
+                baseDto.nice_name_line_2,
+                baseDto.hash,
+                1
+            );
 
             const getIdStmt = this.db.prepare(`
-                SELECT id FROM entities_base WHERE normalized_name = ? AND entity_type = 'criterion'
+                SELECT id FROM entities_base WHERE normalized_name = ? AND entity_type = ?
             `);
-            const existing = getIdStmt.get(normalizedName);
+            const existing = getIdStmt.get(baseDto.normalized_name, ENTITY_TYPES.CRITERION);
             if (!existing) return null;
 
             const insertChildStmt = this.db.prepare(`
@@ -109,16 +135,19 @@ class CriteriaRepo extends BaseEntityRepo {
      * @method getCriterionByName
      * @param {string} normalizedName - The normalized criterion name to look up.
      * @returns {Object|null} Criterion object with id, normalized_name, display_name, dimension, and embedding (array), or null if not found.
+     * @returns {string} returns.folderPath - The folder path from entities_base (CTI).
+     * @returns {boolean} returns.isStaged - Whether the entity is in staging (CTI).
+     * @returns {string|null} returns.masterFile - The master file path from entities_base (CTI).
      * @why_not_base - Custom return format with JSON.parse for embedding array.
      */
     getCriterionByName(normalizedName) {
         const stmt = this.db.prepare(`
-            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, ec.embedding
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, c.entity_type, c.folder_path, c.is_staged, c.master_file, ec.dimension, ec.embedding
             FROM entities_base c
             JOIN entities_criterion ec ON c.id = ec.entity_id
-            WHERE c.normalized_name = ? AND c.entity_type = 'criterion'
+            WHERE c.normalized_name = ? AND c.entity_type = ?
         `);
-        const row = stmt.get(normalizedName);
+        const row = stmt.get(normalizedName, ENTITY_TYPES.CRITERION);
         if (!row) return null;
 
         return {
@@ -126,6 +155,10 @@ class CriteriaRepo extends BaseEntityRepo {
             normalizedName: row.normalized_name,
             displayName: row.display_name,
             hash: row.hash,
+            entityType: row.entity_type,
+            folderPath: row.folder_path,
+            isStaged: row.is_staged === 1,
+            masterFile: row.master_file,
             dimension: row.dimension,
             embedding: JSON.parse(row.embedding)
         };
@@ -143,9 +176,9 @@ class CriteriaRepo extends BaseEntityRepo {
             SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, ec.embedding
             FROM entities_base c
             JOIN entities_criterion ec ON c.id = ec.entity_id
-            WHERE c.entity_type = 'criterion'
+            WHERE c.entity_type = ?
         `);
-        const rows = stmt.all();
+        const rows = stmt.all(ENTITY_TYPES.CRITERION);
 
         return rows.map(row => ({
             id: row.id,
@@ -177,7 +210,8 @@ class CriteriaRepo extends BaseEntityRepo {
     getPaginatedCriteria({ page = 1, limit = 200, search, dimension } = {}) {
         const params = [];
         let whereClauses = [];
-        whereClauses.push("c.entity_type = 'criterion'");
+        whereClauses.push("c.entity_type = ?");
+        params.push(ENTITY_TYPES.CRITERION);
 
         if (search && search.trim()) {
             whereClauses.push('LOWER(c.nicename) LIKE ?');
@@ -208,7 +242,7 @@ class CriteriaRepo extends BaseEntityRepo {
         const offset = (safePage - 1) * limit;
 
         const sql = `
-            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, d.id as dimension_id
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, c.folder_path, ec.dimension, d.id as dimension_id
             FROM entities_base c
             LEFT JOIN entities_criterion ec ON c.id = ec.entity_id
             LEFT JOIN dimensions d ON ec.dimension = d.name
@@ -231,6 +265,7 @@ class CriteriaRepo extends BaseEntityRepo {
             normalizedName: row.normalized_name,
             displayName: row.display_name,
             hash: row.hash,
+            folderPath: row.folder_path,
             dimension: row.dimension,
             dimensionId: row.dimension_id
         }));
@@ -273,7 +308,7 @@ class CriteriaRepo extends BaseEntityRepo {
      */
     getCriteriaForEntity(entityId) {
         const stmt = this.db.prepare(`
-            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, link.is_required, d.id as dimension_id
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, c.entity_type, c.folder_path, c.is_staged, c.master_file, ec.dimension, link.is_required, d.id as dimension_id
             FROM entity_criteria link
             JOIN entities_base c ON link.criterion_id = c.id
             JOIN entities_criterion ec ON c.id = ec.entity_id
@@ -287,6 +322,10 @@ class CriteriaRepo extends BaseEntityRepo {
             normalizedName: row.normalized_name,
             displayName: row.display_name,
             hash: row.hash,
+            entityType: row.entity_type,
+            folderPath: row.folder_path,
+            isStaged: row.is_staged === 1,
+            masterFile: row.master_file,
             dimension: row.dimension,
             dimensionId: row.dimension_id,
             isRequired: row.is_required === 1
@@ -304,7 +343,7 @@ class CriteriaRepo extends BaseEntityRepo {
      */
     getCriteriaWithEmbeddingsForEntity(entityId) {
         const stmt = this.db.prepare(`
-            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, ec.embedding, link.is_required, d.id as dimension_id
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, c.entity_type, c.folder_path, c.is_staged, c.master_file, ec.dimension, ec.embedding, link.is_required, d.id as dimension_id
             FROM entity_criteria link
             JOIN entities_base c ON link.criterion_id = c.id
             JOIN entities_criterion ec ON c.id = ec.entity_id
@@ -318,6 +357,10 @@ class CriteriaRepo extends BaseEntityRepo {
             normalizedName: row.normalized_name,
             displayName: row.display_name,
             hash: row.hash,
+            entityType: row.entity_type,
+            folderPath: row.folder_path,
+            isStaged: row.is_staged === 1,
+            masterFile: row.master_file,
             dimension: row.dimension,
             dimensionId: row.dimension_id,
             embedding: JSON.parse(row.embedding),
@@ -386,7 +429,7 @@ class CriteriaRepo extends BaseEntityRepo {
             JOIN entities_base c ON link.criterion_id = c.id
             JOIN entities_criterion ec ON c.id = ec.entity_id
             LEFT JOIN dimensions d ON ec.dimension = d.name
-            WHERE link.entity_id = ? AND (ec.embedding IS NULL OR ec.embedding = '')
+            WHERE link.entity_id = ? AND (ec.embedding IS NULL OR ec.embedding = '' OR ec.embedding = 'null' OR ec.embedding = '[]')
         `);
         const rows = stmt.all(entityId);
 
@@ -414,138 +457,72 @@ class CriteriaRepo extends BaseEntityRepo {
     }
 
     /**
-     * Centralized batch insertion logic for criteria and entity linking.
-     * This helper prevents code duplication between source and target criteria batch operations.
-     * @method _processCriteriaBatch
-     * @private
-     * @param {number} entityId - The entity ID to associate criteria with.
-     * @param {Array<Object>} criteriaArray - Array of criteria objects with properties:
-     *   - {string} normalizedName - The normalized criterion name.
-     *   - {string} displayName - The display-friendly criterion name.
-     *   - {string} dimension - The dimension/category.
-     *   - {number[]|null} embedding - Array of floats representing the embedding, or null if not yet vectorized.
-     *   - {boolean} [isRequired] - Whether the criterion is required (for sources).
-     * @returns {number} The number of criteria inserted/linked.
-     * 
-     * @socexplanation
-     * - This method implements CTI by inserting into both entities_base and entities_criterion within a single transaction.
-     * - The CTI pattern is completely abstracted away from the Service layer - the Service passes familiar criterion objects and receives back criterion IDs without knowing about the underlying base/child table split.
-     * - Embedding is now optional (nullable) to support the atomized extraction pipeline where criteria may be created before vectorization occurs.
-     * - Passing null ensures valid SQL NULL instead of undefined, preventing constraint violations.
-     * 
-     * @performance_benefits
-     * - Uses `this.db.transaction()` to batch all inserts into a single atomic operation.
-     * - Reduces disk I/O by executing multiple INSERT statements in one transaction.
-     * - If any insert fails, the entire batch rolls back, ensuring data consistency.
-     * - Eliminates the overhead of multiple database round-trips when processing dozens of criteria.
-     * - better-sqlite3's transaction provides implicit prepared statement caching within the transaction.
+     * Inserts a single criterion using the CTI pattern.
+     * Safely serializes arrays and booleans to prevent SQLite3 binding errors.
      */
-    _processCriteriaBatch(entityId, criteriaArray) {
-        const insertBaseStmt = this.db.prepare(`
-            INSERT OR IGNORE INTO entities_base (entity_type, normalized_name, nicename, nice_name_line_1, nice_name_line_2, hash)
-            VALUES ('criterion', ?, ?, ?, ?, ?)
-        `);
+    insertSingleCriterion(baseDto, dimension, embeddingArray) {
+        const embeddingStr = embeddingArray ? JSON.stringify(embeddingArray) : null;
 
-        const getCriterionIdStmt = this.db.prepare(`
-            SELECT id FROM entities_base WHERE normalized_name = ? AND entity_type = 'criterion'
-        `);
-
-        const insertChildStmt = this.db.prepare(`
-            INSERT OR IGNORE INTO entities_criterion (entity_id, dimension, embedding)
-            VALUES (?, ?, ?)
-        `);
-
-        const linkEntityStmt = this.db.prepare(`
-            INSERT OR IGNORE INTO entity_criteria (entity_id, criterion_id, is_required)
-            VALUES (?, ?, ?)
-        `);
+        const isStagedInt = baseDto.isStaged ? 1 : 0;
 
         const transaction = this.db.transaction(() => {
-            let count = 0;
-            for (const criteria of criteriaArray) {
-                const embeddingStr = criteria.embedding ? JSON.stringify(criteria.embedding) : null;
-                const hash = HashGenerator.generateDeterministicHash(`criterion:${criteria.normalizedName}`);
-                const line2 = criteria.dimensionDisplayName || criteria.dimension;
-                insertBaseStmt.run(criteria.normalizedName, criteria.displayName, criteria.displayName, line2, hash);
+            const insertBaseStmt = this.db.prepare(`
+                INSERT OR IGNORE INTO entities_base (entity_type, normalized_name, nicename, nice_name_line_1, nice_name_line_2, folder_path, hash, is_staged)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `);
+            
+            const normalizedName = baseDto.normalizedName || baseDto.normalized_name;
+            
+            insertBaseStmt.run(
+                baseDto.entityType,
+                normalizedName,
+                baseDto.nicename,
+                baseDto.niceNameLine1 || baseDto.nice_name_line_1 || baseDto.nicename,
+                baseDto.niceNameLine2 || baseDto.nice_name_line_2 || dimension,
+                baseDto.folderPath || null,
+                baseDto.hash,
+                isStagedInt
+            );
 
-                const existing = getCriterionIdStmt.get(criteria.normalizedName);
-                if (existing) {
-                    insertChildStmt.run(existing.id, criteria.dimension, embeddingStr);
-
-                    const isRequired = criteria.isRequired !== undefined ? criteria.isRequired : true;
-                    linkEntityStmt.run(entityId, existing.id, isRequired ? 1 : 0);
-                    count++;
-                }
+            const getIdStmt = this.db.prepare(`
+                SELECT id FROM entities_base WHERE normalized_name = ? AND entity_type = ?
+            `);
+            const existing = getIdStmt.get(normalizedName, baseDto.entityType);
+            
+            if (!existing) {
+                throw new Error(`Failed to insert or retrieve base entity for criterion: ${normalizedName}`);
             }
-            return count;
+
+            const insertChildStmt = this.db.prepare(`
+                INSERT OR IGNORE INTO entities_criterion (entity_id, dimension, embedding)
+                VALUES (?, ?, ?)
+            `);
+            insertChildStmt.run(existing.id, dimension, embeddingStr);
+
+            return existing.id;
         });
 
         return transaction();
     }
 
     /**
-     * Batch inserts criteria for an entity using a database transaction for optimal performance.
-     * Combines the old insertJobCriteriaBatch and insertUserCriteriaBatch into a single method.
-     * 
-     * @method insertEntityCriteriaBatch
-     * @param {number} entityId - The entity ID to associate criteria with.
-     * @param {Array<Object>} criteriaArray - Array of criteria objects with properties:
-     *   - {string} normalizedName - The normalized criterion name.
-     *   - {string} displayName - The display-friendly criterion name.
-     *   - {string} dimension - The dimension/category.
-     *   - {number[]} embedding - Array of floats representing the embedding.
-     *   - {boolean} [isRequired] - Whether the criterion is required (for sources).
-     * @returns {number} The number of criteria inserted/linked.
-     * 
-     * @performance_benefits
-     * - Uses `this.db.transaction()` to batch all inserts into a single atomic operation.
-     * - Reduces disk I/O by executing multiple INSERT statements in one transaction.
-     * - If any insert fails, the entire batch rolls back, ensuring data consistency.
-     * - Eliminates the overhead of multiple database round-trips when processing dozens of criteria.
-     * - better-sqlite3's transaction provides implicit prepared statement caching within the transaction.
-     */
-    insertEntityCriteriaBatch(entityId, criteriaArray) {
-        if (!criteriaArray || criteriaArray.length === 0) {
-            return 0;
-        }
-
-        return this._processCriteriaBatch(entityId, criteriaArray);
-    }
-
-    /**
-     * Retrieves all source entities associated with a specific criterion.
-     * @method getAssociatedSources
+     * Retrieves all entities associated with a specific criterion by entity type.
+     * Combines getAssociatedSources and getAssociatedTargets into a single method.
+     * @method getAssociatedEntities
      * @param {number} criterionId - The criterion ID.
-     * @returns {Array<Entity>} Array of Entity objects of type 'source'.
+     * @param {string} entityType - The entity type to filter by (e.g., ENTITY_TYPES.REQUIREMENT, ENTITY_TYPES.OFFERING).
+     * @returns {Array<Entity>} Array of Entity objects of the specified type.
      * @why_not_base - Requires JOIN between entities and entity_criteria tables; custom Entity model mapping.
      */
-    getAssociatedSources(criterionId) {
+    getAssociatedEntities(criterionId, entityType) {
         const stmt = this.db.prepare(`
             SELECT e.* FROM entities_base e
             JOIN entity_criteria ec ON e.id = ec.entity_id
-            WHERE ec.criterion_id = ? AND e.entity_type = 'requirement'
+            WHERE ec.criterion_id = ? AND e.entity_type = ?
             ORDER BY e.id DESC
         `);
-        const rows = stmt.all(criterionId);
-        return rows.map(row => EntityFactory.fromRow(row));
-    }
-
-    /**
-     * Retrieves all target entities associated with a specific criterion.
-     * @method getAssociatedTargets
-     * @param {number} criterionId - The criterion ID.
-     * @returns {Array<Entity>} Array of Entity objects of type 'target'.
-     * @why_not_base - Requires JOIN between entities and entity_criteria tables; custom Entity model mapping.
-     */
-    getAssociatedTargets(criterionId) {
-        const stmt = this.db.prepare(`
-            SELECT e.* FROM entities_base e
-            JOIN entity_criteria ec ON e.id = ec.entity_id
-            WHERE ec.criterion_id = ? AND e.entity_type = 'offering'
-            ORDER BY e.id DESC
-        `);
-        const rows = stmt.all(criterionId);
-        return rows.map(row => EntityFactory.fromRow(row));
+        const rows = stmt.all(criterionId, entityType);
+        return rows.map(row => EntityFactory.fromRow(row, this._logService));
     }
 
     /**
@@ -553,22 +530,29 @@ class CriteriaRepo extends BaseEntityRepo {
      * @method getCriterionById
      * @param {number} id - The criterion ID.
      * @returns {Object|null} Criterion object or null.
+     * @returns {string} returns.folderPath - The folder path from entities_base (CTI).
+     * @returns {boolean} returns.isStaged - Whether the entity is in staging (CTI).
+     * @returns {string|null} returns.masterFile - The master file path from entities_base (CTI).
      * @why_not_base - Custom return format with JSON.parse for embedding array.
      */
     getCriterionById(id) {
         const stmt = this.db.prepare(`
-            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, ec.embedding
+            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, c.entity_type, c.folder_path, c.is_staged, c.master_file, ec.dimension, ec.embedding
             FROM entities_base c
             JOIN entities_criterion ec ON c.id = ec.entity_id
-            WHERE c.id = ? AND c.entity_type = 'criterion'
+            WHERE c.id = ? AND c.entity_type = ?
         `);
-        const row = stmt.get(id);
+        const row = stmt.get(id, ENTITY_TYPES.CRITERION);
         if (!row) return null;
         return {
             id: row.id,
             normalizedName: row.normalized_name,
             displayName: row.display_name,
             hash: row.hash,
+            entityType: row.entity_type,
+            folderPath: row.folder_path,
+            isStaged: row.is_staged === 1,
+            masterFile: row.master_file,
             dimension: row.dimension,
             embedding: JSON.parse(row.embedding)
         };
@@ -635,16 +619,8 @@ class CriteriaRepo extends BaseEntityRepo {
      */
     deleteCriterion(id) {
         const stmt = this.db.prepare('DELETE FROM entities_base WHERE id = ? AND entity_type = ?');
-        return stmt.run(id, 'criterion');
+        return stmt.run(id, ENTITY_TYPES.CRITERION);
     }
 }
 
-/**
- * @dependency_injection
- * CriteriaRepo exports the class constructor rather than an instance.
- * This enables DI container to instantiate with dependencies.
- * @param {Object} deps - Dependencies object.
- * @param {Object} deps.db - The database instance (injected).
- * Reasoning: Allows runtime configuration and testing via injection.
- */
 module.exports = CriteriaRepo;

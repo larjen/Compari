@@ -30,7 +30,11 @@ export function MergeTab({ criterion, onMerged }: MergeTabProps) {
     setLoading(true);
     criteriaApi.getSimilarCriteria(criterion.id)
       .then(data => { if (isMounted) setSimilar(data); })
-      .catch(err => console.error(err))
+      .catch(err => {
+        if (isMounted) {
+          addToast(TOAST_TYPES.ERROR, 'Failed to load similar criteria');
+        }
+      })
       .finally(() => { if (isMounted) setLoading(false); });
     return () => { isMounted = false; };
   }, [criterion.id]);

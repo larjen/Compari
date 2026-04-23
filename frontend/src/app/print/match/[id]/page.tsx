@@ -4,8 +4,11 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { MatchReportViewer } from "@/components/matches/MatchReportViewer";
 import { matchApi } from "@/lib/api/matchApi";
+import { useToast } from "@/hooks/useToast";
+import { TOAST_TYPES } from "@/lib/constants";
 
 export default function PrintMatchReportPage() {
+    const { addToast } = useToast();
     const params = useParams();
     const matchId = params.id as string;
     const [reportData, setReportData] = useState<any>(null);
@@ -18,9 +21,11 @@ export default function PrintMatchReportPage() {
             .then((data) => {
                 setReportData(data);
             })
-            .catch((err) => console.error("Failed to load report for printing", err))
+            .catch((err) => {
+                addToast(TOAST_TYPES.ERROR, "Failed to load report for printing");
+            })
             .finally(() => setLoading(false));
-    }, [matchId]);
+    }, [matchId, addToast]);
 
     if (loading) {
         return <div className="p-10 font-sans text-gray-500">Preparing document for print...</div>;

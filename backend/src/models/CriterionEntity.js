@@ -7,6 +7,10 @@
  * @extends BaseEntity
  * @property {string|null} dimension - Dimension name or category for the criterion
  * @property {Array<number>|null} embedding - Vector embedding array for similarity matching
+ *
+ * @socexplanation
+ * Error handling was refactored to explicitly catch and log data corruption/math failures
+ * via injected LogService, eliminating silent failures while maintaining graceful degradation.
  */
 class CriterionEntity extends require('./BaseEntity') {
     constructor(data = {}) {
@@ -18,16 +22,20 @@ class CriterionEntity extends require('./BaseEntity') {
     /**
      * Safely parses the embedding field from JSON string
      * @param {string|Array<number>|null} embedding - The embedding data to parse
+     * @param {object} [logService=null] - Optional LogService instance for logging parsing failures
+     * @param {string} [entityId='Unknown'] - Entity ID for logging context
      * @returns {Array<number>|null} Parsed embedding array or null
      */
-    static parseEmbedding(embedding) {
+    static parseEmbedding(embedding, logService = null, entityId = 'Unknown') {
         if (!embedding) return null;
         if (Array.isArray(embedding)) return embedding;
         if (typeof embedding === 'string') {
             try {
                 return JSON.parse(embedding);
-            } catch (e) {
-                console.error('Failed to parse embedding array:', e.stack || e);
+            } catch (err) {
+                if (logService) {
+                    logService.logSystemFault({ origin: 'CriterionEntity', message: `Failed to parse embedding for criterion ID ${entityId}`, errorObj: err });
+                }
                 return null;
             }
         }

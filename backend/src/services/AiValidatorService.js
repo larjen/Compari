@@ -11,13 +11,17 @@
  * - ✅ May be called by any extraction workflow (CriteriaManagerWorkflow, DocumentProcessor, etc.).
  * - ❌ MUST NOT contain database operations or business logic beyond validation.
  *
+ * @socexplanation
+ * - This service centralizes validation logic to prevent wasted AI API calls and detect silent failures.
+ * - It decouples validation heuristics from the core AI extraction workflows.
+ *
  * @dependency_injection
  * Enforces constructor injection per ARCHITECTURE.md Section 2.
  * All dependencies (aiService, promptRepo, logService) must be explicitly injected.
  * This enables proper DI and testability.
  */
 
-const { LOG_LEVELS, LOG_SYMBOLS, PROMPT_SYSTEM_NAMES } = require('../config/constants');
+const { LOG_LEVELS, LOG_SYMBOLS, AI_TASK_TYPES } = require('../config/constants');
 
 const MIN_TEXT_LENGTH = 50;
 
@@ -26,13 +30,13 @@ class AiValidatorService {
      * @constructor
      * @param {Object} deps - Dependencies object
      * @param {Object} deps.aiService - The AiService instance
-     * @param {Object} deps.promptRepo - The PromptRepo instance
+     * @param {Object} deps.promptBuilder - The PromptBuilder instance
      * @param {Object} deps.logService - The LogService instance
      * @dependency_injection Dependencies are injected strictly via the constructor.
      */
-    constructor({ aiService, promptRepo, logService }) {
+    constructor({ aiService, promptBuilder, logService }) {
         this._aiService = aiService;
-        this._promptRepo = promptRepo;
+        this._promptBuilder = promptBuilder;
         this._logService = logService;
     }
 
@@ -125,30 +129,20 @@ class AiValidatorService {
     async areCriteriaSynonyms(criteriaDto) {
         const { criterionA, criterionB } = criteriaDto;
 
-        if (!this._aiService || !this._promptRepo) {
-            throw new Error('[AiValidatorService] areCriteriaSynonyms requires aiService and promptRepo to be injected as dependencies.');
+        if (!this._aiService || !this._promptBuilder) {
+            throw new Error('[AiValidatorService] areCriteriaSynonyms requires aiService and promptBuilder to be injected as dependencies.');
         }
 
-        const synonymPrompt = this._promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.SYNONYM_VALIDATOR).prompt;
-
-        const messages = [
-            {
-                role: 'system',
-                content: synonymPrompt
-            },
-            {
-                role: 'user',
-                content: `Criterion 1: "${criterionA}"\nCriterion 2: "${criterionB}"`
-            }
-        ];
+        const messages = this._promptBuilder.buildSynonymValidatorMessages(criterionA, criterionB);
 
         try {
-            const { content } = await this._aiService.generateChatResponse(messages, { taskType: 'verification', temperature: 0.0, logAction: 'Evaluated synonyms for merge gate.' });
+            const { content } = await this._aiService.generateChatResponse(messages, { taskType: AI_TASK_TYPES.VERIFICATION, temperature: 0.0, logAction: 'Evaluated synonyms for merge gate.' });
             return {
                 isSynonym: content.trim().toUpperCase().includes('YES')
             };
         } catch (error) {
-            if (this._logService) this._logService.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'AiValidatorService', message: `Synonym verification failed: ${error.message}` });
+            /** @socexplanation Added errorObj to prevent swallowed stack traces. */
+            if (this._logService) this._logService.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'AiValidatorService', message: 'Synonym verification failed', errorObj: error });
             return { isSynonym: false };
         }
     }

@@ -11,6 +11,7 @@
 interface ToggleSwitchProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
+  disabled?: boolean;
   labelOn?: string;
   labelOff?: string;
 }
@@ -23,14 +24,17 @@ interface ToggleSwitchProps {
  * @param labelOn - Label text when checked (default: 'On')
  * @param labelOff - Label text when unchecked (default: 'Off')
  */
-export function ToggleSwitch({ checked, onChange, labelOn = 'On', labelOff = 'Off' }: ToggleSwitchProps) {
+export function ToggleSwitch({ checked, onChange, disabled = false, labelOn = 'On', labelOff = 'Off' }: ToggleSwitchProps) {
   return (
     <div className="flex items-center justify-between">
-      <label className="relative inline-flex items-center cursor-pointer">
+      <label className={`relative inline-flex items-center ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
         <input
           type="checkbox"
           checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
+          disabled={disabled}
+          onChange={(e) => {
+            if (!disabled) onChange(e.target.checked);
+          }}
           className="sr-only peer"
         />
         <div className="w-11 h-6 bg-themed-input-border peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent-sage"></div>

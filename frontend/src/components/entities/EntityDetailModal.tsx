@@ -28,14 +28,17 @@ import { CriteriaViewer } from '@/components/shared/CriteriaViewer';
 import { EntityDetailLayout } from '@/components/shared/EntityDetailLayout';
 import { FilesTabContent } from '@/components/shared/FilesTabContent';
 import { EntityInfoTab } from './EntityInfoTab';
-import { useToast } from '@/hooks/useToast';
-import { useEntityFiles, useEntityCriteria, useTopMatches } from '@/hooks/useEntityData';
+import { useFiles, useEntityCriteria, useTopMatches } from '@/hooks/useEntityData';
 import { useMatches } from '@/hooks/useMatches';
 import { useBlueprints } from '@/hooks/useBlueprints';
 import { useTerminology } from '@/hooks/useTerminology';
 import { useUrlTabs } from '@/hooks/useUrlTabs';
+import { useSettings } from '@/hooks/useSettings';
+import { useEntityOperations } from '@/hooks/useEntityOperations';
+import { useMatchOperations } from '@/hooks/useMatchOperations';
 import { TopMatchesTab } from './TopMatchesTab';
-import { TOAST_TYPES, ENTITY_ROLES } from '@/lib/constants';
+import { SharedDebugTab } from '@/components/shared/SharedDebugTab';
+import { ENTITY_ROLES } from '@/lib/constants';
 
 interface EntityDetailModalProps {
   /** The entity to display */
@@ -54,11 +57,12 @@ const ENTITY_TABS = {
   INFO: 'info',
   CRITERIA: 'criteria',
   FILES: 'files',
-  TOP_MATCHES: 'top-matches'
+  TOP_MATCHES: 'top-matches',
+  DEBUG: 'debug'
 } as const;
 type TabId = typeof ENTITY_TABS[keyof typeof ENTITY_TABS];
 
-const tabs = [
+const baseTabs = [
   { id: ENTITY_TABS.INFO, label: 'General Info', icon: DOMAIN_ICONS.INFO },
   { id: ENTITY_TABS.TOP_MATCHES, label: 'Top Matches', icon: DOMAIN_ICONS.MATCH },
   { id: ENTITY_TABS.CRITERIA, label: 'Criteria', icon: DOMAIN_ICONS.CRITERIA },
@@ -67,11 +71,23 @@ const tabs = [
 
 export function EntityDetailModal({ entity, open, onClose, onDelete, onEdit }: EntityDetailModalProps) {
   const router = useRouter();
-  const { addToast } = useToast();
   const { blueprints } = useBlueprints();
   const { getEntityLabels } = useTerminology();
   const { activeTab, handleTabChange } = useUrlTabs(ENTITY_TABS.INFO);
   const [currentEntity, setCurrentEntity] = useState<Entity | null>(entity);
+
+  const { 
+    deleteWithToast, 
+    updateWithToast, 
+    openFolderWithToast, 
+    writeMasterFileWithToast,
+    fetchMasterFileWithToast 
+  } = useEntityOperations({ deleteEntityFn: onDelete });
+
+  const { 
+    deleteWithToast: deleteMatchWithToast,
+    retryWithToast: retryMatchWithToast 
+  } = useMatchOperations();
 
   // Find the matching blueprint
   /**
@@ -81,10 +97,15 @@ export function EntityDetailModal({ entity, open, onClose, onDelete, onEdit }: E
   const entityBlueprintId = entity?.blueprint_id || metadata?.blueprint_id;
   const matchedBlueprint = blueprints.find(b => b.id === entityBlueprintId);
 
-  const { files, loading: loadingFiles } = useEntityFiles(entity?.id);
+  const { files, loading: loadingFiles } = useFiles(entity?.id, 'entity');
   const { criteria, loading: loadingCriteria } = useEntityCriteria(activeTab === ENTITY_TABS.CRITERIA && entity?.id ? entity.id : undefined);
   const { topMatches, loading: loadingMatches, processedCount, totalCount, isComplete } = useTopMatches(entity?.id, activeTab === ENTITY_TABS.TOP_MATCHES);
-  const { matches, deleteMatch, addMatch } = useMatches({ immediate: open });
+  const { matches, addMatch } = useMatches({ immediate: open });
+  const { settings } = useSettings(open);
+
+  const tabs = settings.debug_mode === 'true' 
+    ? [...baseTabs, { id: ENTITY_TABS.DEBUG, label: 'Debug', icon: DOMAIN_ICONS.SETTINGS }]
+    : baseTabs;
 
   useEffect(() => {
     setCurrentEntity(entity);
@@ -96,9 +117,13 @@ const handleSaveMetadata = async (key: string, value: string) => {
       ...(currentEntity.metadata || {}),
       [key]: value,
     };
-    await entityApi.updateEntity(currentEntity.id, { metadata: updatedMetadata });
-    setCurrentEntity({ ...currentEntity, metadata: updatedMetadata });
-    addToast(TOAST_TYPES.SUCCESS, `${key} updated`);
+    try {
+      await updateWithToast(currentEntity.id, { metadata: updatedMetadata }, `${key} updated`);
+      setCurrentEntity({ ...currentEntity, metadata: updatedMetadata });
+    } catch (err) {
+      // updateWithToast already adds error toast
+      throw err;
+    }
   };
 
   /**
@@ -114,8 +139,7 @@ const handleSaveMetadata = async (key: string, value: string) => {
       (m) => m.requirement_id === requirementId && m.offering_id === offeringId
     );
     if (existingMatch) {
-      await deleteMatch(existingMatch.id);
-      addToast(TOAST_TYPES.SUCCESS, 'Match deleted successfully');
+      await deleteMatchWithToast(existingMatch.id, () => {});
     }
   };
 
@@ -130,9 +154,8 @@ const handleSaveMetadata = async (key: string, value: string) => {
     const offeringId = entity.type === ENTITY_ROLES.OFFERING ? entity.id : matchedEntityId;
     try {
       await addMatch(requirementId, offeringId);
-      addToast(TOAST_TYPES.SUCCESS, 'Match report queued for processing');
     } catch (error) {
-      addToast(TOAST_TYPES.ERROR, 'Failed to queue match report');
+      // useMatches might not handle toast, but here we were doing it manually
     }
   };
 
@@ -196,7 +219,7 @@ const handleSaveMetadata = async (key: string, value: string) => {
       footerActions={
         <div className="flex items-center gap-3">
           {onEdit && <EditButton entityName={entity.type} onClick={onEdit} />}
-          <DeleteAction onDelete={async () => { await onDelete(entity.id); onClose(); }} />
+          <DeleteAction onDelete={() => deleteWithToast(entity.id, onClose)} />
         </div>
       }
     >
@@ -245,14 +268,7 @@ const handleSaveMetadata = async (key: string, value: string) => {
             files={files}
             loadingFiles={loadingFiles}
             getDownloadUrl={(filename) => `/api/entities/${entity.id}/files/${encodeURIComponent(filename)}`}
-            onOpenFolder={async () => {
-              try {
-                await entityApi.openFolder(entity.id);
-              } catch (error) {
-                console.error('Failed to open folder:', error);
-                addToast(TOAST_TYPES.ERROR, 'Failed to open folder on the server.');
-              }
-            }}
+            onOpenFolder={() => openFolderWithToast(entity.id)}
           />
         )}
 
@@ -277,6 +293,21 @@ const handleSaveMetadata = async (key: string, value: string) => {
               onViewEntity={handleViewEntity}
             />
           </motion.div>
+        )}
+
+        {activeTab === ENTITY_TABS.DEBUG && settings.debug_mode === 'true' && (
+          <motion.div
+            key="debug"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.15 }}
+          >
+            <SharedDebugTab
+              rawData={currentEntity || entity}
+              onGenerateMasterFile={() => writeMasterFileWithToast(entity.id, () => {})}
+              onFetchMasterFile={() => fetchMasterFileWithToast(entity.id)}
+            />          </motion.div>
         )}
       </AnimatePresence>
     </EntityDetailLayout>

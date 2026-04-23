@@ -28,8 +28,8 @@ export function FilterBar({
   className
 }: FilterBarProps) {
   return (
-    <div className={cn("flex flex-col md:flex-row gap-4 items-center", className)}>
-      <div className="relative flex-1 w-full">
+    <div className={cn("flex flex-col md:flex-row gap-4 items-center flex-1 min-w-0", className)}>
+      <div className="relative flex-1 w-full min-w-0">
         <DOMAIN_ICONS.SEARCH className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-accent-forest/40" />
         <Input
           type="text"

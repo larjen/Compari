@@ -71,7 +71,7 @@ export function MetadataEditor({ entity, metadataFields, onSave }: MetadataEdito
       await onSave(key, value);
       setEditingKey(null);
     } catch (err) {
-      console.error(`Failed to update ${key}:`, err);
+      // Handled by caller
     } finally {
       setIsSaving(false);
     }

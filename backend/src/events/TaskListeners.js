@@ -28,7 +28,7 @@
  * - Task failures/errors: Use logTerminal() with 'ERROR' + logErrorFile() for audit.
  */
 
-const { ENTITY_STATUS, APP_EVENTS, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
+const { ENTITY_STATUS, APP_EVENTS } = require('../config/constants');
 
 module.exports = function setupTaskListeners({
     eventService,
@@ -50,8 +50,8 @@ function registerTaskListeners() {
                 matchService.updateState(payload.matchId, { status: ENTITY_STATUS.FAILED, error: errorMsg });
             }
         } catch (error) {
-            logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'TaskListeners', message: `Failed to update domain entities on task ${taskId} failure: ${error.message}`, errorObj: error });
-            logService.logErrorFile({ origin: 'TaskListeners', message: `Failed to update domain entities on task ${taskId} failure: ${error.message}`, errorObj: error });
+            /** @socexplanation Error handling consolidated to logSystemFault to prevent swallowed stack traces and enforce DRY principles. */
+            logService.logSystemFault({ origin: 'TaskListeners', message: `Failed to update domain entities on task ${taskId} failure`, errorObj: error });
         }
     });
 }

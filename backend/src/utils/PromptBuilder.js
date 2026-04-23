@@ -16,7 +16,7 @@
  * Reasoning: Constructor Injection ensures promptRepo is available immediately after construction.
  */
 
-const { ENTITY_ROLES, PROMPT_SYSTEM_NAMES } = require('../config/constants');
+const { ENTITY_TYPES, PROMPT_SYSTEM_NAMES } = require('../config/constants');
 
 class PromptBuilder {
     /**
@@ -105,13 +105,13 @@ class PromptBuilder {
      * ];
      * const messages = PromptBuilder.buildDynamicExtractionMessages(text, activeDimensions, 'source');
      */
-    buildDynamicExtractionMessages(rawText, activeDimensions, entityRole = ENTITY_ROLES.OFFERING) {
+    buildDynamicExtractionMessages(rawText, activeDimensions, entityRole = ENTITY_TYPES.OFFERING) {
         if (!Array.isArray(activeDimensions) || activeDimensions.length === 0) {
             throw new Error('Active dimensions array is required and must not be empty.');
         }
 
         const getInstruction = (dim) => {
-            return entityRole === ENTITY_ROLES.REQUIREMENT ? dim.requirementInstruction : dim.offeringInstruction;
+            return entityRole === ENTITY_TYPES.REQUIREMENT ? dim.requirementInstruction : dim.offeringInstruction;
         };
 
         const dimensionList = activeDimensions.map((dim, index) => {
@@ -127,7 +127,7 @@ class PromptBuilder {
         }
         const exampleJsonString = JSON.stringify(exampleOutput, null, 2);
 
-        const roleLabel = entityRole === ENTITY_ROLES.REQUIREMENT ? 'requirement document (defines criteria and needs)' : 'offering profile (possesses skills and attributes)';
+        const roleLabel = entityRole === ENTITY_TYPES.REQUIREMENT ? 'requirement document (defines criteria and needs)' : 'offering profile (possesses skills and attributes)';
 
         return this._buildMessages(PROMPT_SYSTEM_NAMES.DYNAMIC_EXTRACTION, { roleLabel, dimensionCount: activeDimensions.length, dimensionList, exampleJsonString }, rawText);
     }
@@ -173,6 +173,14 @@ class PromptBuilder {
             { role: 'system', content: template },
             { role: 'user', content: JSON.stringify(reportJson, null, 2) }
         ];
+    }
+
+    buildSynonymValidatorMessages(criterionA, criterionB) {
+        return this._buildMessages(
+            PROMPT_SYSTEM_NAMES.SYNONYM_VALIDATOR, 
+            {}, 
+            `Criterion 1: "${criterionA}"\nCriterion 2: "${criterionB}"`
+        );
     }
 }
 

@@ -71,7 +71,7 @@ export function Tabs({ tabs, activeTab, onChange, layoutIdPrefix }: TabsProps) {
             key={tab.id}
             onClick={() => onChange(tab.id)}
             className={cn(
-              'flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative',
+              'flex items-center gap-2 px-4 py-2.5 text-sm font-medium cursor-pointer transition-colors relative',
               isActive
                 ? 'text-accent-forest'
                 : 'text-accent-forest/50 hover:text-accent-forest/70'

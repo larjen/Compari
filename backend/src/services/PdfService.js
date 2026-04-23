@@ -7,17 +7,16 @@
  * - Provides page-by-page rendering with proper formatting.
  * - Handles various PDF encodings and layouts.
  *
- * @soc_explanation
- * This service isolates PDF-specific parsing logic, keeping FileService
- * generic and focused on standard disk I/O operations.
- * Delegated file I/O to FileService to ensure pure testability and strict Separation of Concerns.
- *
  * @boundary_rules
  * - ✅ Uses Constructor Injection for LogService and FileService.
  * - ❌ MUST NOT handle HTTP request/response objects.
  * - ❌ MUST NOT call other domain services.
  * - ❌ MUST NOT handle file system operations beyond reading PDF buffers via FileService.
  * - ❌ MUST NOT contain business logic or path generation.
+ *
+ * @socexplanation
+ * - This service isolates PDF-specific parsing logic, keeping FileService generic and focused on standard disk I/O operations.
+ * - It provides a consistent text extraction layer that handles the complexities of PDF formatting and page-by-page rendering.
  *
  * @dependency_injection
  * Dependencies are injected strictly via the constructor.
@@ -27,18 +26,15 @@
  */
 
 const pdf = require('pdf-parse');
-const { LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 class PdfService {
     /**
      * @constructor
      * @param {Object} deps - Dependencies object
-     * @param {Object} deps.logService - The LogService instance for logging
      * @dependency_injection Dependencies are injected strictly via the constructor.
      * Defensive getters are not required as instantiation guarantees dependency presence.
      */
-    constructor({ logService }) {
-        this._logService = logService;
+    constructor() {
     }
 
     /**
@@ -82,40 +78,34 @@ class PdfService {
      * @error_handling
      * - Returns empty string if buffer cannot be parsed.
      * - Logs errors to console for debugging.
+     *
+     * @socexplanation
+     * Error handling has been consolidated to the logSystemFault method to enforce DRY principles
+     * and maintain terminal stack trace visibility. This replaces the previous pattern of calling
+     * logTerminal followed by logErrorFile separately.
      */
     async extractTextFromPDF(dataBuffer) {
-        try {
-            if (!dataBuffer) {
-                if (this._logService) {
-                    this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'PdfService', message: 'Failed to extract text from PDF: no buffer provided' });
-                }
-                return '';
-            }
-            
-            // Handle v2 (Class API)
-            if (pdf && pdf.PDFParse) {
-                const parser = new pdf.PDFParse({ data: dataBuffer });
-                // Pass pagerender into getText's ParseParameters
-                const result = await parser.getText({ pagerender: this._renderPage.bind(this) });
-                await parser.destroy(); // Mandatory in v2 to prevent memory leaks
-                return result.text;
-            } 
-            // Handle v1 (Function API fallback)
-            else if (typeof pdf === 'function' || typeof (pdf.default || pdf) === 'function') {
-                const legacyPdf = pdf.default || pdf;
-                const data = await legacyPdf(dataBuffer, { pagerender: this._renderPage.bind(this) });
-                return data.text;
-            } 
-            // Fallback for unknown export structures
-            else {
-                throw new Error('Unrecognized pdf-parse export structure. Cannot parse PDF.');
-            }
-        } catch (error) {
-            if (this._logService) {
-                this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'PdfService', message: `Failed to extract text from PDF: ${error.message}` });
-                this._logService.logErrorFile({ origin: 'PdfService', message: 'Failed to extract text from PDF', errorObj: error });
-            }
-            return '';
+        if (!dataBuffer) {
+            throw new Error('No buffer provided');
+        }
+        
+        // Handle v2 (Class API)
+        if (pdf && pdf.PDFParse) {
+            const parser = new pdf.PDFParse({ data: dataBuffer });
+            // Pass pagerender into getText's ParseParameters
+            const result = await parser.getText({ pagerender: this._renderPage.bind(this) });
+            await parser.destroy(); // Mandatory in v2 to prevent memory leaks
+            return result.text;
+        } 
+        // Handle v1 (Function API fallback)
+        else if (typeof pdf === 'function' || typeof (pdf.default || pdf) === 'function') {
+            const legacyPdf = pdf.default || pdf;
+            const data = await legacyPdf(dataBuffer, { pagerender: this._renderPage.bind(this) });
+            return data.text;
+        } 
+        // Fallback for unknown export structures
+        else {
+            throw new Error('Unrecognized pdf-parse export structure. Cannot parse PDF.');
         }
     }
 }

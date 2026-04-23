@@ -4,8 +4,10 @@ import { useState } from 'react';
 import { Dialog, Button, CreateButton, ModalFooter } from '@/components/ui';
 import { useBlueprints } from '@/hooks/useBlueprints';
 import { useTerminology } from '@/hooks/useTerminology';
+import { useToast } from '@/hooks/useToast';
 import { EntityCombobox } from '@/components/shared/EntityCombobox';
 import { DOMAIN_ICONS } from '@/lib/iconRegistry';
+import { TOAST_TYPES } from '@/lib/constants';
 
 interface CreateMatchModalProps {
   open: boolean;
@@ -14,6 +16,7 @@ interface CreateMatchModalProps {
 }
 
 export function CreateMatchModal({ open, onClose, onCreateMatch }: CreateMatchModalProps) {
+  const { addToast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [selectedSourceId, setSelectedSourceId] = useState<number | null>(null);
   const [selectedTargetId, setSelectedTargetId] = useState<number | null>(null);
@@ -32,7 +35,7 @@ export function CreateMatchModal({ open, onClose, onCreateMatch }: CreateMatchMo
       setSelectedTargetId(null);
       onClose();
     } catch (err) {
-      console.error('Failed to create match:', err);
+      addToast(TOAST_TYPES.ERROR, 'Failed to create match');
     } finally {
       setIsCreating(false);
     }
@@ -47,7 +50,7 @@ export function CreateMatchModal({ open, onClose, onCreateMatch }: CreateMatchMo
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} title="Create Match">
+    <Dialog open={open} onClose={handleClose} title="Create Match" autoHeight className="md:max-w-xl">
       <div className="space-y-6">
         <p className="text-accent-forest/70">
           Select a {requirementLabel.toLowerCase()} and {offeringLabel.toLowerCase()} to create a match and start an assessment.

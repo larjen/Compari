@@ -176,4 +176,25 @@ export const matchApi = {
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   },
+
+  /**
+   * Manually regenerates the match master markdown file.
+   * @param {number} id - The match ID.
+   * @returns {Promise<void>}
+   * @throws {Error} If the request fails.
+   */
+  async writeMasterFile(id: number): Promise<void> {
+    return fetchWrapper(`/matches/${id}/master-file`, { method: HTTP_METHODS.POST });
+  },
+
+  /**
+   * Fetches the generated master markdown file content for a match.
+   * @param {number} id - The match ID.
+   * @returns {Promise<string>} The master file markdown content.
+   * @throws {Error} If the master file has not been generated yet.
+   */
+  async getMasterFile(id: number): Promise<string> {
+    const data = await fetchWrapper<{ success: boolean; data: string }>(`/matches/${id}/master-file`);
+    return data.data;
+  },
 };

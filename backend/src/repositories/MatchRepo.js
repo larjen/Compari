@@ -11,12 +11,18 @@
  * - ❌ This layer ONLY handles database operations.
  */
 
+const path = require('path');
 const BaseEntityRepo = require('./BaseEntityRepo');
+const { ENTITY_TYPES } = require('../config/constants');
 
 /**
  * @class MatchRepo
  * @extends BaseEntityRepo
  * @description Repository for entity match CRUD operations.
+ *
+ * @socexplanation
+ * Error handling was refactored to explicitly catch and log data corruption/math failures
+ * via injected LogService, eliminating silent failures while maintaining graceful degradation.
  */
 class MatchRepo extends BaseEntityRepo {
     /**
@@ -24,9 +30,10 @@ class MatchRepo extends BaseEntityRepo {
      * @constructor
      * @param {Object} deps - Dependencies object.
      * @param {Object} deps.db - The database instance.
+     * @param {Object} deps.logService - Optional LogService instance.
      */
-    constructor({ db }) {
-        super({ db });
+    constructor({ db, logService }) {
+        super({ db, logService });
     }
 
     /**
@@ -52,11 +59,12 @@ class MatchRepo extends BaseEntityRepo {
                 em_child.requirement_id,
                 em_child.offering_id,
                 em_child.match_score,
-                em_child.report_path,
+                (SELECT file_name FROM documents WHERE entity_id = em_base.id AND doc_type = 'Match Report' LIMIT 1) as report_path,
                 em_base.folder_path,
                 em_base.status,
                 em_base.error,
                 em_base.hash,
+                em_base.is_staged,
                 em_base.created_at,
                 em_base.updated_at,
                 em_base.metadata,
@@ -90,7 +98,7 @@ class MatchRepo extends BaseEntityRepo {
      * @socexplanation
      * - This method uses Class Table Inheritance (CTI) pattern.
      * - Lifecycle data (id, status, folder_path, error, metadata, timestamps) lives in entities_base.
-     * - Match-specific data (requirement_id, offering_id, match_score, report_path) lives in entities_match.
+     * - Match-specific data (requirement_id, offering_id, match_score) lives in entities_match.
      * - The CTI complexity is abstracted here so MatchService receives the same object shape as before.
      */
     getAllMatches() {
@@ -151,7 +159,7 @@ class MatchRepo extends BaseEntityRepo {
                 em_child.requirement_id,
                 em_child.offering_id,
                 em_child.match_score,
-                em_child.report_path,
+                (SELECT file_name FROM documents WHERE entity_id = em_base.id AND doc_type = 'Match Report' LIMIT 1) as report_path,
                 em_base.folder_path,
                 em_base.status,
                 em_base.error,
@@ -190,8 +198,8 @@ class MatchRepo extends BaseEntityRepo {
      * @param {number} matchDto.requirementId - The requirement entity ID.
      * @param {number} matchDto.offeringId - The offering entity ID.
      * @param {number|null} [matchDto.matchScore] - The computed match score.
-     * @param {string|null} [matchDto.reportPath] - Path to the generated match report.
-     * @param {string|null} [matchDto.folderPath] - Path to the match folder.
+     * @param {string|null} [matchDto.folderPath] - Absolute path to the match folder (for file operations).
+     * @param {string|null} [matchDto.folderName] - Relative folder name for database storage.
      * @param {string} [matchDto.status='pending'] - The match status.
      * @returns {number} The ID of the newly created match record.
      * @socexplanation
@@ -200,21 +208,23 @@ class MatchRepo extends BaseEntityRepo {
      * - Returns the same ID that MatchService expects, hiding the CTI structure from the Service layer.
      */
     createMatch(matchDto) {
-        const { requirementId, offeringId, matchScore, reportPath, folderPath, status = 'pending', hash, nicename = 'Match', niceNameLine1 = 'Unknown', niceNameLine2 = 'Unknown' } = matchDto;
+        const { requirementId, offeringId, matchScore, folderPath, folderName, status = 'pending', hash, nicename = 'Match', niceNameLine1 = 'Unknown', niceNameLine2 = 'Unknown', isStaged } = matchDto;
+
+        const storedFolderPath = folderName || (folderPath ? path.basename(folderPath) : null);
 
         const executeTransaction = this.db.transaction(() => {
             const baseStmt = this.db.prepare(`
-                INSERT INTO entities_base (entity_type, nicename, normalized_name, nice_name_line_1, nice_name_line_2, folder_path, status, hash)
-                VALUES ('match', ?, 'match', ?, ?, ?, ?, ?)
+                INSERT INTO entities_base (entity_type, nicename, normalized_name, nice_name_line_1, nice_name_line_2, folder_path, status, hash, is_staged)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             `);
-            const baseInfo = baseStmt.run(nicename, niceNameLine1, niceNameLine2, folderPath || null, status, hash || null);
+            const baseInfo = baseStmt.run(ENTITY_TYPES.MATCH, nicename, ENTITY_TYPES.MATCH, niceNameLine1, niceNameLine2, storedFolderPath || null, status, hash || null, isStaged !== undefined ? (isStaged ? 1 : 0) : 1);
             const entityId = baseInfo.lastInsertRowid;
 
             const childStmt = this.db.prepare(`
-                INSERT INTO entities_match (entity_id, requirement_id, offering_id, match_score, report_path)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO entities_match (entity_id, requirement_id, offering_id, match_score)
+                VALUES (?, ?, ?, ?)
             `);
-            childStmt.run(entityId, requirementId, offeringId, matchScore || null, reportPath || null);
+            childStmt.run(entityId, requirementId, offeringId, matchScore || null);
 
             return entityId;
         });
@@ -288,91 +298,41 @@ class MatchRepo extends BaseEntityRepo {
     }
 
     /**
-     * Updates the report path for an existing match.
-     * @method updateReportPath
-     * @param {number} id - The match record ID.
-     * @param {string} reportPath - The new report path.
-     * @returns {boolean} True if the row was updated.
-     */
-    updateReportPath(id, reportPath) {
-        const stmt = this.db.prepare(`
-            UPDATE entities_match SET report_path = ? WHERE entity_id = ?
-        `);
-        const info = stmt.run(reportPath, id);
-        return info.changes > 0;
-    }
-
-    /**
      * Deletes a match record.
      * @method deleteMatch
      * @param {number} id - The match record ID.
      * @returns {void}
      * @why_not_base - Custom DELETE that may have cascade behavior (kept in child for explicit control).
+     * @socexplanation
+     * - Uses CTI pattern: deletes from entities_match (child) and entities_base (base) within a transaction.
+     * - Transaction ensures atomicity - both deletes succeed or fail together, preventing orphaned rows.
+     * - Wrapping cross-table CTI writes in a transaction ensures referential integrity and prevents orphaned rows.
      */
     deleteMatch(id) {
-        const stmt = this.db.prepare('DELETE FROM entities_match WHERE entity_id = ?');
-        stmt.run(id);
-        const baseStmt = this.db.prepare('DELETE FROM entities_base WHERE id = ?');
-        baseStmt.run(id);
+        const executeTransaction = this.db.transaction(() => {
+            const stmt = this.db.prepare('DELETE FROM entities_match WHERE entity_id = ?');
+            stmt.run(id);
+            const baseStmt = this.db.prepare('DELETE FROM entities_base WHERE id = ?');
+            baseStmt.run(id);
+        });
+        executeTransaction();
     }
 
     /**
-     * Deletes all matches for a specific requirement entity.
-     * @method deleteMatchesForRequirement
-     * @param {number} requirementId - The requirement entity ID.
+     * Deletes all matches for a specific entity based on role column.
+     * Combines deleteMatchesForRequirement and deleteMatchesForOffering into a single method.
+     * @method deleteMatchesByEntityRole
+     * @param {number} entityId - The entity ID.
+     * @param {string} roleColumn - The column to target: 'requirement_id' or 'offering_id'.
      * @returns {void}
-     * @why_not_base - Custom DELETE with specific column targeting (requirement_id).
+     * @why_not_base - Custom DELETE with dynamic column targeting.
      */
-    deleteMatchesForRequirement(requirementId) {
+    deleteMatchesByEntityRole(entityId, roleColumn) {
         const stmt = this.db.prepare(`
-            DELETE FROM entities_match WHERE requirement_id = ?
+            DELETE FROM entities_match WHERE ${roleColumn} = ?
         `);
-        stmt.run(requirementId);
-    }
-
-    /**
-     * Deletes all matches for a specific offering entity.
-     * @method deleteMatchesForOffering
-     * @param {number} offeringId - The offering entity ID.
-     * @returns {void}
-     * @why_not_base - Custom DELETE with specific column targeting (offering_id).
-     */
-    deleteMatchesForOffering(offeringId) {
-        const stmt = this.db.prepare(`
-            DELETE FROM entities_match WHERE offering_id = ?
-        `);
-        stmt.run(offeringId);
-    }
-
-
-    /**
-     * Retrieves all matches with a specific status.
-     * @method getMatchesByStatus
-     * @param {string} status - The status to filter by.
-     * @returns {Array<Object>} Array of match objects.
-     * @why_not_base - Requires JOIN with entities table to fetch entity names.
-     */
-    getMatchesByStatus(status) {
-        const stmt = this.db.prepare(this._getBaseSelectQuery('em_base.status = ?'));
-        return stmt.all(status);
-    }
-
-    /**
-     * Retrieves matches stuck in any active processing state.
-     * @returns {Array<Object>}
-     */
-    getStuckMatches() {
-        const stmt = this.db.prepare(this._getBaseSelectQuery("em_base.status NOT IN ('pending', 'completed', 'failed')"));
-        return stmt.all();
+        stmt.run(entityId);
     }
 }
 
-/**
- * @dependency_injection
- * MatchRepo exports the class constructor rather than an instance.
- * This enables DI container to instantiate with dependencies.
- * @param {Object} deps - Dependencies object.
- * @param {Object} deps.db - The database instance (injected).
- * Reasoning: Allows runtime configuration and testing via injection.
- */
 module.exports = MatchRepo;

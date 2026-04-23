@@ -1,6 +1,7 @@
 /**
  * @module MatchController
  * @description HTTP Controller responsible for handling HTTP requests related to matches.
+ * Extends BaseCrudController to inherit standard CRUD operations with clean overrides.
  *
  * @responsibility
  * - Extract HTTP parameters and body from incoming requests (req).
@@ -24,14 +25,21 @@
  * - This ensures consistent error responses and centralized error logging.
  * - File system operations are delegated to MatchService to maintain SoC.
  * - Uses asyncHandler to eliminate try/catch boilerplate.
+ * - Extends BaseCrudController to follow DRY CRUD architecture (Section 8 of ARCHITECTURE.md).
+ * - getById is inherited from BaseCrudController - automatically handles 404, ID parsing, and { match: ... } response.
  */
-
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
-const { handleFileDownload } = require('../utils/fileHandler');
 const { HTTP_STATUS, QUEUE_TASKS } = require('../config/constants');
+const BaseCrudController = require('./BaseCrudController');
 
-class MatchController {
+/**
+  * @class MatchController
+  * @extends BaseCrudController
+  * @description HTTP Controller for Match entity operations.
+  * Implements clean overrides for custom business logic while inheriting standard CRUD from BaseCrudController.
+  */
+class MatchController extends BaseCrudController {
     /**
      * @param {Object} dependencies
      * @param {Object} dependencies.matchService - Match service instance
@@ -40,15 +48,46 @@ class MatchController {
      * @param {Object} dependencies.matchAnalyticsWorkflow - MatchAnalyticsWorkflow instance
      */
     constructor({ matchService, queueService, fileService, matchAnalyticsWorkflow }) {
-        this._matchService = matchService;
+        super({
+            service: matchService,
+            entityName: 'Match',
+            methodMap: {
+                getById: 'getMatchById'
+            },
+            fileService,
+            queueService,
+            retryTaskName: QUEUE_TASKS.ASSESS_ENTITY_MATCH,
+            retryServiceMethod: 'retryMatchAssessment'
+        });
+
         this._queueService = queueService;
         this._fileService = fileService;
         this._matchAnalyticsWorkflow = matchAnalyticsWorkflow;
     }
 
     /**
+     * Builds retry payload for match assessment, including entity IDs and match ID.
+     * @method _buildRetryPayload
+     * @param {number} id - The match ID
+     * @param {Object} match - The match object
+     * @returns {Object} Payload with sourceEntityId, targetEntityId, matchId
+     * @protected
+     */
+    _buildRetryPayload(id, match) {
+        return {
+            sourceEntityId: match.requirement_id,
+            targetEntityId: match.offering_id,
+            matchId: id
+        };
+    }
+
+    /**
      * GET /api/matches
      * Retrieves matches with pagination, search, and status filtering.
+     * @override
+     * @socexplanation
+     * - Override required due to custom pagination, status filtering, and search via getPaginatedMatches.
+     * - BaseCrudController.getAll returns all entities without pagination support.
      */
     getAll = asyncHandler(async (req, res) => {
         const page = parseInt(req.query.page) || 1;
@@ -56,38 +95,27 @@ class MatchController {
         const search = req.query.search || '';
         const status = req.query.status || '';
 
-        const result = this._matchService.getPaginatedMatches({ page, limit, search, status });
+        const result = this.service.getPaginatedMatches({ page, limit, search, status });
         res.json(result);
-    });
-
-    /**
-     * GET /api/matches/:id
-     */
-    getById = asyncHandler(async (req, res) => {
-        const { id } = req.params;
-        const match = this._matchService.getMatchById(id);
-        if (!match) {
-            throw new AppError('Match not found', HTTP_STATUS.NOT_FOUND);
-        }
-        res.json({ match });
     });
 
     /**
      * POST /api/matches
      * Creates a new match and queues an assessment.
+     * @override
      * @param {Object} req - Express request object (req.body.sourceEntityId, req.body.targetEntityId)
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
      *
      * @socexplanation
-     * - Delegates file system operations to MatchService.createMatchWithFolder.
-     * - Controller only handles HTTP transport: parameter extraction and response formatting.
+     * - Override required due to file system operations (createMatchWithFolder) and queue orchestration.
+     * - BaseCrudController.create delegates to service.create which lacks folder creation and queueing.
      * - Controller orchestrates the queueing to maintain SoC and prevent circular dependencies.
      */
     create = asyncHandler(async (req, res) => {
         const { requirementEntityId, offeringEntityId } = req.body;
 
-        const matchId = this._matchService.createMatchWithFolder({
+        const matchId = await this.service.createMatchWithFolder({
             requirementId: requirementEntityId,
             offeringId: offeringEntityId
         });
@@ -104,40 +132,26 @@ class MatchController {
     /**
      * DELETE /api/matches/:id
      * Deletes a match by ID.
+     * @override
      * @param {Object} req - Express request object
      * @param {Object} res - Express response object
      * @param {Function} next - Express next function for error handling
      *
      * @socexplanation
+     * - Override required due to file system operations (deleteMatchWithFolder).
+     * - BaseCrudController.delete only handles service deletion without folder cleanup.
      * - Delegates file system operations to MatchService.deleteMatchWithFolder.
      * - Controller only handles HTTP transport: parameter extraction and response formatting.
      */
     delete = asyncHandler(async (req, res) => {
-        const { id } = req.params;
+        const id = this._extractId(req);
 
-        this._matchService.deleteMatchWithFolder(id);
+        this.service.deleteMatchWithFolder(id);
 
         res.json({ success: true });
     });
 
-    /**
-     * POST /api/matches/:id/folder/open
-     * Opens the match folder in the native OS file manager.
-     * @param {Object} req - Express request object
-     * @param {Object} res - Express response object
-     * @param {Function} next - Express next function for error handling
-     * 
-     * @socexplanation
-     * - Delegates file system logic to MatchService.
-     * - Controller purely handles the HTTP transport and response payload.
-     */
-    openFolder = asyncHandler(async (req, res) => {
-        const { id } = req.params;
-        this._matchService.openMatchFolder(id);
-        res.json({ success: true });
-    });
-
-    /**
+/**
      * GET /api/matches/:id/files
      * Retrieves files in the match folder.
      * @param {Object} req - Express request object
@@ -145,58 +159,16 @@ class MatchController {
      * @param {Function} next - Express next function for error handling
      */
     getFiles = asyncHandler(async (req, res) => {
-        const { id } = req.params;
-        const match = this._matchService.getMatchById(id);
+        const id = this._extractId(req);
+        const match = this.service.getMatchById(id);
 
         if (!match) {
             throw new AppError('Match not found', HTTP_STATUS.NOT_FOUND);
         }
 
-        const docs = this._matchService.getDocumentsForMatch(id);
+        const docs = this.service.getDocuments(id);
         const files = docs.map(d => d.file_name);
         res.json({ files });
-    });
-
-    /**
-     * GET /api/matches/:id/files/:filename
-     * Downloads a specific file from the match folder.
-     * @param {Object} req - Express request object
-     * @param {Object} res - Express response object
-     * @param {Function} next - Express next function for error handling
-     */
-    getFile = asyncHandler(async (req, res) => {
-        const { id, filename } = req.params;
-        const match = this._matchService.getMatchById(id);
-        return handleFileDownload({
-            fileService: this._fileService,
-            res,
-            entity: match,
-            fileName: filename,
-            folderPathKey: 'folder_path'
-        });
-    });
-
-    /**
-     * POST /api/matches/:id/retry
-     * Retries a failed match assessment by re-queuing the task.
-     * @param {Object} req - Express request object
-     * @param {Object} res - Express response object
-     * @param {Function} next - Express next function for error handling
-     * 
-     * @socexplanation
-     * - Delegates retry orchestration to MatchService.retryMatchAssessment.
-     * - Controller orchestrates the queueing to maintain SoC and prevent circular dependencies.
-     * - Controller only handles HTTP transport: parameter extraction and response formatting.
-     */
-    retryProcessing = asyncHandler(async (req, res) => {
-        const { id } = req.params;
-        const match = this._matchService.retryMatchAssessment(id);
-        this._queueService.enqueue(QUEUE_TASKS.ASSESS_ENTITY_MATCH, {
-            sourceEntityId: match.requirement_id,
-            targetEntityId: match.offering_id,
-            matchId: id
-        });
-        res.json({ success: true, message: 'Queued for retry' });
     });
 
     /**
@@ -207,17 +179,21 @@ class MatchController {
      * @param {Function} next - Express next function for error handling
      *
      * @socexplanation
+     * - Custom endpoint not in BaseCrudController.
      * - Delegates PDF generation to MatchService.
      * - Controller only handles HTTP transport: response headers and streaming.
      */
     downloadPdf = asyncHandler(async (req, res) => {
-        const matchId = parseInt(req.params.id);
+        const matchId = this._extractId(req);
 
         const { pdfBuffer, pdfFileName } = await this._matchAnalyticsWorkflow.generateAndGetMatchPdf(matchId);
 
+        const encodedName = encodeURIComponent(pdfFileName);
+        const asciiName = pdfFileName.replace(/[^\x20-\x7E]/g, '_');
+
         res.set({
             'Content-Type': 'application/pdf',
-            'Content-Disposition': `attachment; filename="${pdfFileName}"`,
+            'Content-Disposition': `attachment; filename="${asciiName}"; filename*=UTF-8''${encodedName}`,
             'Content-Length': pdfBuffer.length,
             'Access-Control-Expose-Headers': 'Content-Disposition'
         });

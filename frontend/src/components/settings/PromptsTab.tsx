@@ -4,11 +4,14 @@ import { useState } from 'react';
 import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Prompt } from '@/lib/types';
 import { usePrompts } from '@/hooks/usePrompts';
+import { useToast } from '@/hooks/useToast';
 import { Button } from '@/components/ui/Button';
 import { SaveButton } from '@/components/ui/SaveButton';
 import { EditButton } from '@/components/ui/EditButton';
+import { TOAST_TYPES } from '@/lib/constants';
 
 export function PromptsTab() {
+  const { addToast } = useToast();
   const { prompts, loading, updatePrompt } = usePrompts();
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -32,8 +35,9 @@ export function PromptsTab() {
       await updatePrompt(id, editText);
       setEditingId(null);
       setEditText('');
+      addToast(TOAST_TYPES.SUCCESS, 'Prompt updated successfully');
     } catch (err) {
-      console.error('Failed to update prompt:', err);
+      addToast(TOAST_TYPES.ERROR, 'Failed to update prompt');
     } finally {
       setSaving(false);
     }

@@ -148,16 +148,20 @@ export const STATUS_FILTER_OPTIONS = [
 ];
 
 /**
- * System Setting Keys
- * Enforces strict key matching for API interactions regarding settings.
+ * @constant SETTING_KEYS
+ * @description Centralized dictionary for setting payload keys mapped from the backend.
+ * Enforces DRY principle and prevents magic string typos in component state logic.
+ * @responsibility Acts as the Single Source of Truth for all configurable application thresholds and toggles.
  */
 export const SETTING_KEYS = {
+    DEBUG_MODE: 'debug_mode',
     AUTO_MERGE_THRESHOLD: 'auto_merge_threshold',
     MINIMUM_MATCH_FLOOR: 'minimum_match_floor',
     PERFECT_MATCH_SCORE: 'perfect_match_score',
     LOG_AI_INTERACTIONS: 'log_ai_interactions',
     AI_VERIFY_MERGES: 'ai_verify_merges',
-    ALLOW_CONCURRENT_AI: 'allow_concurrent_ai'
+    ALLOW_CONCURRENT_AI: 'allow_concurrent_ai',
+    USE_AI_CACHE: 'use_ai_cache',
 } as const;
 
 export type EntityStatus = typeof ENTITY_STATUS[keyof typeof ENTITY_STATUS];

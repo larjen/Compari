@@ -26,13 +26,14 @@
  * fatal errors during early startup are caught and logged properly.
  */
 
+/* eslint-disable no-restricted-syntax */
+// Architectural Exception: Required for Phase 0 fatal error logging before DI container exists.
 const FileService = require('../services/FileService');
 const LogService = require('../services/LogService');
+/* eslint-enable no-restricted-syntax */
 
-const tempPdfService = null;
-const tempFileService = new FileService({ pdfService: tempPdfService, logService: null });
+const tempFileService = new FileService();
 const logService = new LogService({ fileService: tempFileService });
-const { LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 /**
  * Registers process-level event listeners for error handling.
@@ -43,13 +44,13 @@ const { LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 function registerProcessListeners() {
     process.on('unhandledRejection', (reason, _promise) => {
         const errorObj = reason instanceof Error ? reason : new Error(String(reason));
-        logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'Process', message: 'Unhandled Promise Rejection', errorObj: errorObj });
-        logService.logErrorFile({ origin: 'Process', message: 'Unhandled Promise Rejection', errorObj: errorObj });
+        /** @socexplanation Error handling consolidated to logSystemFault to prevent swallowed stack traces and enforce DRY principles. */
+        logService.logSystemFault({ origin: 'Process', message: 'Unhandled Promise Rejection', errorObj: errorObj });
     });
 
     process.on('uncaughtException', (error) => {
-        logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'Process', message: 'Uncaught Exception', errorObj: error });
-        logService.logErrorFile({ origin: 'Process', message: 'Uncaught Exception', errorObj: error });
+        /** @socexplanation Error handling consolidated to logSystemFault to prevent swallowed stack traces and enforce DRY principles. */
+        logService.logSystemFault({ origin: 'Process', message: 'Uncaught Exception', errorObj: error });
         process.exit(1);
     });
 }

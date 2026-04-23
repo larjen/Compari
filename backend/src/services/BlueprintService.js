@@ -12,6 +12,10 @@
  * - ❌ MUST NOT handle HTTP request/response objects directly.
  * - ❌ MUST NOT contain business rules or workflow logic.
  *
+ * @socexplanation
+ * - This service provides a high-level API for blueprint management, aggregating data from the repository layer.
+ * - It ensures that domain events are emitted consistently after blueprint mutations.
+ *
  * @dependency_injection
  * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
  */

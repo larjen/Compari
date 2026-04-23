@@ -1,6 +1,7 @@
 /**
  * @module CriteriaService
  * @description Domain Service for criteria management - acts as the domain boundary between Controllers and Repositories.
+ * Extends BaseEntityService to inherit CTI state machine capabilities while providing custom data access methods.
  *
  * @responsibility
  * - Wraps CriteriaRepo to provide a clean API for criteria data access.
@@ -18,17 +19,80 @@
  * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
  */
 
-const { cosineSimilarity } = require('../utils/VectorMath');
+const path = require('path');
+const BaseEntityService = require('./BaseEntityService');
+const { ENTITY_TYPES } = require('../config/constants');
 
-class CriteriaService {
+class CriteriaService extends BaseEntityService {
     /**
      * @constructor
      * @param {Object} deps - Dependencies object
      * @param {Object} deps.criteriaRepo - The CriteriaRepo instance
+     * @param {Object} deps.entityService - The EntityService instance
+     * @param {Object} deps.eventService - The EventService instance for CTI state machine
+     * @param {Object} deps.logService - The LogService instance for CTI state machine
+     * @param {Object} deps.fileService - The FileService instance for file validation
+     * @param {Object} deps.vectorMath - The VectorMath utility (injected)
+     * @param {Object} deps.markdownGenerator - The MarkdownGenerator instance
      * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
      */
-    constructor({ criteriaRepo }) {
+    constructor({ criteriaRepo, entityService, eventService, logService, fileService, vectorMath, markdownGenerator }) {
+        super({
+            repository: criteriaRepo,
+            eventService,
+            logService,
+            fileService,
+            resourceName: 'Criterion',
+            getByIdMethod: 'getCriterionById'
+        });
         this._criteriaRepo = criteriaRepo;
+        this._entityService = entityService;
+        this._fileService = fileService;
+        this._vectorMath = vectorMath;
+        this._markdownGenerator = markdownGenerator;
+    }
+
+    /**
+     * Creates a new criterion with a dedicated staging folder inside UPLOADS_DIR.
+     * Uses the unified createStagedEntity base method to centralize staging lifecycle.
+     *
+     * @method createStagedCriterion
+     * @param {Object} dto - The criterion data transfer object.
+     * @param {string} dto.normalizedName - The normalized name for the criterion.
+     * @param {string} dto.displayName - The display name for the criterion.
+     * @param {string} dto.dimension - The dimension/category for the criterion.
+     * @param {string} dto.dimensionDisplayName - The display name for the dimension.
+     * @param {Array<number>} dto.embeddingArray - The AI-generated vector embedding.
+     * @returns {number} The ID of the newly created criterion.
+     *
+     * @responsibility
+     * - Creates a staging folder inside UPLOADS_DIR.
+     * - Ensures the criterion is saved to the database with the staging folderPath.
+     * - Generates unique hash for the criterion.
+     * - Emits RESOURCE_STATE_CHANGED event for SSE updates.
+     * - Logs the successful creation in staging.
+     *
+     * @boundary_rules
+     * - ✅ Creates staging folder in UPLOADS_DIR by default.
+     * - ✅ Uses base class createStagedEntity for unified staging lifecycle.
+     * - ❌ MUST NOT create permanent vault folders at this stage.
+     *
+     * @socexplanation
+     * Delegates staging lifecycle to the base class createStagedEntity method to eliminate
+     * duplicated boilerplate for folder preparation, hash generation, event emission, and activity logging.
+     * The embedding is passed through the dto and stored by the repository.
+     */
+    createStagedCriterion(dto, suppressEvent = false) {
+        return this.createStagedEntity({
+            entityType: require('../config/constants').ENTITY_TYPES.CRITERION,
+            nicename: dto.displayName,
+            normalizedName: dto.normalizedName,
+            niceNameLine2: dto.dimensionDisplayName || dto.dimension
+        }, {
+            execute: (mergedDto) => {
+                return this._criteriaRepo.insertSingleCriterion(mergedDto, dto.dimension, dto.embeddingArray);
+            }
+        }, suppressEvent);
     }
 
     /**
@@ -77,8 +141,8 @@ class CriteriaService {
      */
     getCriterionAssociations(criterionId) {
         return {
-            sources: this._criteriaRepo.getAssociatedSources(criterionId),
-            targets: this._criteriaRepo.getAssociatedTargets(criterionId)
+            sources: this._criteriaRepo.getAssociatedEntities(criterionId, ENTITY_TYPES.REQUIREMENT),
+            targets: this._criteriaRepo.getAssociatedEntities(criterionId, ENTITY_TYPES.OFFERING)
         };
     }
 
@@ -107,10 +171,19 @@ class CriteriaService {
         for (const c of all) {
             if (c.id === criterionId) continue;
             try {
-                const sim = cosineSimilarity(target.embedding, c.embedding);
+                const sim = this._vectorMath.cosineSimilarity(target.embedding, c.embedding);
                 similarities.push({ criterion: c, score: Number(Math.max(0, sim).toFixed(4)) });
             } catch (e) {
-                console.error(`Failed to fetch similar criteria for ID ${criterionId}:`, e.stack || e);
+                /** * @socexplanation 
+                 * Replaced raw console.error with logSystemFault to ensure vector math 
+                 * or data corruption failures are captured in the persistent audit trail. 
+                 * Graceful degradation is maintained via the 'continue' statement.
+                 */
+                this._logService.logSystemFault({ 
+                    origin: 'CriteriaService', 
+                    message: `Failed to fetch similar criteria for ID ${criterionId}`, 
+                    errorObj: e 
+                });
                 continue;
             }
         }
@@ -130,6 +203,9 @@ class CriteriaService {
         if (!removeCriterion) {
             throw new Error('Criterion to remove not found');
         }
+        
+        this.deleteEntityFolder(removeId); 
+        
         this._criteriaRepo.mergeCriteria(keepId, removeId, removeCriterion.displayName);
     }
 
@@ -154,6 +230,113 @@ class CriteriaService {
      */
     getCriterionByIdForApi(id) {
         return this._criteriaRepo.getCriterionByIdForApi(id);
+    }
+
+    /**
+     * Resolves the master file path for a criterion at runtime.
+     * Dynamically constructs the path using the folder_path and validates physical existence.
+     * This enforces CTI pattern by deriving file locations at runtime rather than storing redundant paths.
+     *
+     * @method resolveMasterFilePath
+     * @param {number} criterionId - The criterion ID.
+     * @returns {string|null} The full path to the master file, or null if not found/not existing.
+     *
+     * @responsibility
+     * - Dynamically resolves the master file path at runtime using folder_path.
+     * - Validates physical existence of the file before returning.
+     * - Eliminates redundant master_file column storage.
+     *
+     * @boundary_rules
+     * - ❌ MUST NOT use master_file column from database.
+     * - ❌ MUST NOT handle HTTP request/response objects.
+     * - ❌ MUST NOT contain workflow orchestration.
+     * - ✅ MUST validate file existence using FileService.
+     *
+     * @socexplanation
+     * - Hydrates relative folder_path to absolute path using FileService.
+     * - Applies naming convention: ${path.basename(folderPath)}.md
+     * - Validates physical file existence to ensure data integrity.
+     * - Returns null if folder path doesn't exist or file doesn't exist.
+     */
+    resolveMasterFilePath(criterionId) {
+        const storedFolderPath = this._entityService.getEntityFolderPath(criterionId);
+        if (!storedFolderPath) {
+            return null;
+        }
+
+        const folderPath = this._fileService.resolveAbsoluteVaultPath(ENTITY_TYPES.CRITERION, storedFolderPath);
+        if (!folderPath) {
+            return null;
+        }
+
+        const fileName = `${path.basename(folderPath)}.md`;
+        const fullPath = path.join(folderPath, fileName);
+
+        if (!this._fileService.validatePath(fullPath)) {
+            return null;
+        }
+
+        return fullPath;
+    }
+
+    /**
+     * Ensures a criterion has a folder, creating it in the staging area if it doesn't exist.
+     * @method ensureCriterionFolder
+     * @param {number} criterionId - The criterion ID.
+     * @param {boolean} [suppressEvent=false] - If true, suppresses the RESOURCE_STATE_CHANGED event.
+     * @returns {string} The absolute path to the criterion's staging folder.
+     * @responsibility Encapsulates physical path generation, ensuring criteria start in staging.
+     * @socexplanation Refactored to follow "Tell, Don't Ask" principle. Service now encapsulates internal entity fetching, taking only an ID.
+     */
+    ensureCriterionFolder(criterionId, suppressEvent = false) {
+        let folderPath = this.getEntityFolderPath(criterionId);
+        if (!folderPath) {
+            const criterion = this.getById(criterionId);
+            const safeName = criterion ? (criterion.displayName || criterion.nicename || 'Unknown') : 'Unknown';
+            folderPath = this._fileService.prepareStagingDirectory(
+                ENTITY_TYPES.CRITERION,
+                safeName
+            );
+            this.assignStagingFolder(criterionId, folderPath, suppressEvent);
+        }
+        return folderPath;
+    }
+
+    /**
+     * Writes the master markdown file for a criterion.
+     * @method writeMasterFile
+     * @param {number} criterionId - The criterion ID.
+     * @param {boolean} [suppressEvent=false] - If true, suppresses the RESOURCE_STATE_CHANGED event.
+     * @returns {Promise<void>}
+     */
+    async writeMasterFile(criterionId, suppressEvent = false) {
+        const criterion = this.getById(criterionId);
+        if (!criterion) throw new Error(`Criterion not found: ${criterionId}`);
+
+        this.ensureCriterionFolder(criterionId, suppressEvent);
+        this.finalizeEntityWorkspace(criterionId, suppressEvent);
+
+        const associations = this.getCriterionAssociations(criterionId);
+        const similarCriteria = this.getSimilarCriteria(criterionId, 0);
+        const mergeHistory = this.getMergeHistory(criterionId);
+
+        const generateContent = ({ folderName }) => {
+            const reqFolderNames = (associations.sources || []).map(req => this._entityService.getCleanLinkName(req));
+            const offFolderNames = (associations.targets || []).map(off => this._entityService.getCleanLinkName(off));
+            const similarCriterionNames = similarCriteria.map(sim => sim.criterion.displayName);
+            const mergedNames = (mergeHistory || []).map(h => h.merged_display_name);
+
+            return this._markdownGenerator.generateCriterionMaster({
+                criterionFolderName: folderName,
+                dimension: criterion.dimension,
+                reqFolderNames,
+                offFolderNames,
+                similarCriterionNames,
+                mergedNames
+            });
+        };
+
+        await this.generateAndSaveMasterDocument(criterionId, generateContent, suppressEvent);
     }
 }
 

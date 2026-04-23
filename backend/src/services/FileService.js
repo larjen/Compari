@@ -16,12 +16,17 @@
  * - ❌ MUST NOT contain business logic or construct business-specific paths.
  * - ❌ MUST NOT know about application-specific settings or configurations.
  *
+ * @socexplanation
+ * - This service abstracts all direct interaction with the host file system.
+ * - It provides a clean, domain-agnostic interface for file I/O, ensuring that business logic remains decoupled from the physical storage layer.
+ *
  * @dependency_injection
  * Dependencies are injected strictly via the constructor.
  * Defensive getters are not required as instantiation guarantees dependency presence.
  * Reasoning: Constructor Injection ensures PdfService and LogService are available immediately.
  */
 const fs = require('fs');
+const fsPromises = require('fs').promises;
 const path = require('path');
 const os = require('os');
 const { exec } = require('child_process');
@@ -36,22 +41,19 @@ const {
     MATCH_REPORTS_DIR,
     CRITERIA_DIR,
     AI_CACHE_DIR,
-    LOG_LEVELS,
-    LOG_SYMBOLS
+    ENTITY_TYPES,
+    VAULT_DIR
 } = require('../config/constants');
+const NameGenerator = require('../utils/NameGenerator');
 
 class FileService {
     /**
      * @constructor
      * @param {Object} deps - Dependencies object
-     * @param {Object} deps.pdfService - The PdfService instance for PDF text extraction
-     * @param {Object} deps.logService - The LogService instance for logging
      * @dependency_injection Dependencies are injected strictly via the constructor.
      * Defensive getters are not required as instantiation guarantees dependency presence.
      */
-    constructor({ pdfService, logService }) {
-        this._pdfService = pdfService;
-        this._logService = logService;
+    constructor() {
     }
 
     /**
@@ -106,28 +108,17 @@ class FileService {
      * Recursively deletes the entire workspace data directory.
      * Used for development to ensure a clean state.
      * @method wipeWorkspace
+     * * @socexplanation
+     * Includes a null-check for this._logService because wipeWorkspace is called during 
+     * Phase 0 of the server bootstrap sequence before the DI container provides a fully 
+     * initialized LogService. Falls back to console.log only if logService is unavailable.
      */
     wipeWorkspace() {
         if (fs.existsSync(DATA_DIR)) {
-            console.log(`[FileService] Wiping data directory: ${DATA_DIR}`);
+            // eslint-disable-next-line no-console
+            console.log(`Wiping data directory: ${DATA_DIR}`);
             fs.rmSync(DATA_DIR, { recursive: true, force: true });
         }
-    }
-
-    async extractTextFromPDF(filePath) {
-        const dataBuffer = this.readBuffer(filePath);
-        if (!dataBuffer) {
-            return '';
-        }
-        return await this._pdfService.extractTextFromPDF(dataBuffer);
-    }
-
-    async extractTextFromFile(filePath) {
-        const ext = path.extname(filePath).toLowerCase();
-        if (ext === '.pdf') {
-            return await this.extractTextFromPDF(filePath);
-        }
-        return fs.readFileSync(filePath, 'utf8');
     }
 
     listFilesInFolder(folderPath) {
@@ -161,10 +152,10 @@ class FileService {
      * @param {string} fileName - The name of the file to retrieve.
      * @returns {Buffer|null} The file buffer if found, or null if not found.
      */
-    getFileBuffer(folderPath, fileName) {
+    async getFileBuffer(folderPath, fileName) {
         const targetPath = this.getValidatedFilePath(folderPath, fileName);
         if (!targetPath) return null;
-        return fs.readFileSync(targetPath);
+        return await fsPromises.readFile(targetPath);
     }
 
     createDirectory(folderPath) {
@@ -173,16 +164,16 @@ class FileService {
         }
     }
 
-    moveFile(oldPath, newDirectory, newFileName) {
+    async moveFile(oldPath, newDirectory, newFileName) {
         if (!fs.existsSync(oldPath)) return null;
         const finalDest = path.join(newDirectory, newFileName);
-        fs.renameSync(oldPath, finalDest);
+        await fsPromises.rename(oldPath, finalDest);
         return finalDest;
     }
 
-    readTextFile(filePath) {
+    async readTextFile(filePath) {
         if (!this.validatePath(filePath)) return '';
-        return fs.readFileSync(filePath, 'utf8');
+        return await fsPromises.readFile(filePath, 'utf8');
     }
 
     /**
@@ -192,16 +183,16 @@ class FileService {
      * @param {string} content - The text content to write to the file.
      * @returns {string} The full path to the saved file.
      */
-    saveTextFile(folderPath, fileName, content) {
+    async saveTextFile(folderPath, fileName, content) {
         this._ensureDir(folderPath);
         const filePath = path.join(folderPath, fileName);
-        fs.writeFileSync(filePath, content);
+        await fsPromises.writeFile(filePath, content);
         return filePath;
     }
 
     moveDirectory(sourcePath, targetPath) {
         if (!this.validatePath(sourcePath)) return;
-        this._ensureDir(targetPath);
+        this._ensureDir(targetPath, true);
         fs.renameSync(sourcePath, targetPath);
     }
 
@@ -217,9 +208,9 @@ class FileService {
      * @param {string} filePath - The full path to the file.
      * @param {Buffer} buffer - The buffer to write.
      */
-    saveBuffer(filePath, buffer) {
+    async saveBuffer(filePath, buffer) {
         this._ensureDir(filePath, true);
-        fs.writeFileSync(filePath, buffer);
+        await fsPromises.writeFile(filePath, buffer);
     }
 
     /**
@@ -227,9 +218,9 @@ class FileService {
      * @param {string} filePath - The full path to the file.
      * @returns {Buffer|null} The file buffer if found, or null if not found.
      */
-    readBuffer(filePath) {
+    async readBuffer(filePath) {
         if (!this.validatePath(filePath)) return null;
-        return fs.readFileSync(filePath);
+        return await fsPromises.readFile(filePath);
     }
 
     readJsonFile(filePath) {
@@ -238,8 +229,7 @@ class FileService {
             const content = fs.readFileSync(filePath, 'utf8');
             return JSON.parse(content);
         } catch (error) {
-            console.error(`FileService failed to read/parse file at ${filePath}:`, error.stack || error);
-            return null;
+            throw new Error(`Failed to read/parse JSON file at ${filePath}: ${error.message}`, { cause: error });
         }
     }
 
@@ -268,15 +258,14 @@ class FileService {
                 if (trimmed) {
                     try {
                         results.push(JSON.parse(trimmed));
-                    } catch (parseError) {
-                        this._logService.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'FileService', message: `Failed to parse JSONL line: ${parseError.message}` });
+                    } catch (_parseError) {
+                        // Skip malformed lines
                     }
                 }
             }
             return results;
         } catch (error) {
-            console.error(`FileService failed to read/parse file at ${filePath}:`, error.stack || error);
-            return null;
+            throw new Error(`Failed to read/parse JSONL file at ${filePath}: ${error.message}`, { cause: error });
         }
     }
 
@@ -293,67 +282,58 @@ class FileService {
      */
     openFolderInOS(folderPath) {
         if (!folderPath || !fs.existsSync(folderPath)) {
-            this._logService.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'FileService', message: `Cannot open folder: path does not exist: ${folderPath}` });
-            return;
+            throw new Error(`Cannot open folder: path does not exist: ${folderPath}`);
         }
 
         const platform = os.platform();
 
         if (platform === 'win32') {
             exec(`explorer "${folderPath}"`, (error) => {
-                if (error) this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'FileService', message: `Failed to open folder on Windows: ${error.message}` });
+                if (error) throw new Error(`Failed to open folder on Windows: ${error.message}`);
             });
         } else if (platform === 'darwin') {
             exec(`open "${folderPath}"`, (error) => {
-                if (error) this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'FileService', message: `Failed to open folder on macOS: ${error.message}` });
+                if (error) throw new Error(`Failed to open folder on macOS: ${error.message}`);
             });
         } else if (platform === 'linux') {
             exec(`xdg-open "${folderPath}"`, (error) => {
-                if (error) this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'FileService', message: `Failed to open folder on Linux: ${error.message}` });
+                if (error) throw new Error(`Failed to open folder on Linux: ${error.message}`);
             });
         }
     }
 
     /**
      * Generates a vault folder path for any base entity type.
-     * Creates a standardized path using the entity type and display lines with a safe local timestamp.
+     * Creates a standardized path using the entity type and nicename with incremental collision detection.
      *
      * @method generateVaultPath
      * @memberof FileService
      * @param {string} entityType - The entity type ('requirement', 'offering', 'match', 'criterion').
-     * @param {string} line1 - Primary display name (niceNameLine1).
-     * @param {string} line2 - Secondary display name (niceNameLine2).
+     * @param {string} nicename - The entity nicename.
      * @returns {string} The full filesystem path for the entity vault folder.
-     *
-     * @socexplanation
-     * - Formats timestamp as YYYY-MM-DD HH-mm-ss using local time.
-     * - Avoids toISOString() (which forces UTC) and toLocaleString() (which risks OS-level invalid file path characters).
      */
-    generateVaultPath(entityType, line1, line2) {
-        // Safely extract local time components to guarantee OS file path compatibility
-        const date = new Date();
-        const pad = (n) => String(n).padStart(2, '0');
-        const ms = String(date.getMilliseconds()).padStart(3, '0');
-        const randomId = Math.random().toString(36).substring(2, 6);
-        const timestamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}-${ms}-${randomId}`;
-        
-        const safeLine1 = (line1 || "Unknown").replace(/[\/\\:*?"<>|]/g, '-').trim();
-        const safeLine2 = (line2 || "Unknown").replace(/[\/\\:*?"<>|]/g, '-').trim();
-        
+    generateVaultPath(entityType, nicename) {
+        const safeNicename = NameGenerator.sanitizeForFileSystem(nicename);
+
         let baseDir;
         switch (entityType) {
-            case 'requirement': baseDir = REQUIREMENTS_DIR; break;
-            case 'offering': baseDir = OFFERINGS_DIR; break;
-            case 'match': baseDir = MATCH_REPORTS_DIR; break;
-            case 'criterion': baseDir = CRITERIA_DIR; break;
+            case ENTITY_TYPES.REQUIREMENT: baseDir = REQUIREMENTS_DIR; break;
+            case ENTITY_TYPES.OFFERING: baseDir = OFFERINGS_DIR; break;
+            case ENTITY_TYPES.MATCH: baseDir = MATCH_REPORTS_DIR; break;
+            case ENTITY_TYPES.CRITERION: baseDir = CRITERIA_DIR; break;
             default: baseDir = OFFERINGS_DIR;
         }
 
-        const folderName = entityType === 'match' 
-            ? `Match - ${safeLine1} - ${safeLine2} - ${timestamp}` 
-            : `${safeLine1} - ${safeLine2} - ${timestamp}`;
+        const baseFolderName = safeNicename;
+        let finalPath = path.join(baseDir, baseFolderName);
+        let counter = 1;
 
-        return path.join(baseDir, folderName);
+        while (fs.existsSync(finalPath)) {
+            finalPath = path.join(baseDir, `${baseFolderName} (${counter})`);
+            counter++;
+        }
+
+        return finalPath;
     }
 
     /**
@@ -388,35 +368,31 @@ class FileService {
 
     /**
      * Prepares a staging directory inside UPLOADS_DIR and optionally moves a file into it.
-     * This enforces the staging architecture by quarantining all unprocessed artifacts.
+     * Centralized naming convention: [Staging] {entityType} - {name} - {hash}
      *
      * @method prepareStagingDirectory
      * @memberof FileService
-     * @param {string|number} identifier - The entity identifier (name or ID) for folder naming.
-     * @param {Object|null} file - Optional uploaded file object with path and filename properties.
-     * @returns {string} The path to the prepared staging directory.
-     *
-     * @responsibility
-     * - Forces all unprocessed artifacts into a quarantine/staging area (UPLOADS_DIR).
-     * - Keeps documents isolated from the permanent vault until finalization.
-     *
-     * @boundary_rules
-     * - ✅ Uses UPLOADS_DIR as the strict base for all staging folders.
-     * - ❌ MUST NOT place files directly into vault directories.
-     *
-     * @socexplanation
-     * - CTI: Unified staging directory method for all entity types.
-     * - Replaces separate prepareEntityDirectory and prepareMatchStagingDirectory methods.
+     * @param {string} entityType - The type of entity (e.g., 'requirement', 'offering', 'criterion', 'match').
+     * @param {string} name - The entity name or file name.
+     * @param {Object|null} [file=null] - Optional uploaded file object.
+     * @returns {string} The absolute path to the prepared staging directory.
+     * @responsibility Forces all unprocessed artifacts into a quarantine/staging area with a globally unique name.
      */
-    prepareStagingDirectory(identifier, file = null) {
-        const safeIdentifier = String(identifier).replace(/[^a-zA-Z0-9.-]/g, '_').substring(0, 50);
-        const stagingFolderName = `staging-${Date.now()}-${safeIdentifier}`;
+    prepareStagingDirectory(entityType, name, file = null) {
+        const safeType = String(entityType).replace(/[^a-zA-Z0-9]/g, '');
+        const safeName = String(name).replace(/[^a-zA-Z0-9.-]/g, '_').substring(0, 50);
+
+        const randomHex = require('crypto').randomBytes(4).toString('hex');
+        const hashInput = `${Date.now()}_${safeName}_${randomHex}`;
+        const cryptoHash = require('crypto').createHash('sha256').update(hashInput).digest('hex').substring(0, 8);
+
+        const stagingFolderName = `[Staging] ${safeType} - ${safeName} - ${cryptoHash}`;
         const stagingFolderPath = path.join(UPLOADS_DIR, stagingFolderName);
 
         this.createDirectory(stagingFolderPath);
 
         if (file) {
-            const safeFileName = require('path').basename(file.originalname);
+            const safeFileName = path.basename(file.originalname);
             this.moveFile(file.path, stagingFolderPath, safeFileName);
         }
 
@@ -433,27 +409,31 @@ class FileService {
      * @deprecated Use prepareStagingDirectory instead.
      */
     prepareMatchStagingDirectory(sourceEntityId, targetEntityId) {
-        return this.prepareStagingDirectory(`match-${sourceEntityId}-${targetEntityId}`);
+        return this.prepareStagingDirectory('match', `${sourceEntityId} vs ${targetEntityId}`);
     }
 
     /**
      * Moves an entity from the staging directory to its permanent vault location using DTO pattern.
+     * Guarded to ensure folders already inside the vault are never renamed, preventing Obsidian ghost files.
      *
      * @method finalizeWorkspace
      * @memberof FileService
      * @param {Object} finalizeDto - The finalize DTO.
      * @param {string} finalizeDto.entityType - The entity type.
-     * @param {string} finalizeDto.line1 - Primary display name.
-     * @param {string} finalizeDto.line2 - Secondary display name.
+     * @param {string} finalizeDto.nicename - The entity nicename.
      * @param {string} finalizeDto.currentStagingPath - The current staging directory path.
      * @returns {string} The path to the final entity directory in the vault.
      *
      * @socexplanation
      * - Uses DTO pattern to prevent parameter creep (anti-pattern where methods have too many parameters).
-     * - DTO consolidates entityType, line1, line2, currentStagingPath into a single object.
+     * - DTO consolidates entityType, nicename, currentStagingPath into a single object.
      */
-    finalizeWorkspace({ entityType, line1, line2, currentStagingPath }) {
-        const finalFolderPath = this.generateVaultPath(entityType, line1, line2);
+    finalizeWorkspace({ entityType, nicename, currentStagingPath }) {
+        if (currentStagingPath && currentStagingPath.startsWith(VAULT_DIR)) {
+            return currentStagingPath;
+        }
+
+        const finalFolderPath = this.generateVaultPath(entityType, nicename);
         this.moveDirectory(currentStagingPath, finalFolderPath);
         return finalFolderPath;
     }
@@ -463,13 +443,12 @@ class FileService {
      * @method finalizeMatchDirectory
      * @memberof FileService
      * @param {string} line1 - Primary display name (e.g., requirement niceNameLine1).
-     * @param {string} line2 - Secondary display name (e.g., offering niceNameLine1).
      * @param {string} currentPath - The current staging directory path.
      * @returns {string} The path to the final match directory in the vault.
      * @deprecated Use finalizeWorkspace instead.
      */
-    finalizeMatchDirectory(line1, line2, currentPath) {
-        return this.finalizeWorkspace({ entityType: 'match', line1, line2, currentStagingPath: currentPath });
+    finalizeMatchDirectory(line1, currentPath) {
+        return this.finalizeWorkspace({ entityType: 'match', nicename: line1, currentStagingPath: currentPath });
     }
 
     /**
@@ -498,7 +477,7 @@ class FileService {
      * - The folder remains in staging until finalizeEntityDirectory is called.
      */
     prepareEntityDirectory(entityType, file) {
-        return this.prepareStagingDirectory(file.originalname, file);
+        return this.prepareStagingDirectory(entityType, file.originalname, file);
     }
 
     /**
@@ -508,10 +487,10 @@ class FileService {
      *
      * @method finalizeEntityDirectory
      * @memberof FileService
-     * @param {string} entityType - The entity type ('requirement' or 'offering').
-     * @param {string} line1 - Primary display name.
-     * @param {string} line2 - Secondary display name.
-     * @param {string} currentPath - The current staging directory path (in UPLOADS_DIR).
+     * @param {Object} finalizeDto - The finalize DTO.
+     * @param {string} finalizeDto.entityType - The entity type ('requirement' or 'offering').
+     * @param {string} finalizeDto.line1 - Primary display name.
+     * @param {string} finalizeDto.currentPath - The current staging directory path (in UPLOADS_DIR).
      * @returns {string} The path to the final entity directory in the vault.
      *
      * @responsibility
@@ -523,11 +502,59 @@ class FileService {
      * - ❌ MUST NOT be called during intermediate processing steps.
      *
      * @socexplanation
-     * - Abstracts the final directory setup from the workflow.
-     * - Workflow calls this method and receives the final path without knowing the structure.
+     * - Uses DTO pattern to prevent parameter creep (anti-pattern where methods have too many parameters).
+     * - DTO consolidates entityType, line1, currentPath into a single object.
+     * - Delegates to finalizeWorkspace for actual directory operation.
      */
-    finalizeEntityDirectory(entityType, line1, line2, currentPath) {
-        return this.finalizeWorkspace({ entityType, line1, line2, currentStagingPath: currentPath });
+    finalizeEntityDirectory({ entityType, line1, currentPath }) {
+        return this.finalizeWorkspace({ entityType, nicename: line1, currentStagingPath: currentPath });
+    }
+
+    /**
+     * Extracts the folder name from an absolute path.
+     * Used to derive relative folder names for database storage.
+     * @method extractFolderName
+     * @param {string} absolutePath - The absolute path to extract folder name from.
+     * @returns {string} The basename of the path.
+     */
+    extractFolderName(absolutePath) {
+        return path.basename(absolutePath);
+    }
+
+    /**
+     * Resolves an absolute path from a stored relative folder name.
+     * Handles legacy data that may still contain absolute paths.
+     * @method resolveAbsoluteVaultPath
+     * @param {string} entityType - The entity type (e.g., ENTITY_TYPES.REQUIREMENT).
+     * @param {string|null} storedPath - The stored relative folder name or null.
+     * @returns {string|null} The absolute path or null if input is null.
+     */
+    resolveAbsoluteVaultPath(entityType, storedPath) {
+        if (!storedPath) return null;
+
+        if (storedPath.includes('/') || storedPath.includes('\\')) {
+            return storedPath;
+        }
+
+        let baseDir;
+        switch (entityType) {
+            case ENTITY_TYPES.REQUIREMENT:
+                baseDir = REQUIREMENTS_DIR;
+                break;
+            case ENTITY_TYPES.OFFERING:
+                baseDir = OFFERINGS_DIR;
+                break;
+            case ENTITY_TYPES.MATCH:
+                baseDir = MATCH_REPORTS_DIR;
+                break;
+            case ENTITY_TYPES.CRITERION:
+                baseDir = CRITERIA_DIR;
+                break;
+            default:
+                return storedPath;
+        }
+
+        return path.join(baseDir, storedPath);
     }
 }
 

@@ -1,6 +1,7 @@
 /**
  * @module AiModelController
  * @description HTTP Controller responsible for handling HTTP requests related to AI models.
+ * Extends BaseCrudController to inherit standard CRUD operations while providing custom overrides.
  *
  * @responsibility
  * - Extract HTTP parameters and body from incoming requests (req).
@@ -20,11 +21,12 @@
  * This replaces the previous static/service-locator anti-pattern.
  */
 
+const BaseCrudController = require('./BaseCrudController');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const { HTTP_STATUS, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
-class AiModelController {
+class AiModelController extends BaseCrudController {
     /**
      * @constructor
      * @param {Object} deps - Dependencies object
@@ -33,6 +35,17 @@ class AiModelController {
      * @param {Object} deps.logService - The LogService instance
      */
     constructor({ aiModelService, aiService, logService }) {
+        super({
+            service: aiModelService,
+            entityName: 'AI model',
+            methodMap: {
+                getById: 'getById',
+                getAll: 'getAll',
+                create: 'create',
+                update: 'update',
+                delete: 'delete'
+            }
+        });
         this._aiModelService = aiModelService;
         this._aiService = aiService;
         this._logService = logService;
@@ -41,19 +54,27 @@ class AiModelController {
     /**
      * GET /api/ai-models
      * Retrieves all AI models.
+     * @override
+     * @socexplanation
+     * Override preserves custom response format { models: [] } instead of base { aiModels: [] }.
+     * Delegates to AiModelService.getAll() for business logic.
      */
-    getAll = asyncHandler(async (req, res, next) => {
-        const models = this._aiModelService.getAll();
+    getAll = asyncHandler(async (req, res) => {
+        const models = this.service.getAll();
         res.json({ models });
     });
 
     /**
      * GET /api/ai-models/:id
      * Retrieves an AI model by ID.
+     * @override
+     * @socexplanation
+     * Override customizes response format to { model: {} } and adds custom error message.
+     * Uses this._extractId(req) to comply with boilerplate ban (Rule 8.B).
      */
-    getById = asyncHandler(async (req, res, next) => {
-        const id = parseInt(req.params.id);
-        const model = this._aiModelService.getById(id);
+    getById = asyncHandler(async (req, res) => {
+        const id = this._extractId(req);
+        const model = this.service.getById(id);
 
         if (!model) {
             throw new AppError(`AI model with ID ${id} not found`, HTTP_STATUS.NOT_FOUND);
@@ -65,11 +86,15 @@ class AiModelController {
     /**
      * POST /api/ai-models
      * Creates a new AI model.
+     * @override
+     * @socexplanation
+     * Override required to extract and map custom DTO from req.body.
+     * BaseCrudController.create passes req.body directly which lacks the mapped fields.
      */
-    create = asyncHandler(async (req, res, next) => {
+    create = asyncHandler(async (req, res) => {
         const { name, model_identifier, api_url, api_key, role, temperature, contextWindow } = req.body;
 
-        const newModel = this._aiModelService.create({
+        const newModel = this.service.create({
             name,
             model_identifier,
             api_url,
@@ -85,17 +110,21 @@ class AiModelController {
     /**
      * PUT /api/ai-models/:id
      * Updates an AI model.
+     * @override
+     * @socexplanation
+     * Override required to extract and map custom DTO from req.body.
+     * Uses this._extractId(req) to comply with boilerplate ban (Rule 8.B).
      */
-    update = asyncHandler(async (req, res, next) => {
-        const id = parseInt(req.params.id);
+    update = asyncHandler(async (req, res) => {
+        const id = this._extractId(req);
         const { name, model_identifier, api_url, api_key, role, temperature, contextWindow } = req.body;
 
-        const existing = this._aiModelService.getById(id);
+        const existing = this.service.getById(id);
         if (!existing) {
             throw new AppError(`AI model with ID ${id} not found`, HTTP_STATUS.NOT_FOUND);
         }
 
-        const updatedModel = this._aiModelService.update(id, {
+        const updatedModel = this.service.update(id, {
             name,
             model_identifier,
             api_url,
@@ -111,11 +140,16 @@ class AiModelController {
     /**
      * DELETE /api/ai-models/:id
      * Deletes an AI model by ID.
+     * @override
+     * @socexplanation
+     * Override required to enforce isSystem protection business rule.
+     * Uses this._extractId(req) to comply with boilerplate ban (Rule 8.B).
+     * Delegates to service for actual deletion but controller enforces the business rule.
      */
-    delete = asyncHandler(async (req, res, next) => {
-        const id = parseInt(req.params.id);
+    delete = asyncHandler(async (req, res) => {
+        const id = this._extractId(req);
 
-        const existing = this._aiModelService.getById(id);
+        const existing = this.service.getById(id);
         if (!existing) {
             throw new AppError(`AI model with ID ${id} not found`, HTTP_STATUS.NOT_FOUND);
         }
@@ -124,27 +158,20 @@ class AiModelController {
             throw new AppError('Cannot delete system model', HTTP_STATUS.FORBIDDEN);
         }
 
-        try {
-            const deleted = this._aiModelService.delete(id);
+        const deleted = this.service.delete(id);
 
-            if (!deleted) {
-                throw new AppError('Failed to delete AI model', HTTP_STATUS.INTERNAL_SERVER_ERROR);
-            }
-
-            res.json({ success: true, message: 'AI model deleted successfully' });
-        } catch (err) {
-            if (err.message === 'Cannot delete system model') {
-                err.status = HTTP_STATUS.FORBIDDEN;
-            }
-            next(err);
+        if (!deleted) {
+            throw new AppError('Failed to delete AI model', HTTP_STATUS.INTERNAL_SERVER_ERROR);
         }
+
+        res.json({ success: true, message: 'AI model deleted successfully' });
     });
 
     /**
      * GET /api/ai-models/active
      * Retrieves the currently active AI model for a specific role.
      */
-    getActive = asyncHandler(async (req, res, next) => {
+    getActive = asyncHandler(async (req, res) => {
         const role = req.query.role || 'chat';
         const model = this._aiModelService.getActive(role);
         res.json({ success: true, model });
@@ -154,7 +181,7 @@ class AiModelController {
      * GET /api/ai-models/active/all
      * Retrieves all active AI models (one per role).
      */
-    getAllActive = asyncHandler(async (req, res, next) => {
+    getAllActive = asyncHandler(async (req, res) => {
         const models = this._aiModelService.getAllActive();
         res.json({
             success: true,
@@ -165,9 +192,12 @@ class AiModelController {
     /**
      * POST /api/ai-models/:id/set-active
      * Sets a model as the active model.
+     * @socexplanation
+     * Custom endpoint not in BaseCrudController - requires custom response format.
+     * Uses this._extractId(req) to comply with boilerplate ban (Rule 8.B).
      */
-    setActive = asyncHandler(async (req, res, next) => {
-        const id = parseInt(req.params.id);
+    setActive = asyncHandler(async (req, res) => {
+        const id = this._extractId(req);
 
         const success = this._aiModelService.setActive(id);
 
@@ -182,8 +212,11 @@ class AiModelController {
     /**
      * POST /api/ai-models/test
      * Tests AI model connectivity using transient/unsaved credentials via end-to-end test.
+     * @socexplanation
+     * Custom endpoint not in BaseCrudController - requires complex async orchestration.
+     * Preserves custom error handling with logTerminal for stack trace preservation.
      */
-    testConnection = asyncHandler(async (req, res, next) => {
+    testConnection = asyncHandler(async (req, res) => {
         const { model_identifier, api_url, api_key, role } = req.body;
 
         const overrideConfig = {
@@ -209,7 +242,8 @@ class AiModelController {
                 status: LOG_LEVELS.ERROR,
                 symbolKey: LOG_SYMBOLS.ERROR,
                 origin: 'AiModelController',
-                message: `End-to-End connection test failed for model: ${model_identifier} - ${error.message}`
+                message: `End-to-End connection test failed for model: ${model_identifier}`,
+                errorObj: error
             });
             throw error;
         }

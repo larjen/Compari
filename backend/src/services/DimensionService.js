@@ -4,8 +4,13 @@
  * @responsibility
  * - Wraps DimensionRepo to provide dimension data to controllers.
  * - Provides business logic for creating, updating, and deleting dimensions.
+ * - Resolves dimensions for entities, prioritizing blueprint dimensions over global active dimensions.
  * @boundary_rules
  * - ❌ MUST NOT handle HTTP request/response objects directly.
+ *
+ * @socexplanation
+ * - This service handles business logic related to dimension management and resolution.
+ * - It ensures dimensions are correctly prioritized (blueprint over global) before extraction.
  *
  * @dependency_injection
  * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
@@ -16,10 +21,12 @@ class DimensionService {
      * @constructor
      * @param {Object} deps - Dependencies object
      * @param {Object} deps.dimensionRepo - The DimensionRepo instance
+     * @param {Object} deps.blueprintRepo - The BlueprintRepo instance (optional, for blueprint dimension resolution)
      * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
      */
-    constructor({ dimensionRepo }) {
+    constructor({ dimensionRepo, blueprintRepo }) {
         this._dimensionRepo = dimensionRepo;
+        this._blueprintRepo = blueprintRepo;
     }
 
     /**
@@ -101,6 +108,56 @@ class DimensionService {
      */
     setDimensionActive(id, isActive) {
         return this._dimensionRepo.setDimensionActive(id, isActive);
+    }
+
+    /**
+     * Resolves dimensions by blueprint ID, prioritizing blueprint dimensions over global active dimensions.
+     * If blueprintId is provided, fetches blueprint-specific dimensions.
+     * If no blueprint dimensions exist, falls back to global active dimensions.
+     *
+     * @method resolveDimensionsByBlueprintId
+     * @param {number|null} blueprintId - The blueprint ID (optional).
+     * @returns {Array<Object>} Array of resolved dimension objects.
+     *
+     * @responsibility
+     * - Centralizes dimension resolution logic for all entity processing workflows.
+     * - Ensures consistent fallback behavior when blueprint dimensions are missing.
+     *
+     * @socexplanation
+     * - Eliminates duplicated dimension resolution logic across DocumentProcessorWorkflow
+     *   and CriteriaManagerWorkflow.
+     * - Workflows simply call this service method instead of manually checking blueprintId
+     *   and querying dimensionRepo/blueprintRepo directly.
+     */
+    resolveDimensionsByBlueprintId(blueprintId) {
+        if (!blueprintId) return this.getActiveDimensions();
+        const blueprintDimensions = this._blueprintRepo.getBlueprintDimensions(blueprintId);
+        if (blueprintDimensions && blueprintDimensions.length > 0) return blueprintDimensions;
+        return this.getActiveDimensions();
+    }
+
+    /**
+     * Gets the display-friendly tag for a dimension name.
+     * Centralizes dimension label formatting across workflows.
+     *
+     * @method getDimensionTag
+     * @memberof DimensionService
+     * @param {string} dimensionName - The dimension name/key.
+     * @returns {string} The display-friendly tag, or dimensionName with underscores replaced by spaces.
+     *
+     * @responsibility
+     * - Centralizes dimension label formatting to prevent duplicated logic.
+     * - Returns displayName if found in active dimensions.
+     * - Falls back to underscore replacement if dimension not found.
+     *
+     * @boundary_rules
+     * - ✅ Uses dimensionRepo to fetch active dimensions.
+     * - ❌ MUST NOT contain business logic beyond label formatting.
+     */
+    getDimensionTag(dimensionName) {
+        const activeDimensions = this._dimensionRepo.getActiveDimensions();
+        const dimRecord = activeDimensions.find(d => d.name === dimensionName);
+        return dimRecord ? dimRecord.displayName : dimensionName.replace(/_/g, ' ');
     }
 }
 

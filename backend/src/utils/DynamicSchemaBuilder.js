@@ -18,7 +18,7 @@
  * logging (schema validation failures) that doesn't need file persistence.
  */
 
-const { ENTITY_ROLES, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
+const { ENTITY_TYPES, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 
 class DynamicSchemaBuilder {
     /**
@@ -57,7 +57,7 @@ class DynamicSchemaBuilder {
      * // Returns: { type: 'object', properties: { core_competencies: {...}, experience: {...} }, required: [...] }
      * // Each property description uses the source_instruction or target_instruction based on entityRole.
      */
-    buildExtractionSchema(activeDimensions, entityRole = ENTITY_ROLES.OFFERING) {
+    buildExtractionSchema(activeDimensions, entityRole = ENTITY_TYPES.OFFERING) {
         if (!Array.isArray(activeDimensions) || activeDimensions.length === 0) {
             throw new Error('Active dimensions array is required and must not be empty.');
         }
@@ -79,7 +79,7 @@ class DynamicSchemaBuilder {
             }
 
             // Use directional instruction based on entity role
-            const instruction = entityRole === ENTITY_ROLES.REQUIREMENT 
+            const instruction = entityRole === ENTITY_TYPES.REQUIREMENT 
                 ? dimension.requirementInstruction 
                 : dimension.offeringInstruction;
             

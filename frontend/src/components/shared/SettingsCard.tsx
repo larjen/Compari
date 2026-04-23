@@ -14,26 +14,46 @@ interface SettingsCardProps {
   icon: React.ElementType;
   title: string;
   description: string;
+  layout?: 'row' | 'column';
   children: React.ReactNode;
 }
 
 /**
  * Card wrapper displaying icon, title, description, and control area.
- * 
- * @param icon - Lucide icon component to display next to the title
+ * * @param icon - Lucide icon component to display next to the title
  * @param title - Bold title for the setting section
  * @param description - Muted description text explaining the setting
+ * @param layout - Layout orientation for the content area ('row' or 'column')
  * @param children - React nodes for the control input(s)
  */
-export function SettingsCard({ icon: Icon, title, description, children }: SettingsCardProps) {
-  return (
-    <div className="bg-themed-inner border border-themed-border rounded-xl p-6 space-y-4">
-      <div className="flex items-center gap-3">
-        <Icon className="w-5 h-5 text-accent-sage" />
-        <h3 className="text-lg font-bold text-themed-fg-main">{title}</h3>
+export function SettingsCard({ icon: Icon, title, description, layout = 'row', children }: SettingsCardProps) {
+  if (layout === 'column') {
+    return (
+      <div className="bg-themed-inner border border-themed-border rounded-xl p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <Icon className="w-5 h-5 shrink-0 text-accent-sage" />
+          <h3 className="text-lg font-bold text-themed-fg-main">{title}</h3>
+        </div>
+        <p className="text-sm text-themed-fg-muted">{description}</p>
+        <div className="w-full overflow-hidden">
+          {children}
+        </div>
       </div>
-      <p className="text-sm text-themed-fg-muted">{description}</p>
-      {children}
+    );
+  }
+
+  return (
+    <div className="bg-themed-inner border border-themed-border rounded-xl p-6 flex flex-row items-center justify-between gap-8">
+      <div className="flex-1 min-w-0 flex flex-col justify-center">
+        <div className="flex items-center gap-3 mb-1.5">
+          <Icon className="w-5 h-5 shrink-0 text-accent-sage" />
+          <h3 className="text-lg font-bold text-themed-fg-main truncate">{title}</h3>
+        </div>
+        <p className="text-sm text-themed-fg-muted leading-relaxed pl-8">{description}</p>
+      </div>
+      <div className="shrink-0 flex items-center justify-end">
+        {children}
+      </div>
     </div>
   );
 }

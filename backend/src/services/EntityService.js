@@ -14,13 +14,18 @@
  * - ❌ MUST NOT handle HTTP request/response objects directly.
  * - ❌ MUST NOT contain business rules or workflow logic (delegates to Workflows if needed).
  *
+ * @socexplanation
+ * - This service provides a high-level API for entity management, coordinating between the repository and file infrastructure.
+ * - It extends BaseEntityService to inherit unified state transition logic and resource broadcast capabilities.
+ *
  * @dependency_injection
  * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
  */
 const path = require('path');
-const { TRASHED_DIR, ENTITY_STATUS, APP_EVENTS, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
+const { ENTITY_STATUS, APP_EVENTS, LOG_LEVELS } = require('../config/constants');
 const BaseEntityService = require('./BaseEntityService');
-const HashGenerator = require('../utils/HashGenerator');
+const NameGenerator = require('../utils/NameGenerator');
+const MarkdownGenerator = require('../utils/MarkdownGenerator');
 
 class EntityService extends BaseEntityService {
     /**
@@ -33,7 +38,7 @@ class EntityService extends BaseEntityService {
      * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
      */
     constructor({ entityRepo, fileService, logService, eventService }) {
-        super({ repository: entityRepo, eventService, logService, resourceName: 'Entity', getByIdMethod: 'getEntityById' });
+        super({ repository: entityRepo, eventService, logService, fileService, resourceName: 'Entity', getByIdMethod: 'getEntityById' });
         this._entityRepo = entityRepo;
         this._fileService = fileService;
         this._logService = logService;
@@ -87,61 +92,48 @@ class EntityService extends BaseEntityService {
      * @boundary_rules
      * - ✅ Creates staging folder in UPLOADS_DIR by default.
      * - ❌ MUST NOT create permanent vault folders (REQUIREMENTS_DIR/OFFERINGS_DIR) at this stage.
+     *
+     * @socexplanation
+     * Delegates staging lifecycle to the base class createStagedEntity method to eliminate
+     * duplicated boilerplate for folder preparation, hash generation, event emission, and activity logging.
      */
-    createEntity(entityDto) {
+    async createEntity(entityDto) {
         const finalType = entityDto.entityType || entityDto.type;
         const finalName = entityDto.nicename || entityDto.name || 'Entity';
-        const folderPath = entityDto.folderPath;
-        
-        let finalFolderPath = folderPath;
-        if (!finalFolderPath) {
-            finalFolderPath = this._fileService.prepareStagingDirectory(finalName);
+
+        let finalMetadata = {};
+        if (entityDto.metadata) {
+            try {
+                finalMetadata = typeof entityDto.metadata === 'string' ? JSON.parse(entityDto.metadata) : { ...entityDto.metadata };
+            } catch (_error) {
+                finalMetadata = {};
+            }
         }
 
-        const hash = HashGenerator.generateUniqueHash();
-        const dtoWithFolderPath = { ...entityDto, entityType: finalType, nicename: finalName, folderPath: finalFolderPath, blueprintId: entityDto.blueprintId, hash };
-        const entityId = this._entityRepo.createEntity(dtoWithFolderPath);
+        const baseDto = {
+            ...entityDto,
+            entityType: finalType,
+            nicename: finalName,
+            blueprintId: entityDto.blueprintId,
+            metadata: finalMetadata
+        };
 
-        try {
-            this._logService.addActivityLog({
-                entityType: 'Entity',
-                entityId,
-                logType: LOG_LEVELS.INFO,
-                message: `Entity '${finalName}' created in staging.`,
-                folderPath: finalFolderPath
-            });
-        } catch (err) {
-            this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'EntityService', message: `Failed to log entity creation: ${err.message}` });
-        }
-
-        return entityId;
+        return this.createStagedEntity(baseDto, {
+            execute: (dto) => this._entityRepo.createEntity(dto)
+        });
     }
 
     /**
-     * Deletes an entity by ID and moves its physical folder to the Trashed directory.
+     * Deletes an entity by moving its folder to trash and removing the database record.
      * @method deleteEntity
      * @param {number} id - The entity ID to delete.
      * @socexplanation
-     * - Coordinates between the Repository layer (for DB deletion) and the 
-     * Infrastructure layer (FileService) to maintain data hygiene.
+     * - Delegates folder lifecycle to base class method.
      * - File operations are wrapped in try/catch to ensure DB deletion succeeds 
      * even if the physical files are already missing.
      */
     deleteEntity(id) {
-        const entity = this.getEntityById(id);
-        
-        // Move physical files to trash before deleting the database record
-        if (entity && entity.folderPath) {
-            try {
-                const folderName = path.basename(entity.folderPath);
-                const targetPath = path.join(TRASHED_DIR, folderName);
-                this._fileService.moveDirectory(entity.folderPath, targetPath);
-                this._logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.INFO, origin: 'EntityService', message: `Moved entity folder to trash: ${targetPath}` });
-            } catch (err) {
-                this._logService.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'EntityService', message: `Failed to move entity folder to trash (it may already be deleted): ${err.message}` });
-            }
-        }
-
+        this.deleteEntityFolder(id);
         this._entityRepo.deleteById(id);
         this._eventService.emit(APP_EVENTS.RESOURCE_STATE_CHANGED);
     }
@@ -162,24 +154,23 @@ class EntityService extends BaseEntityService {
      * - Returns an array of moved file paths for the controller to return to the client.
      * - Does not finalize the folder - that happens at the end of the pipeline.
      */
-    uploadEntityFiles(entityId, files) {
-        const entity = this._entityRepo.getEntityById(entityId);
-        if (!entity || !entity.folderPath) {
-            throw new Error('Entity not found or has no folder path');
+    async uploadEntityFiles(entityId, files) {
+        const destinationPath = this.getEntityFolderPath(entityId);
+        if (!destinationPath) {
+            throw new Error('Could not resolve absolute folder path for entity');
         }
 
-        const destinationPath = entity.folderPath;
         const movedPaths = [];
-        
+
         for (const file of files) {
-            const safeFileName = require('path').basename(file.originalname);
-            const movedPath = this._fileService.moveFile(file.path, destinationPath, safeFileName);
+            const safeFileName = path.basename(file.originalname);
+            const movedPath = await this._fileService.moveFile(file.path, destinationPath, safeFileName);
             if (!movedPath) {
                 throw new Error(`Failed to move uploaded file: ${safeFileName}`);
             }
             movedPaths.push(movedPath);
         }
-        
+
         return movedPaths;
     }
 
@@ -197,36 +188,20 @@ class EntityService extends BaseEntityService {
      * - Moves file into the entity's current folderPath (which should be in staging).
      * - Does not finalize the folder - that happens at the end of the pipeline.
      */
-    uploadEntityFile(entityId, file) {
-        const entity = this._entityRepo.getEntityById(entityId);
-        if (!entity || !entity.folderPath) {
-            throw new Error('Entity not found or has no folder path');
+    async uploadEntityFile(entityId, file) {
+        const destinationPath = this.getEntityFolderPath(entityId);
+        if (!destinationPath) {
+            throw new Error('Could not resolve absolute folder path for entity');
         }
 
-        const destinationPath = entity.folderPath;
-        const safeFileName = require('path').basename(file.originalname);
-        const movedPath = this._fileService.moveFile(file.path, destinationPath, safeFileName);
-        
+        const safeFileName = path.basename(file.originalname);
+        const movedPath = await this._fileService.moveFile(file.path, destinationPath, safeFileName);
+
         if (!movedPath) {
             throw new Error('Failed to move uploaded file to entity folder');
         }
         
         return movedPath;
-    }
-
-    /**
-     * Retrieves all files in an entity's folder.
-     * @method getEntityFiles
-     * @param {number} entityId - The entity ID.
-     * @returns {Array<string>} Array of file names.
-     */
-    getEntityFiles(entityId) {
-        const entity = this._entityRepo.getEntityById(entityId);
-        if (!entity || !entity.folderPath) {
-            return [];
-        }
-
-        return this._fileService.listFilesInFolder(entity.folderPath);
     }
 
     /**
@@ -243,17 +218,14 @@ class EntityService extends BaseEntityService {
             throw new Error('Entity not found');
         }
 
-        const entityFiles = this.getEntityFiles(entityId);
+        const entityFiles = this.listPhysicalFiles(entityId);
         if (!entityFiles.includes(fileName)) {
             throw new Error('File not found in entity folder');
         }
 
-        this._logService.addActivityLog({
-                entityType: 'Entity',
-                entityId,
+        this.logActivity(entityId, {
                 logType: LOG_LEVELS.INFO,
-                message: `AI criteria extraction manually queued for file: ${fileName}`,
-                folderPath: entity.folderPath
+                message: `AI criteria extraction manually queued for file: ${fileName}`
             });
     }
 
@@ -266,6 +238,28 @@ class EntityService extends BaseEntityService {
      */
     cancelExtraction(entityId) {
         this.updateState(entityId, { status: ENTITY_STATUS.FAILED, error: 'User aborted the processing.' });
+    }
+
+    /**
+     * Retries a failed entity processing by resetting error state and status.
+     * @method retryProcessing
+     * @param {number} entityId - The entity ID to retry.
+     * @returns {Object} The entity object.
+     */
+    retryProcessing(entityId) {
+        const entity = this.getEntityById(entityId);
+        if (!entity) {
+            throw new Error('Entity not found');
+        }
+
+        this.updateState(entityId, { status: ENTITY_STATUS.PENDING, error: null });
+
+        this.logActivity(entityId, {
+            logType: LOG_LEVELS.INFO,
+            message: 'Retrying AI extraction process.'
+        });
+
+        return entity;
     }
 
     /**
@@ -291,7 +285,7 @@ class EntityService extends BaseEntityService {
         }
 
         let fileName = entity.metadata?.processingFileName;
-        const folderPath = entity.folderPath;
+        const folderPath = this.getEntityFolderPath(entityId);
 
         if (!fileName && folderPath) {
             const files = this._fileService.listFilesInFolder(folderPath);
@@ -309,30 +303,6 @@ class EntityService extends BaseEntityService {
     }
 
     /**
-     * Retrieves all documents for an entity.
-     * @method getDocumentsForEntity
-     * @param {number} entityId - The entity ID.
-     * @returns {Array<Object>} Array of document objects.
-     */
-    getDocumentsForEntity(entityId) {
-        return this._entityRepo.getDocuments(entityId);
-    }
-
-    /**
-     * Opens the entity's folder in the native OS file manager.
-     * @method openEntityFolder
-     * @param {number} entityId - The entity ID.
-     */
-    openEntityFolder(entityId) {
-        const entity = this._entityRepo.getEntityById(entityId);
-        if (!entity || !entity.folderPath) {
-            this._logService.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'EntityService', message: 'Cannot open folder: entity not found or has no folder path' });
-            return;
-        }
-        this._fileService.openFolderInOS(entity.folderPath);
-    }
-
-    /**
      * Updates the core naming fields of an entity.
      * @method updateEntityDetails
      * @param {number} id - The entity ID.
@@ -344,10 +314,13 @@ class EntityService extends BaseEntityService {
     updateEntityDetails(id, { name, niceNameLine1, niceNameLine2 }) {
         const existing = this.getEntityById(id);
         if (!existing) {
-            throw new Error('Entity not found');
+            const err = new Error('Entity not found. It may have been deleted.');
+            err.isFatalClientError = true;
+            throw err;
         }
 
-        const finalName = name || existing.nicename;
+        const rawName = name || existing.nicename;
+        const finalName = NameGenerator.sanitizeForFileSystem(rawName);
         const finalLine1 = niceNameLine1 || existing.niceNameLine1 || 'Unknown';
         const finalLine2 = niceNameLine2 || existing.niceNameLine2 || 'Unknown';
 
@@ -356,6 +329,82 @@ class EntityService extends BaseEntityService {
         const updatedEntity = this.getEntityById(id);
         this._eventService.emit(APP_EVENTS.RESOURCE_STATE_CHANGED, updatedEntity);
     }
+
+    /**
+     * Updates the match score for an entity and broadcasts the change.
+     * @method updateMatchScore
+     * @param {number} id - The entity ID.
+     * @param {number} matchScore - The new match score.
+     */
+    updateMatchScore(id, matchScore) {
+        this._entityRepo.updateMatchScore(id, matchScore);
+        const updated = this.getEntityById(id);
+        if (updated) {
+            this._eventService.emit(APP_EVENTS.RESOURCE_STATE_CHANGED, updated);
+        }
+    }
+
+    getEntityName(id) {
+        const entity = this.getById(id);
+        return entity ? (entity.nicename || entity.name || 'Unknown') : 'Unknown';
+    }
+
+    getEntityRole(id) {
+        const entity = this.getById(id);
+        return entity ? (entity.entityType || entity.type || 'offering') : 'offering';
+    }
+
+    getEntityBlueprintId(id) {
+        const entity = this.getById(id);
+        return entity ? entity.blueprintId : null;
+    }
+
+    getEntityMetadata(id) {
+        const entity = this.getById(id);
+        return entity ? (entity.metadata || {}) : {};
+    }
+
+/**
+      * Generates and writes the master markdown file for an entity in its folder.
+      * This is intended as a debug/utility function.
+      * @param {number} entityId - The ID of the entity.
+      * @returns {Promise<void>}
+      */
+     async writeMasterFile(entityId) {
+         const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+
+         await this.generateAndSaveMasterDocument(entityId, ({ entity, folderName }) => {
+             const route = entity.entityType === 'requirement' ? 'requirements' : 'offerings';
+             const deeplink = `${baseUrl}/${route}?id=${entity.id}`;
+             return `# ${folderName}\n\n**[View Entity in Compari](${deeplink})**\n`;
+         });
+     }
+
+/**
+      * Generates and saves the verbatim profile markdown file for an entity.
+      * @method generateAndSaveVerbatimProfile
+      * @param {number} entityId - The entity ID.
+      * @param {string} rawText - The raw extracted text.
+      * @param {string} verbatimPosting - The AI-generated verbatim profile.
+      * @socexplanation Refactored to enforce "Tell, Don't Ask" (ID-First Resolution). Stripped entity data-fetching from the macro-orchestrator to prevent parameter creep and maintain strict boundary encapsulation.
+      */
+     async generateAndSaveVerbatimProfile(entityId, rawText, verbatimPosting) {
+         const entity = this.getById(entityId);
+         if (!entity) throw new Error(`Entity not found: ${entityId}`);
+
+         const folderPath = this.getEntityFolderPath(entityId);
+         if (!folderPath) throw new Error(`Entity ${entityId} has no folder path.`);
+
+         const entityTitle = entity.nicename || 'Unknown Title';
+         const entityDescription = entity.description || 'Unknown Organization';
+
+         const mdContent = MarkdownGenerator.generateEntityProfile(entityTitle, entityDescription, {
+             rawText,
+             verbatimPosting
+         });
+
+         await this._fileService.saveTextFile(folderPath, 'verbatim_extraction.md', mdContent);
+     }
 }
 
 module.exports = EntityService;

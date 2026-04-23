@@ -52,7 +52,6 @@ export function MatchCard({ match, onClick, onDelete, onRetry }: MatchCardProps)
     try {
       await matchApi.downloadMatchReportPdf(match.id);
     } catch (error) {
-      console.error(error);
       addToast(TOAST_TYPES.ERROR, error instanceof Error ? error.message : "There was an error downloading the PDF.");
     }
   };

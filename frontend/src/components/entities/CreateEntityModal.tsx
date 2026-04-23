@@ -39,7 +39,7 @@ function CreateEntityModalComponent({ open, onClose, onCreate, entityType }: Cre
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title={`Create ${labelSingular}`}>
+    <Dialog open={open} onClose={onClose} title={`Create ${labelSingular}`} autoHeight className="md:max-w-2xl">
       <div className="space-y-6">
         <p className="text-accent-forest/80 text-sm p-4 bg-accent-sage/10 rounded-lg border border-accent-sage/20">
           {docTypeLabel || `Upload a document to create a new ${labelSingular.toLowerCase()}.`}

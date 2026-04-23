@@ -37,11 +37,12 @@ class Logger {
      * @param {string} serviceName - The name of the service using this Logger.
      * @param {Object} deps - Dependencies object
      * @param {Object} deps.logService - The LogService instance
+     * @param {Object} deps.settingsManager - The SettingsManager instance
      */
-    constructor(serviceName, { logService }) {
+    constructor(serviceName, { logService, settingsManager }) {
         this.serviceName = serviceName;
         this._logService = logService;
-        this.debugEnabled = process.env.DEBUG_MODE === 'true' || process.argv.includes('--debug');
+        this._settingsManager = settingsManager;
         this.httpLogsEnabled = process.env.LOG_HTTP_TRAFFIC === 'true';
     }
 
@@ -52,8 +53,10 @@ class Logger {
      */
     middleware() {
         return (req, res, next) => {
+            const debugEnabled = this._settingsManager && this._settingsManager.get('debug_mode') === 'true';
+
             // Skip logging if debug is off OR if HTTP-specific logging is disabled
-            if (!this.debugEnabled || !this.httpLogsEnabled) return next();
+            if (!debugEnabled || !this.httpLogsEnabled) return next();
 
             const startTime = Date.now();
 

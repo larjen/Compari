@@ -11,21 +11,27 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Criterion } from '@/lib/types';
 import { entityApi } from '@/lib/api/entityApi';
+import { matchApi } from '@/lib/api/matchApi';
+import { criteriaApi } from '@/lib/api/criteriaApi';
 import { useSafeFetch } from './useSafeFetch';
 
-/**
- * Hook for fetching files for an entity.
- * @param entityId - The ID of the entity (undefined when not loaded).
- * @returns Object containing files array, loading state, error state, and loadFiles function.
- * @description Uses useSafeFetch to inherit standardized race-condition prevention.
- */
-export function useEntityFiles(entityId: number | undefined) {
-  const fetcher = useCallback(async () => {
-    if (!entityId) return { files: [] };
-    return entityApi.getFiles(entityId);
-  }, [entityId]);
+type FileEntityType = 'entity' | 'match' | 'criterion';
 
-  const { data, loading, error, execute: loadFiles } = useSafeFetch<{ files: string[] }>(fetcher, !!entityId);
+/**
+ * Hook for fetching files for any entity type.
+ * @param id - The ID of the entity (undefined when not loaded).
+ * @param type - The type of entity ('entity' | 'match' | 'criterion').
+ * @returns Object containing files array, loading state, error state, and loadFiles function.
+ */
+export function useFiles(id: number | undefined, type: FileEntityType) {
+  const fetcher = useCallback(async () => {
+    if (!id) return { files: [] };
+    if (type === 'match') return matchApi.getMatchFiles(id);
+    if (type === 'criterion') return criteriaApi.getFiles(id);
+    return entityApi.getFiles(id);
+  }, [id, type]);
+
+  const { data, loading, error, execute: loadFiles } = useSafeFetch<{ files: string[] }>(fetcher, !!id);
 
   return { 
     files: data?.files || [], 
@@ -50,6 +56,27 @@ export function useEntityCriteria(entityId: number | undefined) {
   const { data: criteria, loading, error } = useSafeFetch<Criterion[]>(fetcher, !!entityId);
 
   return { criteria: criteria || [], loading, error };
+}
+
+/**
+ * Hook for fetching files for a criterion.
+ * @param criterionId - The ID of the criterion (undefined when not loaded).
+ * @returns Object containing files array, loading state, error state, and loadFiles function.
+ */
+export function useCriteriaFiles(criterionId: number | undefined) {
+  const fetcher = useCallback(async () => {
+    if (!criterionId) return { files: [] };
+    return criteriaApi.getFiles(criterionId);
+  }, [criterionId]);
+
+  const { data, loading, error, execute: loadFiles } = useSafeFetch<{ files: string[] }>(fetcher, !!criterionId);
+
+  return { 
+    files: data?.files || [], 
+    loadFiles, 
+    loading, 
+    error 
+  };
 }
 
 /**

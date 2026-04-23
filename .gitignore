@@ -152,3 +152,4 @@ backend/tsc-errors.txt
 .vscode
 .ai_cache
 knip_report.txt
+frontend/next-env.d.ts

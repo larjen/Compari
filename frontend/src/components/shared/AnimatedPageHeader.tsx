@@ -27,7 +27,7 @@ export function AnimatedPageHeader({ loading, children }: AnimatedPageHeaderProp
   }, [loading]);
 
   return (
-    <div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 transition-opacity duration-500 ease-in-out ${isReady ? 'opacity-100' : 'opacity-0'}`}>
+    <div className={`flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6 mb-8 transition-opacity duration-500 ease-in-out ${isReady ? 'opacity-100' : 'opacity-0'}`}>
       {children}
     </div>
   );

@@ -4,25 +4,27 @@ import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { useState, useEffect } from 'react';
 import { Entity, Criterion } from '@/lib/types';
 import { criteriaApi } from '@/lib/api/criteriaApi';
-import { entityApi } from '@/lib/api/entityApi';
 import { motion } from 'framer-motion';
 import { getEntityDisplayNames } from '@/lib/utils';
 import { useTerminology } from '@/hooks/useTerminology';
-import { useEntityFiles } from '@/hooks/useEntityData';
+import { useCriteriaFiles } from '@/hooks/useEntityData';
+import { useCriterionOperations } from '@/hooks/useCriterionOperations';
 import { EntityDetailLayout } from '@/components/shared/EntityDetailLayout';
 import { DeleteAction, EditButton, ViewButton } from '@/components/ui';
+import { useSettings } from '@/hooks/useSettings';
+import { SharedDebugTab } from '@/components/shared/SharedDebugTab';
 import { MergeTab } from '@/components/criteria/MergeTab';
 import { FilesTabContent } from '@/components/shared/FilesTabContent';
-import { ENTITY_ROLES } from '@/lib/constants';
 
 const CRITERION_TABS = {
   ASSOCIATIONS: 'associations',
   MERGE: 'merge',
   HISTORY: 'history',
-  FILES: 'files'
+  FILES: 'files',
+  DEBUG: 'debug'
 } as const;
 
-const tabs = [
+const baseTabs = [
   { id: CRITERION_TABS.ASSOCIATIONS, label: 'Associations', icon: DOMAIN_ICONS.TREE },
   { id: CRITERION_TABS.MERGE, label: 'Merge', icon: DOMAIN_ICONS.MERGE },
   { id: CRITERION_TABS.HISTORY, label: 'Merge History', icon: DOMAIN_ICONS.HISTORY },
@@ -50,7 +52,19 @@ export function CriterionDetailModal({
   onMerged,
   onEdit
 }: CriterionDetailModalProps) {
+  const { settings } = useSettings(open);
   const { activeLabels, getEntityLabels } = useTerminology();
+  
+  const { 
+    deleteWithToast, 
+    openFolderWithToast, 
+    writeMasterFileWithToast, 
+    fetchMasterFileWithToast 
+  } = useCriterionOperations({ deleteCriterionFn: onDelete });
+
+  const tabs = settings.debug_mode === 'true'
+    ? [...baseTabs, { id: CRITERION_TABS.DEBUG, label: 'Debug', icon: DOMAIN_ICONS.SETTINGS }]
+    : baseTabs;
   const { requirement: { plural: sourceLabel }, offering: { plural: targetLabel } } = activeLabels;
 
   const [sources, setSources] = useState<Entity[]>([]);
@@ -59,9 +73,8 @@ export function CriterionDetailModal({
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>(CRITERION_TABS.ASSOCIATIONS);
 
-  const associatedEntityId = sources[0]?.id || targets[0]?.id;
-  const { files, loading: loadingFiles } = useEntityFiles(activeTab === CRITERION_TABS.FILES ? associatedEntityId : undefined);
-  const folderPath = sources[0]?.folder_path || targets[0]?.folder_path || null;
+  const { files, loading: loadingFiles } = useCriteriaFiles(activeTab === CRITERION_TABS.FILES ? criterion?.id : undefined);
+  const folderPath = criterion?.folderPath || (criterion as any)?.folder_path || null;
 
   useEffect(() => {
     if (open && criterion?.id) {
@@ -144,10 +157,7 @@ export function CriterionDetailModal({
           <div className="flex items-center gap-3">
             {onEdit && <EditButton entityName="Criterion" onClick={onEdit} />}
             <DeleteAction 
-              onDelete={async () => { 
-                await onDelete(criterion.id); 
-                onClose(); 
-              }} 
+              onDelete={() => deleteWithToast(criterion.id, onClose)} 
             />
           </div>
         )
@@ -226,22 +236,32 @@ export function CriterionDetailModal({
               )}
             </div>
           )}
-          {activeTab === CRITERION_TABS.FILES && (
+          {activeTab === CRITERION_TABS.FILES && criterion && (
             <FilesTabContent
               folderPath={folderPath}
               files={files}
               loadingFiles={loadingFiles}
-              getDownloadUrl={(filename) => `/api/entities/${associatedEntityId}/files/${encodeURIComponent(filename)}`}
-              onOpenFolder={async () => {
-                if (associatedEntityId) {
-                  try {
-                    await entityApi.openFolder(associatedEntityId);
-                  } catch (error) {
-                    console.error('Failed to open folder:', error);
-                  }
-                }
-              }}
+              getDownloadUrl={(filename) => `/api/criteria/${criterion.id}/files/${encodeURIComponent(filename)}`}
+              onOpenFolder={() => openFolderWithToast(criterion.id)}
             />
+          )}
+          {activeTab === CRITERION_TABS.DEBUG && settings.debug_mode === 'true' && (
+            <motion.div
+              key="debug"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.15 }}
+            >
+              <SharedDebugTab
+                rawData={criterion}
+                onGenerateMasterFile={() => criterion ? writeMasterFileWithToast(criterion.id, () => {}) : Promise.resolve()}
+                onFetchMasterFile={async () => {
+                  if (!criterion) throw new Error('No criterion');
+                  return (fetchMasterFileWithToast(criterion.id) as any) as string;
+                }}
+              />
+            </motion.div>
           )}
         </div>
       )}

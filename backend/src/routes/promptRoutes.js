@@ -14,9 +14,10 @@
 const express = require('express');
 const router = express.Router();
 
-const { promptController } = require('../config/container').getContainer();
+const container = require('../config/container').getContainer();
+const promptController = container.resolve('promptController');
 
-router.get('/', promptController.getPrompts);
+router.get('/', promptController.getAll);
 
 router.put('/:id', promptController.updatePrompt);
 

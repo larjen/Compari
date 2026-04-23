@@ -1,0 +1,49 @@
+# COMPARI BACKEND: STRICT AI AGENT INSTRUCTIONS
+
+You are an expert backend engineer working on the Compari API. You MUST adhere to the following rules unconditionally. Failure to do so will break the application.
+
+## 1. STRICT LOGGING & ERROR HANDLING
+- **NEVER SWALLOW STACK TRACES:** If you catch an error (`catch(err)`), you MUST explicitly pass it to the logger via the `errorObj: err` property. Do NOT string-concatenate `${err.message}` into the log string.
+- **USE LOG SERVICE:** Never use `console.log` or `console.error`. You MUST use the injected `LogService`.
+- **CONSOLIDATE FAULTS:** Use `logService.logSystemFault({ origin, message, errorObj })` for all caught errors. Do not call `logTerminal` and `logErrorFile` consecutively.
+- **ACTIVITY LOGS (PATH LEAKAGE PREVENTION):** You MUST NOT pass raw `folderPath` properties directly to `LogService.addActivityLog()`. You ✅ MUST use the respective entity service's `logActivity(entityId, dto)` wrapper (inherited from `BaseEntityService`) to ensure safe absolute path resolution.
+
+## 2. STRICT DEPENDENCY INJECTION (DI) & AWILIX
+- **NO REQUIRE() FOR SERVICES:** You MUST NOT use `require()` to import Services, Repositories, or the Database connection.
+- **CONSTRUCTOR INJECTION ONLY:** All dependencies must be injected via the `constructor({ depA, depB })`.
+- **AWILIX PROXY MODE:** We use Awilix for IoC. Your constructor parameter names MUST exactly match the camelCased class name of the dependency (e.g., to inject `PdfService`, you must use `pdfService`).
+- **NO GETTERS:** Do not use defensive getters (e.g., `get _repo()`). Store dependencies directly on `this`.
+- **ROUTE RESOLUTION:** Routes MUST fetch controllers via `container.resolve('myController')`. Do not destructure the container.
+- **NOTE:** `DimensionService` now strictly requires `BlueprintRepo` for cross-domain dimension resolution.
+
+## 3. CLASS TABLE INHERITANCE (CTI)
+- The database uses a hybrid inheritance pattern.
+- For Match and Criterion: Uses Class Table Inheritance (CTI) via entities_base joined with entities_match or entities_criterion.
+- For Requirement and Offering: Uses Single Table Inheritance (STI) where type-specific data is stored in the metadata JSON column of entities_base. DO NOT hallucinate entities_offering or entities_requirement tables.
+- **REPOSITORIES ONLY:** Do not leak CTI logic into Services. 
+- **TRANSACTIONS:** All inserts that touch base and child tables MUST be wrapped in `this.db.transaction()`.
+
+## 4. DATA TRANSFER OBJECTS (DTOs) & ENCAPSULATION
+- **ANTI-PARAMETER CREEP:** Any method requiring more than 3 parameters MUST use a single DTO object.
+- **CONTROLLER BOUNDARY:** Controllers MUST extract and construct the DTO from `req.body` before passing it to a Service. Do NOT pass `req.body` directly to a Service.
+- **"TELL, DON'T ASK" (ID-FIRST RESOLUTION):** Orchestrators (Controllers, Workflows) ❌ MUST NOT fetch database records just to derive or calculate basic arguments (like fallback names, absolute file paths, or status flags) to pass into another service. They ✅ MUST pass the primary identifier (e.g., `entityId`) and let the receiving Domain Service query the database and resolve the necessary data internally. Keep orchestrating layers dumb and thin!
+   - ❌ NO manual `path.join` for entity files in Workflows/Controllers. Use `this._entityService.resolveEntityFilePath(id, fileName)`.
+   - ❌ NO manual markdown stitching for master files outside of Domain Services.
+   - ❌ NO manual AI batching via `processAiTasks` in Workflows. Use `this._aiService.executeParallelTasks()`.
+   - ❌ NO CONCURRENT CRITERIA GENERATION: Do NOT attempt to optimize Criteria extraction or embedding with batching, parallel arrays, or bulk SQLite inserts. Criteria MUST be extracted, embedded, and created strictly sequentially (one-by-one) via the unified staged lifecycle to prevent race conditions.
+
+## 5. NO MAGIC STRINGS
+- Always import constants from `backend/src/config/constants.js` (e.g., `LOG_LEVELS`, `ENTITY_STATUS`, `QUEUE_TASKS`).
+
+## 6. ENTITY AND CONTROLLER INHERITANCE (CRITICAL)
+- ALL entities (Requirement, Offering, Criterion) map to `entities_base` via Class Table Inheritance.
+- ALL entity controllers MUST inherit from `BaseCrudController`.
+- NEVER duplicate standard CRUD or file operations (`getFiles`, `getFile`, `openFolder`) in specific controllers. If a new entity type is added, it inherits these natively. Do not write custom file fetching logic per entity.
+- ALL entities, including Criteria, MUST use the unified staging lifecycle (e.g., `createStagedEntity`). Do not build custom bulk-insert bypasses for Criteria.
+
+## 7. PURE UTILITIES & MATHEMATICS
+- Modules like MatchingEngine.js and MarkdownGenerator.js are pure mathematical/presentation utilities.
+- ❌ MUST NOT import or depend on Repositories, Services, or the Database.
+- ✅ MUST accept raw data arrays/objects and return calculated/formatted primitives.
+
+Read `backend/ARCHITECTURE.md` if you need further clarification on these boundaries.

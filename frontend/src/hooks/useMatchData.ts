@@ -18,57 +18,6 @@ import { MatchReportData } from '@/components/matches/report/types';
  */
 
 /**
- * Custom hook for fetching match files.
- * 
- * @description
- * Fetches the list of files in the match folder for a given match ID.
- * Manages loading and error states internally.
- * 
- * @param matchId - Optional match ID to fetch files for
- * @returns Object containing { files, loading, error }
- * 
- * @socexplanation
- * - Data fetching logic extracted from MatchDetailModal presentation component
- * - Single source of truth for match file loading logic
- * - Returns consistent interface for files, loading, and error states
- * 
- * @example
- * const { files, loading, error } = useMatchFiles(match?.id);
- * // Use files in your component
- */
-export function useMatchFiles(matchId?: number) {
-  const [files, setFiles] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-
-  useEffect(() => {
-    if (!matchId) {
-      setFiles([]);
-      setError(null);
-      return;
-    }
-
-    const fetchFiles = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data: MatchFiles = await matchApi.getMatchFiles(matchId);
-        setFiles(data.files || []);
-      } catch (err) {
-        setError(err instanceof Error ? err : new Error('Failed to load match files'));
-        setFiles([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchFiles();
-  }, [matchId]);
-
-  return { files, loading, error };
-}
-
-/**
  * Custom hook for fetching match report data.
  * 
  * @description

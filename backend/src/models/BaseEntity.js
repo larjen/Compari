@@ -35,6 +35,7 @@ class BaseEntity {
         this.attachedFiles = data.attachedFiles || data.attached_files || [];
         this.niceNameLine1 = data.niceNameLine1 || data.nice_name_line_1 || 'Unknown';
         this.niceNameLine2 = data.niceNameLine2 || data.nice_name_line_2 || 'Unknown';
+        this.isStaged = data.isStaged !== undefined ? data.isStaged : (data.is_staged === 1 || data.is_staged === '1' || data.is_staged === true);
     }
 
     /**
@@ -60,7 +61,8 @@ class BaseEntity {
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
             niceNameLine1: this.niceNameLine1,
-            niceNameLine2: this.niceNameLine2
+            niceNameLine2: this.niceNameLine2,
+            isStaged: this.isStaged
         };
     }
 }

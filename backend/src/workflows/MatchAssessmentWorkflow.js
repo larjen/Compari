@@ -25,8 +25,7 @@
  */
 
 const aiReportGenerator = require('../utils/AiReportGenerator');
-const { processAiTasks } = require('../utils/asyncHandler');
-const { LOG_LEVELS, LOG_SYMBOLS, SETTING_KEYS, DOCUMENT_TYPES, ENTITY_STATUS } = require('../config/constants');
+const { LOG_LEVELS, LOG_SYMBOLS, DOCUMENT_TYPES, ENTITY_STATUS, AI_TASK_TYPES } = require('../config/constants');
 const path = require('path');
 
 class MatchAssessmentWorkflow {
@@ -62,12 +61,12 @@ class MatchAssessmentWorkflow {
     /**
      * Assesses a match between source and target entities using deterministic criteria matching.
      * Generates structured JSON report data for frontend rendering.
-     * 
+     *
      * Uses a Map-Reduce architecture for AI summary generation:
      * - MAP PHASE: Generate dimensional summaries concurrently via Promise.all.
      * - REDUCE PHASE: Synthesize dimensional summaries into a single executive summary.
      * This sequential staging ensures the executive summary has access to all dimensional outputs.
-     * 
+     *
      * @async
      * @method assessMatch
      * @memberof MatchAssessmentWorkflow
@@ -76,6 +75,11 @@ class MatchAssessmentWorkflow {
      * @param {number} matchId - The match record ID.
      * @returns {Promise<void>} Resolves when assessment is complete.
      * @throws {Error} If match not found, criteria missing, or file operations fail.
+     *
+     * @socexplanation
+     * Error handling has been consolidated to the logSystemFault method to enforce DRY principles
+     * and maintain terminal stack trace visibility. This replaces the previous pattern of calling
+     * logTerminal followed by logErrorFile separately.
      */
     async assessMatch(sourceEntityId, targetEntityId, matchId) {
         const startTime = Date.now();
@@ -84,39 +88,18 @@ class MatchAssessmentWorkflow {
             throw new Error("matchId is required for assessment workflow");
         }
 
-        const match = this._matchRepo.getMatchById(matchId);
-        if (!match) {
-            const error = new Error(`Match not found: ${matchId}`);
-            error.isFatalClientError = true;
-            throw error;
-        }
+        this._matchService.assertExists(matchId);
 
-        let matchFolderPath = match.folder_path;
-        if (!matchFolderPath) {
-            matchFolderPath = this._fileService.prepareStagingDirectory(`match-${sourceEntityId}-${targetEntityId}`);
-            this._matchService.updateFolderPath(matchId, matchFolderPath);
-        }
-
-        const sourceEntity = this._entityService.getEntityById(sourceEntityId);
-        const targetEntity = this._entityService.getEntityById(targetEntityId);
-
-        if (!sourceEntity || !targetEntity) {
-            const error = new Error(`Source or target entity not found for match assessment.`);
-            error.isFatalClientError = true;
-            throw error;
-        }
+        let matchFolderPath = this._matchService.ensureMatchFolder(matchId);
 
         try {
-            this._logService.addActivityLog({
-                entityType: 'Match',
-                entityId: matchId,
+            this._matchService.logActivity(matchId, {
                 logType: LOG_LEVELS.INFO,
-                message: `Started match assessment for source ${sourceEntityId} against target ${targetEntityId}.`,
-                folderPath: matchFolderPath
+                message: `Started match assessment for source ${sourceEntityId} against target ${targetEntityId}.`
             });
 
             // 0. Reset processing timer for frontend UI counter
-            this._matchService.updateMetadata(matchId, { processingStartedAt: new Date().toISOString() });
+            this._matchService.resetProcessingTimer(matchId);
 
             // 1. Calculate vector match data
             this._matchService.updateState(matchId, { status: ENTITY_STATUS.CALCULATING_MATCH_SCORES });
@@ -125,51 +108,26 @@ class MatchAssessmentWorkflow {
             // 2. Generate AI Summaries
             this._matchService.updateState(matchId, { status: ENTITY_STATUS.GENERATING_MATCH_SUMMARY });
             const dimensionalSummaries = await this._generateDimensionalSummaries(matchData, matchFolderPath);
-            const executiveSummary = await this._generateExecutiveSummary(dimensionalSummaries, sourceEntity, targetEntity, matchFolderPath);
+            const executiveSummary = await this._generateExecutiveSummary({ dimensionalSummaries, sourceEntityId, targetEntityId, matchFolderPath });
             const aiSummaries = { dimensional: dimensionalSummaries, executive: executiveSummary };
 
             // 3. Build & Save Report
             this._matchService.updateState(matchId, { status: ENTITY_STATUS.GENERATING_MATCH_REPORT });
-            const finalReport = this._buildFinalReport(matchData, aiSummaries, sourceEntity, targetEntity);
-            const reportPath = this._saveAndRegisterReport(matchId, finalReport, matchFolderPath);
+            const finalReport = this._buildFinalReport({ matchData, aiSummaries, sourceEntityId, targetEntityId });
+            const _reportPath = this._saveAndRegisterReport(matchId, finalReport, matchFolderPath);
 
             // 4. Update DB State
             this._matchService.updateMatchScore(matchId, matchData.score);
-            this._matchService.updateReportPath(matchId, reportPath);
             this._matchService.updateState(matchId, { error: null });
 
             // 5. Move to Vault
             this._matchService.updateState(matchId, { status: ENTITY_STATUS.MOVING_TO_VAULT });
             
-            const reqLine1 = sourceEntity.niceNameLine1 || sourceEntity.nicename || 'Unknown Requirement';
-            const offLine1 = targetEntity.niceNameLine1 || targetEntity.nicename || 'Unknown Offering';
-            
-            const finalFolderPath = this._fileService.finalizeWorkspace({
-                entityType: 'match',
-                line1: reqLine1,
-                line2: offLine1,
-                currentStagingPath: matchFolderPath
-            });
-            this._matchService.updateFolderPath(matchId, finalFolderPath);
-            matchFolderPath = finalFolderPath; // Update local variable so the final log writes to the correct path
+            const finalFolderPath = this._matchService.finalizeEntityWorkspace(matchId);
+            matchFolderPath = finalFolderPath; 
 
-            // 5.5 Generate dynamic master document named after the folder
-            const finalFolderName = require('path').basename(finalFolderPath);
-            const finalFileName = `${finalFolderName}.md`;
-
-            const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
-            const deeplink = `${baseUrl}/matches?matchId=${matchId}`;
-            
-            const mdContent = `# ${finalFolderName}\n\n**[View Match in Compari](${deeplink})**\n\n${aiSummaries.executive}`;
-            this._fileService.saveTextFile(finalFolderPath, finalFileName, mdContent);
-
-            this._matchService.registerDocumentRecord({
-                matchId,
-                docType: DOCUMENT_TYPES.MATCH_REPORT,
-                fileName: finalFileName
-            });
-
-            this._matchService.updateMasterFile(matchId, finalFileName);
+            // 5.5 Generate dynamic master document
+            await this._matchService.writeMasterFile(matchId);
 
             // 6. Complete
             this._matchService.updateState(matchId, { status: ENTITY_STATUS.COMPLETED });
@@ -177,25 +135,14 @@ class MatchAssessmentWorkflow {
             const durationMs = Date.now() - startTime;
             const durationStr = this._logService.formatDuration(durationMs);
 
-            this._logService.addActivityLog({
-                entityType: 'Match',
-                entityId: matchId,
+            this._matchService.logActivity(matchId, {
                 logType: LOG_LEVELS.INFO,
-                message: `Match assessment complete. Single JSON report generated. Score: ${matchData.score}%. Processing took ${durationStr}.`,
-                folderPath: matchFolderPath
+                message: `Match assessment complete. Single JSON report generated. Score: ${matchData.score}%. Processing took ${durationStr}.`
             });
         } catch (error) {
             this._matchService.updateState(matchId, { status: ENTITY_STATUS.FAILED, error: error.message });
 
-            this._logService.logTerminal({ 
-                status: LOG_LEVELS.ERROR, 
-                symbolKey: LOG_SYMBOLS.ERROR, 
-                origin: 'MatchAssessmentWorkflow', 
-                message: `Match assessment failed: ${error.message}`,
-                errorObj: error
-            });
-
-            this._logService.logErrorFile({
+            this._logService.logSystemFault({
                 origin: 'MatchAssessmentWorkflow',
                 message: `Match assessment failed for match ${matchId}`,
                 errorObj: error,
@@ -223,20 +170,12 @@ class MatchAssessmentWorkflow {
         for (const [dimension, reportData] of Object.entries(dimensionalAiReports)) {
             dimensionalTasks.push(async () => {
                 const messages = this._promptBuilder.buildMatchSummaryMessages(reportData);
-                const { content } = await this._aiService.generateChatResponse(messages, { logFolderPath: matchFolderPath, logAction: `Generated dimensional AI summary for ${dimension}.` });
+                const { content } = await this._aiService.generateChatResponse(messages, { taskType: AI_TASK_TYPES.GENERAL, logFolderPath: matchFolderPath, logAction: `Generated dimensional AI summary for ${dimension}.` });
                 dimensionalSummaries[dimension] = content;
             });
         }
 
-        const allowConcurrent = this._settingsManager.get(SETTING_KEYS.ALLOW_CONCURRENT_AI) === 'true';
-
-        await processAiTasks(
-            dimensionalTasks,
-            async (task) => {
-                return await task();
-            },
-            allowConcurrent
-        );
+        await this._aiService.executeParallelTasks(dimensionalTasks, 'Generated dimensional AI summaries');
 
         return dimensionalSummaries;
     }
@@ -245,20 +184,22 @@ class MatchAssessmentWorkflow {
      * @private
      * @socexplanation REDUCE PHASE of the atomized AI pipeline. Synthesizes dimensional summaries into a single executive summary.
      * This method is isolated from infrastructure logic - it only transforms AI output without side effects.
-     * @param {Object} dimensionalSummaries - The dimensional summaries from AI (MAP PHASE output).
-     * @param {Object} sourceEntity - The source entity model.
-     * @param {Object} targetEntity - The target entity model.
-     * @param {string} matchFolderPath - The match folder path for logging.
+     * @param {Object} dto - The DTO containing all parameters.
+     * @param {Object} dto.dimensionalSummaries - The dimensional summaries from AI (MAP PHASE output).
+     * @param {number} dto.sourceEntityId - The source entity ID.
+     * @param {number} dto.targetEntityId - The target entity ID.
+     * @param {string} dto.matchFolderPath - The match folder path for logging.
      * @returns {Promise<string>} The executive summary content.
      * @pipeline_phase REDUCE - Consolidates dimensional outputs into executive summary.
+     * @socexplanation Refactored to enforce "Tell, Don't Ask" (ID-First Resolution). Stripped entity data-fetching from the macro-orchestrator to prevent parameter creep and maintain strict boundary encapsulation.
      */
-    async _generateExecutiveSummary(dimensionalSummaries, sourceEntity, targetEntity, matchFolderPath) {
+    async _generateExecutiveSummary({ dimensionalSummaries, sourceEntityId, targetEntityId, matchFolderPath }) {
         this._logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.LIGHTNING, origin: 'MatchAssessmentWorkflow', message: `Synthesizing executive summary...` });
 
-        const reqName = sourceEntity.nicename || 'the requirement';
-        const offName = targetEntity.nicename || 'the offering';
+        const reqName = this._entityService.getEntityName(sourceEntityId);
+        const offName = this._entityService.getEntityName(targetEntityId);
         const executiveMessages = this._promptBuilder.buildExecutiveSummaryMessages(dimensionalSummaries, reqName, offName);
-        const { content: executiveContent } = await this._aiService.generateChatResponse(executiveMessages, { logFolderPath: matchFolderPath, logAction: `Generated executive AI summary.` });
+        const { content: executiveContent } = await this._aiService.generateChatResponse(executiveMessages, { taskType: AI_TASK_TYPES.GENERAL, logFolderPath: matchFolderPath, logAction: `Generated executive AI summary.` });
 
         return executiveContent;
     }
@@ -266,13 +207,18 @@ class MatchAssessmentWorkflow {
     /**
      * @private
      * Builds the final structured report object from match data and AI summaries.
-     * @param {Object} matchData - The match data from criteria matching.
-     * @param {Object} aiSummaries - The AI summaries (dimensional and executive).
-     * @param {Object} sourceEntity - The source entity model.
-     * @param {Object} targetEntity - The target entity model.
+     * @param {Object} dto - The DTO containing all parameters.
+     * @param {Object} dto.matchData - The match data from criteria matching.
+     * @param {Object} dto.aiSummaries - The AI summaries (dimensional and executive).
+     * @param {number} dto.sourceEntityId - The source entity ID.
+     * @param {number} dto.targetEntityId - The target entity ID.
      * @returns {Object} The final report object.
+     * @socexplanation Refactored to enforce "Tell, Don't Ask" (ID-First Resolution). Stripped entity data-fetching from the macro-orchestrator to prevent parameter creep and maintain strict boundary encapsulation.
      */
-    _buildFinalReport(matchData, aiSummaries, sourceEntity, targetEntity) {
+    _buildFinalReport({ matchData, aiSummaries, sourceEntityId, targetEntityId }) {
+        const reqName = this._entityService.getEntityName(sourceEntityId);
+        const offName = this._entityService.getEntityName(targetEntityId);
+
         const allDimensions = this._dimensionRepo.getAllDimensions() || [];
         const dimensionDisplayNames = {};
         const dimensionIds = {};
@@ -288,10 +234,10 @@ class MatchAssessmentWorkflow {
         let singleSourceOfTruthReport = {
             ...matchData.rawComparison,
             _match_context: {
-                requirement_id: sourceEntity.id,
-                requirement_name: sourceEntity.name || "Requirement",
-                offering_id: targetEntity.id,
-                offering_name: targetEntity.name || "Offering",
+                requirement_id: sourceEntityId,
+                requirement_name: reqName,
+                offering_id: targetEntityId,
+                offering_name: offName,
                 overall_match_score: matchData.score,
                 total_requirements_checked: totalChecked,
                 missing_required_count: missingRequired
@@ -362,19 +308,19 @@ class MatchAssessmentWorkflow {
         this._fileService.writeJsonFile(reportPath, finalReport);
 
         this._matchService.registerDocumentRecord({
-            matchId,
+            entityId: matchId,
             docType: DOCUMENT_TYPES.MATCH_REPORT,
             fileName: reportFileName
         });
 
         const matchFiles = this._fileService.listFilesInFolder(matchFolderPath);
-        const existingDocs = this._matchService.getDocumentsForMatch(matchId);
+        const existingDocs = this._matchService.getDocuments(matchId);
 
         if (matchFiles.includes('ai_interactions.jsonl')) {
             const isRegistered = existingDocs.some(doc => doc.file_name === 'ai_interactions.jsonl');
             if (!isRegistered) {
                 this._matchService.registerDocumentRecord({
-                    matchId,
+                    entityId: matchId,
                     docType: DOCUMENT_TYPES.AI_DEBUG_LOG,
                     fileName: 'ai_interactions.jsonl'
                 });
@@ -385,7 +331,7 @@ class MatchAssessmentWorkflow {
             const isRegistered = existingDocs.some(doc => doc.file_name === 'activity.jsonl');
             if (!isRegistered) {
                 this._matchService.registerDocumentRecord({
-                    matchId,
+                    entityId: matchId,
                     docType: DOCUMENT_TYPES.ACTIVITY_LOG,
                     fileName: 'activity.jsonl'
                 });

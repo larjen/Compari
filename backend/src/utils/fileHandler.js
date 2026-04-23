@@ -37,8 +37,7 @@ const mimeTypeMap = {
 
 /**
  * Handles file download by streaming a file from the fileService to the HTTP response.
- * 
- * @param {Object} dto - Data Transfer Object containing all required parameters
+ * * @param {Object} dto - Data Transfer Object containing all required parameters
  * @param {Object} dto.fileService - The file service instance for file operations
  * @param {Object} dto.res - Express response object
  * @param {Object} dto.entity - The entity object containing the folder path
@@ -46,14 +45,14 @@ const mimeTypeMap = {
  * @param {string} [dto.folderPathKey='folderPath'] - The key to retrieve folder path from entity
  * @throws {AppError} If folder or file is not found
  */
-function handleFileDownload({ fileService, res, entity, fileName, folderPathKey = 'folderPath' }) {
+async function handleFileDownload({ fileService, res, entity, fileName, folderPathKey = 'folderPath' }) {
     const folderPath = entity[folderPathKey];
 
     if (!entity || !folderPath) {
         throw new AppError('Folder not found.', HTTP_STATUS.NOT_FOUND);
     }
 
-    const buffer = fileService.getFileBuffer(folderPath, fileName);
+    const buffer = await fileService.getFileBuffer(folderPath, fileName);
     if (!buffer) {
         throw new AppError('File not found on disk.', HTTP_STATUS.NOT_FOUND);
     }

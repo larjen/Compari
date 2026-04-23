@@ -22,7 +22,7 @@
  * and follows the DTO pattern for dependency injection.
  */
 
-const { AI_MODEL_ROLES, ENTITY_ROLES, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
+const { AI_MODEL_ROLES, ENTITY_TYPES, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 const fs = require('fs');
 const path = require('path');
 
@@ -107,8 +107,8 @@ function seedAiModels(db, logger) {
             context_window: 200000
         },
         {
-            name: 'Gemini 1.5 Pro',
-            model_identifier: 'gemini-1.5-pro',
+            name: 'Gemini 3 Flash Preview',
+            model_identifier: 'gemini-3-flash-preview',
             api_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
             api_key: null,
             role: AI_MODEL_ROLES.CHAT,
@@ -118,8 +118,8 @@ function seedAiModels(db, logger) {
             context_window: 2000000
         },
         {
-            name: 'Gemini 1.5 Flash',
-            model_identifier: 'gemini-1.5-flash',
+            name: 'Gemini 3.1 Pro Preview',
+            model_identifier: 'gemini-3.1-pro-preview',
             api_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
             api_key: null,
             role: AI_MODEL_ROLES.CHAT,
@@ -129,8 +129,8 @@ function seedAiModels(db, logger) {
             context_window: 1000000
         },
         {
-            name: 'Gemini Text Embedding 004',
-            model_identifier: 'text-embedding-004',
+            name: 'Gemini Embedding 2',
+            model_identifier: 'gemini-embedding-2',
             api_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
             api_key: null,
             role: AI_MODEL_ROLES.EMBEDDING,
@@ -294,7 +294,7 @@ function seedBlueprints(db, logger) {
     ];
 
     for (const field of requirementFields) {
-        insertField.run(blueprintId, field.field_name, field.field_type, field.description, field.is_required, ENTITY_ROLES.REQUIREMENT);
+        insertField.run(blueprintId, field.field_name, field.field_type, field.description, field.is_required, ENTITY_TYPES.REQUIREMENT);
     }
 
     const offeringFields = [
@@ -305,7 +305,7 @@ function seedBlueprints(db, logger) {
     ];
 
     for (const field of offeringFields) {
-        insertField.run(blueprintId, field.field_name, field.field_type, field.description, field.is_required, ENTITY_ROLES.OFFERING);
+        insertField.run(blueprintId, field.field_name, field.field_type, field.description, field.is_required, ENTITY_TYPES.OFFERING);
     }
 
     for (const dim of dimensions) {
@@ -342,7 +342,8 @@ function seedSettings(db, logger) {
         { key: 'model_routing_embedding', value: '3' },
         { key: 'model_routing_metadata', value: '1' },
         { key: 'allow_concurrent_ai', value: 'false' },
-        { key: 'use_ai_cache', value: 'true' }
+        { key: 'use_ai_cache', value: 'true' },
+        { key: 'debug_mode', value: 'false' }
     ];
 
     const stmt = db.prepare(`
@@ -377,7 +378,16 @@ function seedPrompts(db, logger) {
             const filePath = path.join(promptsDir, filename);
             return fs.readFileSync(filePath, 'utf-8');
         } catch (err) {
-            logger.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'Seeder', message: `Failed to read prompt file ${filename}: ${err.message}` });
+            /** * @socexplanation 
+             * Stack trace preservation enforced during database seeding.
+             */
+            logger.logTerminal({
+                status: LOG_LEVELS.WARN,
+                symbolKey: LOG_SYMBOLS.WARNING,
+                origin: 'Seeder',
+                message: `Failed to read prompt file ${filename}`,
+                errorObj: err
+            });
             return null;
         }
     };

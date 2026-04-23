@@ -8,7 +8,7 @@
  * @property {number|null} requirementId - Foreign key to the associated requirement
  * @property {number|null} offeringId - Foreign key to the associated offering
  * @property {number|null} matchScore - Calculated match score between requirement and offering
- * @property {string|null} reportPath - Path to the generated match report file
+ * @property {string|null} reportPath - Virtual property populated from the documents table
  */
 class MatchEntity extends require('./BaseEntity') {
     constructor(data = {}) {

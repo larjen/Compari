@@ -15,7 +15,8 @@
 const express = require('express');
 const router = express.Router();
 
-const { entityController } = require('../config/container').getContainer();
+const container = require('../config/container').getContainer();
+const entityController = container.resolve('entityController');
 const { uploadDocument } = require('../middlewares/uploadMiddleware');
 const { validate } = require('../middlewares/validateZod');
 const { entitySchema, extractSchema } = require('../validators/schemas');
@@ -36,7 +37,7 @@ router.post('/:id/upload-multiple', uploadDocument.array('documents'), entityCon
 
 router.get('/:id/files', entityController.getFiles);
 
-router.get('/:id/files/:filename', entityController.downloadFile);
+router.get('/:id/files/:filename', entityController.getFile);
 
 router.get('/:id/matches', entityController.getMatches);
 
@@ -50,6 +51,10 @@ router.post('/:id/folder/open', entityController.openFolder);
 
 router.get('/:id/top-matches', entityController.getTopMatches);
 
-router.post('/:id/retry', entityController.retryProcessing);
+router.post('/:id/retry', entityController.retry);
+
+router.post('/:id/master-file', entityController.writeMasterFile);
+
+router.get('/:id/master-file', entityController.getMasterFile);
 
 module.exports = router;

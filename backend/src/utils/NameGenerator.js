@@ -33,6 +33,17 @@
 const MAX_NAME_LENGTH = 200;
 
 /**
+ * Sanitizes a string to ensure it is safe for use as a file or folder name across OS platforms.
+ * Replaces invalid characters (\ / : * ? " < > |) with a hyphen.
+ * @param {string} name - The raw name
+ * @returns {string} The sanitized name
+ */
+function sanitizeForFileSystem(name) {
+    if (!name) return 'Unknown';
+    return String(name).replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Generates a human-friendly display name ("nice_name") by combining values from required blueprint fields.
  * @public
  * @param {Object} parsedMetadata - The extracted metadata object from AI processing.
@@ -101,6 +112,8 @@ function injectNiceName(parsedMetadata, blueprintFields) {
         }
     }
 
+    nicename = sanitizeForFileSystem(nicename);
+
     return {
         ...parsedMetadata,
         nicename,
@@ -110,5 +123,6 @@ function injectNiceName(parsedMetadata, blueprintFields) {
 }
 
 module.exports = {
-    injectNiceName
+    injectNiceName,
+    sanitizeForFileSystem
 };

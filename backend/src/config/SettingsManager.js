@@ -72,8 +72,7 @@ class SettingsManager {
     /**
      * Retrieves all settings from the database.
      * Queries all rows from the settings table and returns them as a key-value object.
-     * 
-     * @method getAll
+     * * @method getAll
      * @memberof SettingsManager
      * @returns {Object} Object mapping setting keys to their values.
      */
@@ -83,6 +82,7 @@ class SettingsManager {
         for (const [key, value] of this._cache) {
             settings[key] = value;
         }
+
         return settings;
     }
 
@@ -138,9 +138,7 @@ class SettingsManager {
      * testability by allowing mock AiService instances to be injected.
      */
     async testAiConnection(message, aiServiceInstance) {
-        const host = this.get('ollama_host');
-        const model = this.get('ollama_model');
-        return await aiServiceInstance.testChat(message, host, model);
+        return await aiServiceInstance.testChat(message);
     }
 }
 

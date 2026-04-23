@@ -18,6 +18,7 @@ interface DialogProps {
   bottomContent?: ReactNode;
   children: ReactNode;
   className?: string;
+  autoHeight?: boolean;
 }
 
 export function Dialog({ 
@@ -29,7 +30,8 @@ export function Dialog({
   topContent,
   bottomContent,
   children, 
-  className 
+  className,
+  autoHeight = false
 }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -52,7 +54,7 @@ export function Dialog({
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-8">
+        <div className={cn("fixed inset-0 z-50 flex items-center justify-center", autoHeight ? "p-4 md:p-8" : "p-0 md:p-8")}>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -68,8 +70,9 @@ export function Dialog({
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ duration: 0.2 }}
             className={cn(
-              'relative flex flex-col overflow-hidden w-full h-dvh md:w-full md:max-w-5xl md:h-full',
-              'md:rounded-2xl bg-white/95 backdrop-blur-md md:shadow-2xl border border-border-light md:border-none',
+              'relative flex flex-col overflow-hidden w-full md:max-w-5xl',
+              autoHeight ? 'h-auto max-h-[95vh] rounded-2xl shadow-2xl' : 'h-dvh md:h-full md:rounded-2xl md:shadow-2xl',
+              'bg-white/95 backdrop-blur-md border border-border-light md:border-none',
               className
             )}
           >
@@ -91,7 +94,7 @@ export function Dialog({
                   {status}
                   <button
                     onClick={onClose}
-                    className="p-1.5 rounded-lg text-accent-forest/60 hover:text-accent-forest hover:bg-accent-sand/20 transition-colors"
+                    className="p-1.5 rounded-lg text-accent-forest/60 hover:text-accent-forest hover:bg-accent-sand/20 cursor-pointer transition-colors"
                   >
                     <DOMAIN_ICONS.CLOSE className="w-5 h-5" />
                   </button>

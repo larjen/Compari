@@ -21,8 +21,7 @@
  */
 const MarkdownGenerator = require('../utils/MarkdownGenerator');
 const NameGenerator = require('../utils/NameGenerator');
-const { processAiTasks } = require('../utils/asyncHandler');
-const { DOCUMENT_TYPES, ENTITY_STATUS, ENTITY_ROLES, AI_TASK_TYPES, LOG_LEVELS, LOG_SYMBOLS, SETTING_KEYS } = require('../config/constants');
+const { DOCUMENT_TYPES, ENTITY_STATUS, ENTITY_TYPES, AI_TASK_TYPES, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
 const path = require('path');
 
 class DocumentProcessorWorkflow {
@@ -39,6 +38,7 @@ class DocumentProcessorWorkflow {
      * @param {Object} deps.logService - The LogService instance
      * @param {Object} deps.queueService - The QueueService instance
      * @param {Object} deps.criteriaManagerWorkflow - The CriteriaManagerWorkflow instance
+     * @param {Object} deps.criteriaService - The CriteriaService instance
      * @param {Object} deps.blueprintRepo - The BlueprintRepo instance
      * @param {Object} deps.entityRepo - The EntityRepo instance
      * @param {Object} deps.dynamicSchemaBuilder - The DynamicSchemaBuilder instance
@@ -46,9 +46,10 @@ class DocumentProcessorWorkflow {
      * @param {Object} deps.metadataMapper - The MetadataMapper instance
      * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
      */
-    constructor({ entityService, fileService, settingsManager, aiService, aiValidatorService, eventService, logService, queueService, criteriaManagerWorkflow, blueprintRepo, entityRepo, dynamicSchemaBuilder, promptBuilder, metadataMapper }) {
+    constructor({ entityService, fileService, pdfService, settingsManager, aiService, aiValidatorService, eventService, logService, queueService, criteriaManagerWorkflow, criteriaService, blueprintRepo, entityRepo, dynamicSchemaBuilder, promptBuilder, metadataMapper }) {
         this._entityService = entityService;
         this._fileService = fileService;
+        this._pdfService = pdfService;
         this._settingsManager = settingsManager;
         this._aiService = aiService;
         this._aiValidatorService = aiValidatorService;
@@ -56,6 +57,7 @@ class DocumentProcessorWorkflow {
         this._logService = logService;
         this._queueService = queueService;
         this._criteriaManagerWorkflow = criteriaManagerWorkflow;
+        this._criteriaService = criteriaService;
         this._blueprintRepo = blueprintRepo;
         this._entityRepo = entityRepo;
         this._dynamicSchemaBuilder = dynamicSchemaBuilder;
@@ -87,19 +89,19 @@ class DocumentProcessorWorkflow {
      * - ✅ Saves raw-extraction.txt to the CURRENT folderPath (staging).
      */
     async parseDocumentContent(payload) {
-        const { entityId, folderPath, fileName } = payload;
+        const { entityId, fileName } = payload;
         const fileService = this._fileService;
+        const pdfService = this._pdfService;
 
-        this._entityService.updateMetadata(entityId, { processingStartedAt: new Date().toISOString() });
+        this._entityService.resetProcessingTimer(entityId);
 
-        if (!folderPath || typeof folderPath !== 'string') {
-            throw new Error(`Invalid folderPath provided for entity #${entityId}. Expected string, received ${typeof folderPath}.`);
+        const filePath = this._entityService.resolveEntityFilePath(entityId, fileName);
+        if (!filePath) {
+            throw new Error(`Could not resolve folder path for entity #${entityId}.`);
         }
         if (!fileName || typeof fileName !== 'string') {
             throw new Error(`Invalid fileName provided for entity #${entityId}. Expected string, received ${typeof fileName}.`);
         }
-
-        const filePath = path.join(folderPath, fileName);
 
         if (!fileService.validatePath(filePath)) {
             const error = new Error(`File not found at path: ${filePath}. The file was not moved correctly during upload.`);
@@ -107,7 +109,14 @@ class DocumentProcessorWorkflow {
             throw error;
         }
 
-        const rawText = await fileService.extractTextFromFile(filePath);
+        let rawText;
+        const ext = path.extname(fileName).toLowerCase();
+        if (ext === '.pdf') {
+            const dataBuffer = await fileService.readBuffer(filePath);
+            rawText = await pdfService.extractTextFromPDF(dataBuffer);
+        } else {
+            rawText = await fileService.readTextFile(filePath);
+        }
 
         if (!this._aiValidatorService.validateInputText(rawText, `Entity #${entityId} PDF extraction`)) {
             const error = new Error('PDF appears to be empty or unreadable. Cannot proceed with extraction.');
@@ -115,14 +124,10 @@ class DocumentProcessorWorkflow {
             throw error;
         }
 
-        const entity = this._entityRepo.getEntityById(entityId);
-        if (!entity) {
-            const error = new Error(`Entity #${entityId} not found.`);
-            error.isFatalClientError = true;
-            throw error;
-        }
+        this._entityService.assertExists(entityId);
 
-        fileService.saveTextFile(folderPath, 'raw-extraction.txt', rawText);
+        const folderPath = this._entityService.getEntityFolderPath(entityId);
+        await fileService.saveTextFile(folderPath, 'raw-extraction.txt', rawText);
 
         return entityId;
     }
@@ -140,30 +145,26 @@ class DocumentProcessorWorkflow {
      * @param {string} payload.fileName - The name of the original uploaded document file.
      * @param {AbortSignal} [signal] - Optional signal to abort the AI generation.
      * @returns {Promise<number>} The entity ID.
+     * @socexplanation Refactored to enforce "Tell, Don't Ask" (ID-First Resolution). Stripped entity data-fetching from the macro-orchestrator to prevent parameter creep and maintain strict boundary encapsulation.
      */
     async extractVerbatimText(payload, signal) {
-        const { entityId, folderPath } = payload;
-        const fileService = this._fileService;
+        const { entityId } = payload;
 
-        const rawText = fileService.readTextFile(path.join(folderPath, 'raw-extraction.txt'));
+        const rawTextFilePath = this._entityService.resolveEntityFilePath(entityId, 'raw-extraction.txt');
+        if (!rawTextFilePath) {
+            throw new Error(`Could not resolve folder path for entity #${entityId}.`);
+        }
+
+        const rawText = await this._fileService.readTextFile(rawTextFilePath);
+        const folderPath = this._entityService.getEntityFolderPath(entityId);
         const markdownMessages = this._promptBuilder.buildMarkdownExtractionMessages(rawText);
 
         const { content: verbatimPosting } = await this._aiService.generateChatResponse(
             markdownMessages,
-            { logFolderPath: folderPath, logAction: `Extracted verbatim profile for Entity #${entityId}.`, signal }
+            { taskType: AI_TASK_TYPES.GENERAL, logFolderPath: folderPath, logAction: `Extracted verbatim profile for Entity #${entityId}.`, signal }
         );
 
-        const entity = this._entityRepo.getEntityById(entityId);
-        const entityTitle = entity?.nicename || 'Unknown Title';
-        const entityDescription = entity?.description || 'Unknown Organization';
-
-        const mdContent = MarkdownGenerator.generateEntityProfile(entityTitle, entityDescription, {
-            rawText,
-            verbatimPosting
-        });
-
-        // Save the generated profile as verbatim_extraction.md
-        fileService.saveTextFile(folderPath, 'verbatim_extraction.md', mdContent);
+        await this._entityService.generateAndSaveVerbatimProfile(entityId, rawText, verbatimPosting);
 
         return entityId;
     }
@@ -183,22 +184,29 @@ class DocumentProcessorWorkflow {
      * @returns {Promise<number>} The entity ID.
      */
     async extractEntityMetadata(payload, signal) {
-        const { entityId, folderPath, fileName } = payload;
+        const { entityId, fileName } = payload;
         const fileService = this._fileService;
 
-        const rawText = fileService.readTextFile(path.join(folderPath, 'raw-extraction.txt'));
+        const rawTextFilePath = this._entityService.resolveEntityFilePath(entityId, 'raw-extraction.txt');
+        if (!rawTextFilePath) {
+            throw new Error(`Could not resolve folder path for entity #${entityId}.`);
+        }
 
-        const entity = this._entityRepo.getEntityById(entityId);
-        const entityRole = entity?.entityType || ENTITY_ROLES.OFFERING;
+        const rawText = await fileService.readTextFile(rawTextFilePath);
+        const folderPath = this._entityService.getEntityFolderPath(entityId);
+
+        const entityRole = this._entityService.getEntityRole(entityId);
+        const blueprintId = this._entityService.getEntityBlueprintId(entityId);
+        const existingMetadata = this._entityService.getEntityMetadata(entityId);
 
         let blueprintFields = [];
         let blueprintName = 'Entity';
 
-        if (entity?.blueprintId) {
-            const blueprint = this._blueprintRepo.getBlueprintById(entity.blueprintId);
+        if (blueprintId) {
+            const blueprint = this._blueprintRepo.getBlueprintById(blueprintId);
             if (blueprint) {
-                blueprintName = entityRole === ENTITY_ROLES.REQUIREMENT ? blueprint.requirementLabelSingular : blueprint.offeringLabelSingular;
-                blueprintFields = this._blueprintRepo.getBlueprintFields(entity.blueprintId, entityRole);
+                blueprintName = entityRole === ENTITY_TYPES.REQUIREMENT ? blueprint.requirementLabelSingular : blueprint.offeringLabelSingular;
+                blueprintFields = this._blueprintRepo.getBlueprintFields(blueprintId, entityRole);
             }
         }
 
@@ -229,27 +237,21 @@ class DocumentProcessorWorkflow {
                         dynamicMetadata[fieldName] = parsed[fieldName];
                     }
                 } catch (err) {
-                    this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'DocumentProcessorWorkflow', message: `Failed to extract field '${fieldName}' for Entity #${entityId}: ${err.message}` });
+                    /** @socexplanation Added errorObj to prevent swallowed stack traces. */
+                    this._logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'DocumentProcessorWorkflow', message: `Failed to extract field '${fieldName}' for Entity #${entityId}`, errorObj: err });
                     throw err;
                 }
             });
             tasks.push(...metadataTasks);
         }
 
-        const allowConcurrent = this._settingsManager.get(SETTING_KEYS.ALLOW_CONCURRENT_AI) === 'true';
-
         if (tasks.length > 0) {
-            await processAiTasks(
-                tasks,
-                async (task) => await task(),
-                allowConcurrent
-            );
+            await this._aiService.executeParallelTasks(tasks, `Extracted metadata fields for Entity #${entityId}`);
         }
 
         let assembledMetadata = {
-            ...(entity?.metadata || {}),
-            ...dynamicMetadata,
-            folderPath
+            ...existingMetadata,
+            ...dynamicMetadata
         };
 
         const finalMetadata = NameGenerator.injectNiceName(assembledMetadata, blueprintFields);
@@ -263,8 +265,6 @@ class DocumentProcessorWorkflow {
                 niceNameLine2: finalMetadata.niceNameLine2
             });
         }
-
-        this._entityService.updateFolderPath(entityId, folderPath);
 
         // Register the original uploaded file as a supporting document
         this._entityService.registerDocumentRecord({
@@ -315,17 +315,17 @@ class DocumentProcessorWorkflow {
      * - Any exceptions from atomic methods are caught here and transformed into FAILED status.
      */
     async processDocument(payload, signal) {
-        const { entityId, folderPath } = payload;
+        const { entityId } = payload;
 
         try {
             this._entityService.updateState(entityId, { status: ENTITY_STATUS.PARSING_DOCUMENT });
-            await this.parseDocumentContent(payload, signal);
+            await this.parseDocumentContent({ entityId, fileName: payload.fileName }, signal);
 
             this._entityService.updateState(entityId, { status: ENTITY_STATUS.EXTRACTING_VERBATIM_TEXT });
-            await this.extractVerbatimText(payload, signal);
+            await this.extractVerbatimText({ entityId }, signal);
 
             this._entityService.updateState(entityId, { status: ENTITY_STATUS.EXTRACTING_METADATA });
-            await this.extractEntityMetadata(payload, signal);
+            await this.extractEntityMetadata({ entityId, fileName: payload.fileName }, signal);
 
             this._entityService.updateState(entityId, { status: ENTITY_STATUS.EXTRACTING_CRITERIA });
             await this._criteriaManagerWorkflow.extractEntityCriteria({ entityId, fileName: 'raw-extraction.txt', isNewUpload: true }, signal);
@@ -337,7 +337,7 @@ class DocumentProcessorWorkflow {
             await this._criteriaManagerWorkflow.mergeEntityCriteria({ entityId, isNewUpload: true }, signal);
 
             this._entityService.updateState(entityId, { status: ENTITY_STATUS.MOVING_TO_VAULT });
-            await this.finalizeEntityWorkspace({ entityId, folderPath }, signal);
+            await this.finalizeEntityWorkspace({ entityId }, signal);
 
             this._entityService.updateState(entityId, { status: ENTITY_STATUS.COMPLETED });
 
@@ -351,51 +351,53 @@ class DocumentProcessorWorkflow {
     /**
      * Atomized Step FINAL: Finalizes the entity workspace by moving the folder from staging to the vault.
      * Generates the dynamic master document matching the folder name and injects a UI deeplink.
+     * Includes Wiki Links to associated criteria for Obsidian vault traversal.
+     * @socexplanation Refactored to delegate master file I/O and DB updates to BaseEntityService.generateAndSaveMasterDocument, strictly enforcing DRY. Also enforces "Tell, Don't Ask" by using entity from callback.
      */
     async finalizeEntityWorkspace(payload) {
-        const { entityId, folderPath } = payload;
-
-        const entity = this._entityRepo.getEntityById(entityId);
-        if (!entity) {
-            throw new Error(`Entity #${entityId} not found.`);
-        }
-
-        const line1 = entity.niceNameLine1 || entity.nicename || 'Unknown';
-        const line2 = entity.niceNameLine2 || 'Unknown';
-        const entityType = entity.entityType;
+        const { entityId } = payload;
 
         // 1. Move to permanent vault
-        const finalFolderPath = this._fileService.finalizeWorkspace({ entityType, line1, line2, currentStagingPath: folderPath });
+        const finalFolderPath = this._entityService.finalizeEntityWorkspace(entityId);
 
-        this._entityService.updateFolderPath(entityId, finalFolderPath);
+        // 2. NOW fetch associated criteria for Wiki Links
+        const criteria = this._criteriaService.getCriteriaForEntity(entityId);
+        const criteriaFolderNames = criteria.map(c => this._criteriaService.getCleanLinkName(c));
 
-        // 2. Generate dynamic master document named after the folder
-        const finalFolderName = require('path').basename(finalFolderPath);
-        const finalFileName = `${finalFolderName}.md`;
-        
-        const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
-        const route = entityType === 'requirement' ? 'requirements' : 'offerings';
-        const deeplink = `${baseUrl}/${route}?id=${entityId}`;
-        
-        const mdContent = `# ${finalFolderName}\n\n**[View Entity in Compari](${deeplink})**\n`;
-        this._fileService.saveTextFile(finalFolderPath, finalFileName, mdContent);
+        const allFiles = this._fileService.listFilesInFolder(finalFolderPath) || [];
+        const associatedFiles = allFiles.filter(f => 
+            (f.endsWith('.md') || f.endsWith('.json'))
+        );
 
-        // 3. Register and update DB records
+        // 3. Generate dynamic master document and update database via centralized lifecycle
+        const finalFileName = await this._entityService.generateAndSaveMasterDocument(entityId, ({ entity, folderName }) => {
+            const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+            const route = entity.entityType === 'requirement' ? 'requirements' : 'offerings';
+            const deeplink = `${baseUrl}/${route}?id=${entity.id}`;
+
+            return MarkdownGenerator.generateEntityMaster({
+                entityFolderName: folderName,
+                entityType: entity.entityType,
+                criteriaFolderNames,
+                deeplink,
+                associatedFiles
+            });
+        });
+
+        // 4. Register document record
         this._entityService.registerDocumentRecord({
             entityId,
             docType: DOCUMENT_TYPES.MASTER_DOCUMENT,
             fileName: finalFileName
         });
 
-        this._entityService.updateMasterFile(entityId, finalFileName);
-
-        this._logService.addActivityLog({
-            entityType: 'Entity',
-            entityId,
+        this._entityService.logActivity(entityId, {
             logType: LOG_LEVELS.INFO,
-            message: `Entity workspace finalized. Moved to vault: ${finalFolderPath}`,
-            folderPath: finalFolderPath
+            message: `Entity workspace finalized. Moved to vault: ${finalFolderPath}`
         });
+
+        // 5. Generate/Update Criteria Vaults with the finalized Entity paths
+        await this._criteriaManagerWorkflow.generateCriterionVaults(entityId);
 
         return entityId;
     }

@@ -97,7 +97,30 @@ Every JSDoc block MUST include:
   }
   ```
 
-### B. Hook Lifecycle Management
+### B. Unified File Hooks & Standardized Modals
+
+**THE LAW:** All entity file management must follow the unified hooks pattern to ensure consistency across all entity types.
+
+* **Unified File Hooks:** All entity file operations **MUST** use the unified file hook pattern (`useCriteriaFiles`, `useEntityFiles`) located in `@/hooks/useEntityData`.
+  * **Rule:** Developers and AI agents **MUST NOT** create entity-specific file fetching hooks. Use the shared hooks for all entities.
+  * **Rationale:** Centralizing file operations ensures consistent behavior, reduces code duplication, and prevents path resolution bugs.
+
+* **Standardized Modals:** All entity detail modals (`EntityDetailModal`, `MatchDetailModal`, `CriterionDetailModal`) **MUST** use the shared `FilesTabContent` component.
+  * **Rule:** Modals MUST pass file data exclusively from the unified hooks, **NEVER** relying on associated target/source entities for folder paths.
+  * **Violation Example:**
+    ```typescript
+    // ❌ STRICTLY FORBIDDEN - Deriving folder paths from associated entities
+    const folderPath = entity.type === 'requirement'
+      ? associatedTarget?.folderPath
+      : associatedSource?.folderPath;
+    ```
+  * **Correct Implementation:**
+    ```typescript
+    // ✅ MANDATORY - Use unified hook for file data
+    const { files, getFile, openFolder } = useEntityFiles(entityId, entity.folderPath);
+    ```
+
+### C. Hook Lifecycle Management
 
 * **Rule:** Individual entity hooks (e.g., `useEntities`, `useMatches`) **MUST NOT** manually orchestrate `useSafeFetch`, `useSSE`, and `useProcessingWatchdog`.
 * **Enforcement:** All entity collection hooks **MUST** use the generic `useManagedCollection` hook to handle the HTTP, real-time update, and background polling triad.

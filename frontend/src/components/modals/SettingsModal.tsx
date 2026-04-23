@@ -86,6 +86,8 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
   const [logAiInteractions, setLogAiInteractions] = useState<boolean>(false);
   const [aiVerifyMerges, setAiVerifyMerges] = useState<boolean>(true);
   const [allowConcurrentAi, setAllowConcurrentAi] = useState<boolean>(false);
+  const [useAiCache, setUseAiCache] = useState<boolean>(true);
+  const [debugMode, setDebugMode] = useState<boolean>(false);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingModel, setEditingModel] = useState<AiModel | null>(null);
@@ -129,6 +131,12 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
       }
       if (settings.allow_concurrent_ai) {
         setAllowConcurrentAi(settings.allow_concurrent_ai === 'true');
+      }
+      if (settings.use_ai_cache) {
+        setUseAiCache(settings.use_ai_cache === 'true');
+      }
+      if (settings.debug_mode !== undefined) {
+        setDebugMode(settings.debug_mode === 'true');
       }
     }
   }, [settings]);
@@ -203,6 +211,38 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
       onSuccess('Concurrency setting updated successfully');
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Failed to save concurrency setting');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /**
+   * Auto-saves the use_ai_cache toggle to the backend immediately when toggled.
+   * @description
+   * SoC: Delegates success feedback to the global toast system via the onSuccess callback,
+   * isolating the UI toggle state from API persistence.
+   * @param {boolean} newValue - The boolean state to save
+   * @returns {Promise<void>}
+   */
+  const handleAutoSaveAiCache = async (newValue: boolean) => {
+    setSaving(true);
+    try {
+      await updateSetting(SETTING_KEYS.USE_AI_CACHE, newValue.toString());
+      onSuccess('AI Cache setting updated successfully');
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Failed to save AI Cache setting');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAutoSaveDebugMode = async (newValue: boolean) => {
+    setSaving(true);
+    try {
+      await updateSetting(SETTING_KEYS.DEBUG_MODE, newValue.toString());
+      onSuccess('Debug mode updated successfully');
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Failed to save debug mode setting');
     } finally {
       setSaving(false);
     }
@@ -323,6 +363,7 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
             icon={DOMAIN_ICONS.DATABASE}
             title="Threshold for merging Criteria"
             description="Set the similarity threshold for automatically merging similar criteria, when a new criteria has been extracted."
+            layout="column"
           >
             <PercentageSlider
               value={thresholdInput}
@@ -337,6 +378,7 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
             icon={DOMAIN_ICONS.DATABASE}
             title="Minimum Match Floor"
             description="Set the minimum similarity percentage required for a criteria to be considered a partial match."
+            layout="column"
           >
             <PercentageSlider
               value={minFloorInput}
@@ -349,6 +391,7 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
             icon={DOMAIN_ICONS.DATABASE}
             title="Perfect Match Score"
             description="Set the similarity percentage at which a match is considered a perfect match."
+            layout="column"
           >
             <PercentageSlider
               value={perfectScoreInput}
@@ -395,6 +438,34 @@ export function SettingsModal({ open, onClose, onSuccess, onError }: SettingsMod
               onChange={(checked) => {
                 setAllowConcurrentAi(checked);
                 handleAutoSaveConcurrentAi(checked);
+              }}
+            />
+          </SettingsCard>
+
+          <SettingsCard
+            icon={DOMAIN_ICONS.DATABASE}
+            title="Use AI Cache"
+            description="Cache AI responses locally to speed up identical requests and save on API costs. Disable to force fresh AI generations."
+          >
+            <ToggleSwitch
+              checked={useAiCache}
+              onChange={(checked) => {
+                setUseAiCache(checked);
+                handleAutoSaveAiCache(checked);
+              }}
+            />
+          </SettingsCard>
+
+          <SettingsCard
+            icon={DOMAIN_ICONS.SETTINGS}
+            title="Debug Mode"
+            description="Enable verbose logging for debugging and development."
+          >
+            <ToggleSwitch
+              checked={debugMode}
+              onChange={(checked) => {
+                setDebugMode(checked);
+                handleAutoSaveDebugMode(checked);
               }}
             />
           </SettingsCard>

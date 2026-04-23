@@ -35,6 +35,10 @@ interface UseEntityOperations {
   ) => Promise<void>;
   deleteWithToast: (id: number, onSuccess: () => void) => Promise<void>;
   retryWithToast: (id: number, onSuccess: () => void) => Promise<void>;
+  updateWithToast: (id: number, data: Partial<CreateEntityData>, successMessage?: string) => Promise<void>;
+  writeMasterFileWithToast: (id: number, onSuccess: () => void) => Promise<void>;
+  openFolderWithToast: (id: number) => Promise<void>;
+  fetchMasterFileWithToast: (id: number) => Promise<string>;
 }
 
 export function useEntityOperations({ deleteEntityFn }: UseEntityOperationsOptions = {}): UseEntityOperations {
@@ -66,7 +70,6 @@ export function useEntityOperations({ deleteEntityFn }: UseEntityOperationsOptio
               await entityApi.uploadFile(entityId, file);
               successCount++;
             } catch (fileErr) {
-              console.error(`Failed to create entity from file ${file.name}:`, fileErr);
               failCount++;
             }
           }
@@ -114,8 +117,58 @@ export function useEntityOperations({ deleteEntityFn }: UseEntityOperationsOptio
         addToast(TOAST_TYPES.SUCCESS, 'Task queued for retry');
         onSuccess();
       } catch (err) {
-        console.error('Failed to retry:', err);
         addToast(TOAST_TYPES.ERROR, 'Failed to retry task');
+      }
+    },
+    [addToast]
+  );
+
+  const updateWithToast = useCallback(
+    async (id: number, data: Partial<CreateEntityData>, successMessage = 'Updated successfully'): Promise<void> => {
+      try {
+        await entityApi.updateEntity(id, data);
+        addToast(TOAST_TYPES.SUCCESS, successMessage);
+      } catch (err) {
+        addToast(TOAST_TYPES.ERROR, 'Failed to update entity');
+        throw err;
+      }
+    },
+    [addToast]
+  );
+
+  const writeMasterFileWithToast = useCallback(
+    async (id: number, onSuccess: () => void): Promise<void> => {
+      try {
+        await entityApi.writeMasterFile(id);
+        addToast(TOAST_TYPES.SUCCESS, 'Master file written');
+        onSuccess();
+      } catch (err) {
+        addToast(TOAST_TYPES.ERROR, 'Failed to write master file');
+      }
+    },
+    [addToast]
+  );
+
+  const openFolderWithToast = useCallback(
+    async (id: number): Promise<void> => {
+      try {
+        await entityApi.openFolder(id);
+      } catch (err) {
+        addToast(TOAST_TYPES.ERROR, 'Failed to open folder on server');
+      }
+    },
+    [addToast]
+  );
+
+  const fetchMasterFileWithToast = useCallback(
+    async (id: number): Promise<string> => {
+      try {
+        const content = await entityApi.getMasterFile(id);
+        addToast(TOAST_TYPES.SUCCESS, 'Master file refreshed');
+        return content || '';
+      } catch (err) {
+        addToast(TOAST_TYPES.ERROR, 'Failed to fetch master file');
+        throw err;
       }
     },
     [addToast]
@@ -125,5 +178,9 @@ export function useEntityOperations({ deleteEntityFn }: UseEntityOperationsOptio
     bulkCreateFromFiles,
     deleteWithToast,
     retryWithToast,
+    updateWithToast,
+    writeMasterFileWithToast,
+    openFolderWithToast,
+    fetchMasterFileWithToast
   };
 }

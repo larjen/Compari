@@ -37,7 +37,7 @@ import { SSEEntityUpdate, SSEMatchUpdate } from '@/lib/types';
 /**
  * Configuration for the fetch function.
  */
-export interface ManagedCollectionFetchConfig {
+interface ManagedCollectionFetchConfig {
   /** Page number for pagination */
   page?: number;
   /** Number of items per page */
@@ -53,7 +53,7 @@ export interface ManagedCollectionFetchConfig {
 /**
  * SSE event handlers configuration.
  */
-export interface ManagedCollectionSSEConfig {
+interface ManagedCollectionSSEConfig {
   /** Handler for entity update events */
   onEntityUpdate?: (data: SSEEntityUpdate) => void;
   /** Handler for match update events */
@@ -63,7 +63,7 @@ export interface ManagedCollectionSSEConfig {
 /**
  * Watchdog configuration options.
  */
-export interface ManagedCollectionWatchdogConfig {
+interface ManagedCollectionWatchdogConfig {
   /** Whether to enable the processing watchdog (default: true) */
   enabled?: boolean;
 }
@@ -73,7 +73,7 @@ export interface ManagedCollectionWatchdogConfig {
  * @template T - The API response type containing the items array.
  * @template I - The individual item type in the collection.
  */
-export interface UseManagedCollectionOptions<T, I> {
+interface UseManagedCollectionOptions<T, I> {
   /** The fetch function that returns the API response */
   fetchFn: () => Promise<T>;
   /** Function to extract the items array from the API response */
@@ -91,7 +91,7 @@ export interface UseManagedCollectionOptions<T, I> {
  * @template T - The API response type.
  * @template I - The individual item type.
  */
-export interface UseManagedCollectionReturn<T, I> {
+interface UseManagedCollectionReturn<T, I> {
   /** The raw API response data */
   data: T | null;
   /** The extracted items array */
@@ -184,7 +184,7 @@ export function useManagedCollection<T extends { meta?: { totalPages?: number } 
  * (like 'processing', 'completed', 'failed') to their constituent status values
  * before making the API call. This prevents duplication across domain hooks.
  */
-export function createStatusResolvedFetch<T>(
+function createStatusResolvedFetch<T>(
   fetchFn: (params: { status?: string }) => Promise<T>,
   getParams: () => { status?: string }
 ): () => Promise<T> {

@@ -32,9 +32,10 @@ const shouldWipe = process.argv.includes('--wipe') || process.env.WIPE_DATA === 
 if (shouldWipe) {
     try {
         const FileService = require('./src/services/FileService');
-        const fileService = new FileService({ pdfService: null, logService: null });
+        const fileService = new FileService();
         fileService.wipeWorkspace();
     } catch (err) {
+        // eslint-disable-next-line no-console
         console.error('[FATAL] Phase 0 Failed: Could not wipe workspace:', err.message);
         process.exit(1);
     }
@@ -45,11 +46,15 @@ if (shouldWipe) {
 // Initialize all directories in the data folder BEFORE any other operations.
 // This ensures Database, Applications, Career Archive, etc. directories exist.
 
+const FileService = require('./src/services/FileService');
+const LogService = require('./src/services/LogService');
+const bootFileService = new FileService();
+const bootLogger = new LogService({ fileService: bootFileService });
+
 try {
-    const FileService = require('./src/services/FileService');
-    const fileService = new FileService({ pdfService: null, logService: null });
-    fileService.initializeWorkspace();
+    bootFileService.initializeWorkspace();
 } catch (err) {
+    // eslint-disable-next-line no-console
     console.error('[FATAL] Phase 1 Failed: Could not initialize workspace directories:', err.message);
     process.exit(1);
 }
@@ -59,8 +64,9 @@ try {
 try {
     const db = require('./src/repositories/Database');
     const { initializeSchema } = require('./src/repositories/Database');
-    initializeSchema(db);
+    initializeSchema(db, bootLogger);
 } catch (err) {
+    // eslint-disable-next-line no-console
     console.error('[FATAL] Phase 2 Failed: Could not initialize database schema:', err.message);
     process.exit(1);
 }
@@ -71,15 +77,17 @@ try {
     const { bootstrap } = require('./src/config/container');
     bootstrap();
 } catch (err) {
+    // eslint-disable-next-line no-console
     console.error('[FATAL] Phase 2.5 Failed: Container Bootstrap Error:', err.message);
     process.exit(1);
 }
 
 // Phase 3: Application Logic
 // ==========================
-const containerModule = require('./src/config/container');
-const { logService } = containerModule.getContainer();
-const { LOG_LEVELS, LOG_SYMBOLS } = require('./src/config/constants');
+const container = require('./src/config/container').getContainer();
+const logService = container.resolve('logService');
+const settingsManager = container.resolve('settingsManager');
+const { LOG_LEVELS, LOG_SYMBOLS, HTTP_STATUS } = require('./src/config/constants');
 const setupRoutes = require('./src/routes/index');
 
 logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.NONE, origin: 'server.js', message: `Server starting...` });
@@ -91,7 +99,7 @@ const Logger = require('./src/utils/Logger');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const logger = new Logger('system', { logService });
+const logger = new Logger('system', { logService, settingsManager });
 app.use(logger.middleware());
 
 app.use(express.json());
@@ -99,7 +107,7 @@ app.use(express.json());
 setupRoutes(app);
 
 app.get('/', (req, res) => {
-    res.status(200).json({
+    res.status(HTTP_STATUS.OK).json({
         success: true,
         message: "Compari API is running successfully.",
         timestamp: new Date().toISOString()
@@ -117,7 +125,7 @@ app.get('/', (req, res) => {
  */
 app.use((req, res, next) => {
     const error = new Error(`Route not found: ${req.originalUrl}`);
-    error.status = 404;
+    error.status = HTTP_STATUS.NOT_FOUND;
     next(error);
 });
 
@@ -126,15 +134,19 @@ app.use((req, res, next) => {
  * Final safety net for the application - catches all unhandled errors from controllers.
  * Enforces SoC by keeping infrastructure logging out of the routing layer.
  * Uses LogService to automatically format and print full stack traces in development.
- * 
+ *
  * @param {Error} err - The error object passed from controllers via next(error)
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @param {Function} next - Express next function
+ *
+ * @socexplanation
+ * Error handling has been consolidated to the logSystemFault method to enforce DRY principles
+ * and maintain terminal stack trace visibility. This replaces the previous pattern of calling
+ * logTerminal followed by logErrorFile separately.
  */
 app.use((err, req, res, next) => {
-    logService.logTerminal({ status: LOG_LEVELS.ERROR, symbolKey: LOG_SYMBOLS.ERROR, origin: 'GlobalErrorHandler', message: `API Error on ${req.method} ${req.url}`, errorObj: err });
-    logService.logErrorFile({ origin: 'GlobalErrorHandler', message: `API Error on ${req.method} ${req.url}`, errorObj: err });
+    logService.logSystemFault({ origin: 'GlobalErrorHandler', message: `API Error on ${req.method} ${req.url}`, errorObj: err });
 
     res.status(err.status || 500).json({
         success: false,
@@ -143,7 +155,7 @@ app.use((err, req, res, next) => {
     });
 });
 
-const { queueService } = containerModule.getContainer();
+const queueService = container.resolve('queueService');
 
 app.listen(PORT, '0.0.0.0', async () => {
     const startupTime = Math.round(performance.now() - startTime);
@@ -153,14 +165,15 @@ app.listen(PORT, '0.0.0.0', async () => {
 
     logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'server.js', message: `Backend API running on http://localhost:${PORT}` });
 
-    const isDevMode = process.env.NODE_ENV === 'development' || process.env.DEBUG_MODE === 'true';
-    if (isDevMode) {
+    const debugMode = settingsManager.get('debug_mode');
+    if (debugMode === 'true') {
         logService.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'server.js', message: 'Server is running in DEBUG/DEV mode. Verbose logging is enabled.' });
-        logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.NONE, origin: 'server.js', message: 'To disable debug mode and run normally, stop this process and use: npm start' });
+        logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.NONE, origin: 'server.js', message: 'To disable debug mode toggle switch in Settings.' });
     } else {
-        logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'server.js', message: 'Server is running in PRODUCTION mode.' });
+        logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'server.js', message: 'Server is not running in debug mode, toggle switch in Settings to change.' });
     }
 
     logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'server.js', message: `Server started in ${startupTime}ms` });
+    // eslint-disable-next-line no-console
     console.log();
 });

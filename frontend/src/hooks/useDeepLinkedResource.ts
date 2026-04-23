@@ -8,6 +8,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useToast } from '@/hooks/useToast';
+import { TOAST_TYPES } from '@/lib/constants';
 
 export function useDeepLinkedResource<T>(
   idParam: string | null,
@@ -15,6 +17,7 @@ export function useDeepLinkedResource<T>(
   idField: keyof T,
   fetchResource: (id: number) => Promise<T>
 ): T | null {
+  const { addToast } = useToast();
   const [deepLinkedItem, setDeepLinkedItem] = useState<T | null>(null);
   const [isFetching, setIsFetching] = useState(false);
 
@@ -29,13 +32,17 @@ export function useDeepLinkedResource<T>(
         .then((data) => {
           if (isMounted) setDeepLinkedItem(data);
         })
-        .catch((err) => console.error("Failed to fetch deep-linked resource:", err))
+        .catch((err) => {
+          if (isMounted) {
+            addToast(TOAST_TYPES.ERROR, "Failed to fetch deep-linked resource");
+          }
+        })
         .finally(() => {
           if (isMounted) setIsFetching(false);
         });
       return () => { isMounted = false; };
     }
-  }, [id, localItem, deepLinkedItem, isFetching, fetchResource]);
+  }, [id, localItem, deepLinkedItem, isFetching, fetchResource, addToast]);
 
   useEffect(() => {
     if (!id && deepLinkedItem) {
