@@ -54,6 +54,8 @@ interface BaseCardProps {
   onDelete?: () => Promise<void>;
   /** Callback for canceling a processing task */
   onCancel?: (e: React.MouseEvent) => void;
+  /** Metadata object for passing processing timestamps */
+  metadata?: any;
   /** Child content to render between StatusIndicator and Actions Bar */
   children: React.ReactNode;
   /** Custom actions to render in the actions bar (beforeDelete) */
@@ -84,13 +86,15 @@ export function BaseCard({
   onRetry,
   onDelete,
   onCancel,
+  metadata,
   children,
   customActions
 }: BaseCardProps) {
   const { isPending, isProcessing, hasError, isCompleted, elapsedTime } = useTaskLifecycle(
     status,
     startTime,
-    errorMessage
+    errorMessage,
+    metadata
   );
 
   const isBusy = isPending || isProcessing;
@@ -136,6 +140,7 @@ export function BaseCard({
             taskName={taskName}
             startTime={startTime}
             errorMessage={errorMessage}
+            metadata={metadata}
           />
         </div>
 

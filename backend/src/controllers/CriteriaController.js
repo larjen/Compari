@@ -54,10 +54,12 @@ class CriteriaController extends BaseCrudController {
      * Delegates to the Orchestrator Workflow for AI coordination and persistence.
      */
     create = asyncHandler(async (req, res) => {
-        const { displayName, dimension } = req.body;
-        const criterionDto = { displayName, dimension };
+        const { displayName, dimension, requirementId, offeringId } = req.body;
+        const criterionDto = { displayName, dimension, requirementId, offeringId };
 
-        const criterion = await this._criteriaManagerWorkflow.createManualCriterion(criterionDto);
+        const id = await this._criteriaManagerWorkflow.createManualCriterion(criterionDto);
+        const criterion = this._criteriaService.getCriterionById(id);
+
         res.status(HTTP_STATUS.CREATED).json({ criterion });
     });
 
@@ -89,7 +91,8 @@ class CriteriaController extends BaseCrudController {
      */
     getById = asyncHandler(async (req, res) => {
         const id = this._extractId(req);
-        const criterion = this._criteriaService.getCriterionByIdForApi(id);
+        // Standardized to getCriterionById to match BaseEntityService expectations
+        const criterion = this._criteriaService.getCriterionById(id);
 
         if (!criterion) {
             throw new AppError('Criterion not found', HTTP_STATUS.NOT_FOUND);
@@ -106,6 +109,39 @@ class CriteriaController extends BaseCrudController {
         const criterionId = this._extractId(req);
         const associations = this._criteriaService.getCriterionAssociations(criterionId);
         res.json(associations);
+    });
+
+    /**
+     * POST /api/criteria/:id/link
+     * Links a criterion to an entity.
+     */
+    linkEntity = asyncHandler(async (req, res) => {
+        const criterionId = this._extractId(req);
+        const { entityId, isRequired } = req.body;
+
+        if (!entityId) {
+            throw new AppError('entityId is required', HTTP_STATUS.BAD_REQUEST);
+        }
+
+        await this._criteriaService.linkToEntity(criterionId, entityId, isRequired);
+        res.json({ success: true, message: 'Criterion successfully linked and master files updated' });
+    });
+
+    /**
+     * POST /api/criteria/:id/unlink
+     * Removes the link between a criterion and an entity.
+     */
+    unlinkEntity = asyncHandler(async (req, res) => {
+        const criterionId = this._extractId(req);
+        const { entityId } = req.body;
+
+        if (!entityId) {
+            throw new AppError('entityId is required', HTTP_STATUS.BAD_REQUEST);
+        }
+
+        await this._criteriaService.unlinkFromEntity(criterionId, entityId);
+
+        res.json({ success: true, message: 'Criterion successfully unlinked and master files updated' });
     });
 
     /**

@@ -29,9 +29,10 @@ interface EntityComboboxProps {
   onChange: (value: number | null) => void;
   blueprints: Blueprint[];
   disabled?: boolean;
+  excludeIds?: number[];
 }
 
-export function EntityCombobox({ type, label, value, onChange, blueprints, disabled }: EntityComboboxProps) {
+export function EntityCombobox({ type, label, value, onChange, blueprints, disabled, excludeIds = [] }: EntityComboboxProps) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState('');
   const debouncedSearch = useDebounce(search, 500);
@@ -51,6 +52,8 @@ export function EntityCombobox({ type, label, value, onChange, blueprints, disab
   const selectedEntity = entities.find((e) => e.id === value);
   const displayValue = selectedEntity ? `#${selectedEntity.id} - ${getEntityDisplayNames(selectedEntity).full}` : '';
 
+  const filteredEntities = entities.filter(e => !excludeIds.includes(e.id));
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -59,10 +62,12 @@ export function EntityCombobox({ type, label, value, onChange, blueprints, disab
           role="combobox"
           aria-expanded={open}
           disabled={disabled}
-          className="w-full justify-between bg-white border border-accent-sand/30 text-accent-forest hover:bg-accent-sand/10"
+          className="w-full justify-between bg-white border border-accent-sand/30 text-accent-forest hover:bg-accent-sand/10 overflow-hidden"
         >
-          {value ? displayValue : `Select a ${label.toLowerCase()}...`}
-          <DOMAIN_ICONS.COMBOBOX className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          <span className="truncate flex-1 text-left mr-2">
+            {value ? displayValue : `Select a ${label.toLowerCase()}...`}
+          </span>
+          <DOMAIN_ICONS.COMBOBOX className="h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent 
@@ -83,11 +88,11 @@ export function EntityCombobox({ type, label, value, onChange, blueprints, disab
                 <DOMAIN_ICONS.LOADING className="w-4 h-4 mr-2 animate-spin" /> Searching...
               </div>
             )}
-            {!loading && entities.length === 0 && (
+            {!loading && filteredEntities.length === 0 && (
               <CommandEmpty>No {label.toLowerCase()}s found.</CommandEmpty>
             )}
             <CommandGroup>
-              {entities.map((entity) => {
+              {filteredEntities.map((entity) => {
                 const entityName = `#${entity.id} - ${getEntityDisplayNames(entity).full}`;
                 return (
                   <CommandItem
@@ -100,11 +105,11 @@ export function EntityCombobox({ type, label, value, onChange, blueprints, disab
                   >
                     <DOMAIN_ICONS.CHECK
                       className={cn(
-                        "mr-2 h-4 w-4",
+                        "mr-2 h-4 w-4 shrink-0",
                         value === entity.id ? "opacity-100" : "opacity-0"
                       )}
                     />
-                    {entityName}
+                    <span className="truncate">{entityName}</span>
                   </CommandItem>
                 );
               })}

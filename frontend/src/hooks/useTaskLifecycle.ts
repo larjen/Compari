@@ -25,6 +25,7 @@ interface UseTaskLifecycleProps {
   status: EntityStatus | string | null | undefined;
   startTime: string | null | undefined;
   error?: string | null;
+  metadata?: any;
 }
 
 interface UseTaskLifecycleReturn {
@@ -47,7 +48,8 @@ interface UseTaskLifecycleReturn {
 export function useTaskLifecycle(
   status: EntityStatus | string | null | undefined,
   startTime: string | null | undefined,
-  error?: string | null
+  error?: string | null,
+  metadata?: any
 ): UseTaskLifecycleReturn {
   const s = status?.toLowerCase();
 
@@ -64,7 +66,9 @@ export function useTaskLifecycle(
 
   const isProcessing = !!s && !isPending && !isCompleted && !hasError;
 
-  const elapsedTime = useElapsedTime(isProcessing ? startTime : undefined);
+  const completedAt = metadata?.processingCompletedAt;
+
+  const elapsedTime = useElapsedTime(startTime, completedAt);
 
   return {
     isPending,

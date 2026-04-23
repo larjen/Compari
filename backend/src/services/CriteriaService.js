@@ -147,12 +147,90 @@ class CriteriaService extends BaseEntityService {
     }
 
     /**
-     * Deletes a criterion and its associations.
+     * Manually links a criterion to a requirement or offering entity.
+     * @param {number} criterionId - The criterion ID.
+     * @param {number} entityId - The entity ID.
+     * @param {boolean} isRequired - True for requirements, false for offerings.
+     * @socexplanation Prioritizes DB mutation and SSE emission. Wraps volatile File System operations 
+     * in a try/catch to ensure the UI and DB remain in sync even if markdown generation fails.
+     */
+    async linkToEntity(criterionId, entityId, isRequired) {
+        const wasAdded = this._criteriaRepo.linkCriterionToEntity(entityId, criterionId, isRequired);
+        if (!wasAdded) return; // PERFORMANCE GUARD: Skip disk I/O and SSE if link already exists
+
+        try {
+            const linkedCriteria = this.getCriteriaForEntity(entityId);
+            const criteriaFolderNames = linkedCriteria.map(c => this._entityService.getCleanLinkName(c));
+
+            await this._entityService.writeMasterFile(entityId, criteriaFolderNames);
+            await this.writeMasterFile(criterionId);
+        } catch (err) {
+            this._logService.logSystemFault({
+                origin: 'CriteriaService',
+                message: `Failed to update master files after linking criterion ${criterionId} to entity ${entityId}`,
+                errorObj: err
+            });
+        }
+
+        const updatedCriterion = this.getCriterionById(criterionId);
+        if (updatedCriterion) {
+            this._eventService.emit(require('../config/constants').APP_EVENTS.RESOURCE_STATE_CHANGED, updatedCriterion);
+        }
+
+        const updatedEntity = this._entityService.getById(entityId);
+        if (updatedEntity) {
+            this._eventService.emit(require('../config/constants').APP_EVENTS.RESOURCE_STATE_CHANGED, updatedEntity);
+        }
+    }
+
+    /**
+     * Manually unlinks a criterion from a requirement or offering entity.
+     * @param {number} criterionId - The criterion ID.
+     * @param {number} entityId - The entity ID.
+     * @socexplanation Prioritizes DB mutation and SSE emission. Wraps volatile File System operations 
+     * in a try/catch to ensure the UI and DB remain in sync even if markdown generation fails.
+     */
+    async unlinkFromEntity(criterionId, entityId) {
+        const wasRemoved = this._criteriaRepo.unlinkCriterionFromEntity(entityId, criterionId);
+        if (!wasRemoved) return; // PERFORMANCE GUARD: Skip disk I/O and SSE if link did not exist
+
+        try {
+            const linkedCriteria = this.getCriteriaForEntity(entityId);
+            const criteriaFolderNames = linkedCriteria.map(c => this._entityService.getCleanLinkName(c));
+
+            await this._entityService.writeMasterFile(entityId, criteriaFolderNames);
+            await this.writeMasterFile(criterionId);
+        } catch (err) {
+            this._logService.logSystemFault({
+                origin: 'CriteriaService',
+                message: `Failed to update master files after unlinking criterion ${criterionId} from entity ${entityId}`,
+                errorObj: err
+            });
+        }
+
+        const updatedCriterion = this.getCriterionById(criterionId);
+        if (updatedCriterion) {
+            this._eventService.emit(require('../config/constants').APP_EVENTS.RESOURCE_STATE_CHANGED, updatedCriterion);
+        }
+
+        const updatedEntity = this._entityService.getById(entityId);
+        if (updatedEntity) {
+            this._eventService.emit(require('../config/constants').APP_EVENTS.RESOURCE_STATE_CHANGED, updatedEntity);
+        }
+    }
+
+    /**
+     * Deletes a criterion and its associations, cleaning up physical files.
+     * @method deleteCriterion
      * @param {number} id - The criterion ID.
      * @returns {void}
+     * @socexplanation Enforces full cleanup by deleting the physical staging/vault folder 
+     * before deleting the database record, preventing permanent storage leaks. Emits a state change.
      */
     deleteCriterion(id) {
-        return this._criteriaRepo.deleteCriterion(id);
+        this.deleteEntityFolder(id);
+        this._criteriaRepo.deleteCriterion(id);
+        this._eventService.emit(require('../config/constants').APP_EVENTS.RESOURCE_STATE_CHANGED);
     }
 
     /**
@@ -165,7 +243,7 @@ class CriteriaService extends BaseEntityService {
         const target = this._criteriaRepo.getCriterionById(criterionId);
         if (!target) throw new Error('Criterion not found');
 
-        const all = this._criteriaRepo._getAllCriteriaWithEmbeddings();
+        const all = this._criteriaRepo.getAllCriteriaWithEmbeddings();
         const similarities = [];
 
         for (const c of all) {
@@ -223,13 +301,13 @@ class CriteriaService extends BaseEntityService {
 
     /**
      * Retrieves a single criterion by ID for deep-linking.
-     * Delegates to CriteriaRepo to maintain strict data-access boundaries.
-     * @method getCriterionByIdForApi
+     * Standardized name to match Repository and Controller expectations.
+     * @method getCriterionById
      * @param {number} id - The unique identifier of the criterion.
      * @returns {Object|null} The criterion object or null if not found.
      */
-    getCriterionByIdForApi(id) {
-        return this._criteriaRepo.getCriterionByIdForApi(id);
+    getCriterionById(id) {
+        return this.getById(id);
     }
 
     /**
@@ -327,8 +405,10 @@ class CriteriaService extends BaseEntityService {
             const mergedNames = (mergeHistory || []).map(h => h.merged_display_name);
 
             return this._markdownGenerator.generateCriterionMaster({
+                criterionId: criterion.id,
                 criterionFolderName: folderName,
                 dimension: criterion.dimension,
+                dimensionDisplayName: criterion.dimensionDisplayName || criterion.dimension,
                 reqFolderNames,
                 offFolderNames,
                 similarCriterionNames,

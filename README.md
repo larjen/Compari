@@ -1,10 +1,8 @@
 # Compari
 
-A 100% local, AI-powered semantic matching engine and dashboard.
+[![Download Latest Release](https://img.shields.io/badge/Download-Latest_Release-green?style=for-the-badge&logo=github)](https://github.com/larjen/Compari/releases/latest)[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-blue?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/in/larsjensendenmark/)
 
----
-
-## What does Compari do?
+### 100% local, AI-powered semantic matching engine and dashboard.
 
 Compari is a highly experimental, privacy-first matching engine. It is designed to analyze the match between **"Requirements"** (e.g., Job Listings, Grants, Project Specs) and **"Offerings"** (e.g., Candidate Resumes, Grant applications, Vendor Proposals) using advanced Artificial Intelligence. 
 
@@ -39,10 +37,6 @@ _The report can be downloaded as a PDF document._
 
 ![Tweak settings](./assets/settings.jpg)
 _Use different AI models, tweak blueprint, dimensions and extractions._
-
-### Caution
-
-There is no guarantee this software works as intended. The calculations and methods are not validated and should be used with caution - install and use at own peril.
 
 ---
 

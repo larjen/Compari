@@ -18,7 +18,7 @@
  * Dependencies are injected strictly via the constructor.
  */
 const path = require('path');
-const { TRASHED_DIR, UPLOADS_DIR, APP_EVENTS, LOG_LEVELS, LOG_SYMBOLS } = require('../config/constants');
+const { TRASHED_DIR, UPLOADS_DIR, APP_EVENTS, LOG_LEVELS, LOG_SYMBOLS, ENTITY_STATUS, DOCUMENT_TYPES } = require('../config/constants');
 const HashGenerator = require('../utils/HashGenerator');
 const NameGenerator = require('../utils/NameGenerator');
 
@@ -70,7 +70,9 @@ class BaseEntityService {
      */
     assertExists(id) {
         if (!this.getById(id)) {
-            throw new Error(`${this._resourceName} not found`);
+            const err = new Error(`${this._resourceName} not found. It may have been deleted.`);
+            err.isFatalClientError = true;
+            throw err;
         }
     }
 
@@ -121,6 +123,14 @@ class BaseEntityService {
         const entityType = baseDto.entityType || baseDto.type;
         const rawNicename = baseDto.nicename || baseDto.name || 'Entity';
 
+        // SECURITY: Prevent Path Traversal attacks by enforcing strict entity type allowlist
+        const validTypes = ['requirement', 'offering', 'criterion', 'match'];
+        if (!validTypes.includes(entityType)) {
+            const err = new Error(`Invalid entity type for staging directory: ${entityType}`);
+            err.isFatalClientError = true;
+            throw err;
+        }
+
         const nicename = NameGenerator.sanitizeForFileSystem(rawNicename);
 
         const absoluteFolderPath = this._fileService.prepareStagingDirectory(entityType, nicename);
@@ -154,6 +164,24 @@ class BaseEntityService {
 
             return insertedId;
         } catch (err) {
+            // ROLLBACK: Move the orphaned staging folder to trash if DB insertion fails
+            try {
+                const fs = require('fs');
+                if (fs.existsSync(absoluteFolderPath)) {
+                    const timestampedName = `${folderName}_failed_${Date.now()}`;
+                    const trashPath = path.join(TRASHED_DIR, timestampedName);
+                    this._fileService.moveDirectory(absoluteFolderPath, trashPath);
+                }
+            } catch (cleanupErr) {
+                this._logService.logTerminal({
+                    status: 'WARN',
+                    symbolKey: 'WARNING',
+                    origin: this._resourceName + 'Service',
+                    message: `Failed to cleanup orphaned folder after DB insertion failure: ${cleanupErr.message}`,
+                    errorObj: cleanupErr
+                });
+            }
+
             this._logService.logSystemFault({
                 origin: this._resourceName + 'Service',
                 message: `Failed to create staged entity '${nicename}'`,
@@ -202,6 +230,10 @@ class BaseEntityService {
         if (status !== undefined) {
             const sanitizedStatus = status.toLowerCase().trim();
             this._repository.updateStatus(id, sanitizedStatus);
+
+            if (sanitizedStatus === ENTITY_STATUS.COMPLETED || sanitizedStatus === ENTITY_STATUS.FAILED) {
+                this.updateMetadata(id, { processingCompletedAt: new Date().toISOString() });
+            }
         }
         if (error !== undefined) {
             this._repository.updateError(id, error);
@@ -360,14 +392,8 @@ class BaseEntityService {
 
         const newIsStaged = folderName.startsWith('[Staging]') ? 1 : 0;
 
-        if (this._repository.updateEntity) {
-            this._repository.updateEntity(id, { folderPath: folderName, isStaged: newIsStaged });
-        } else if (this._repository.updateFolderPath) {
-            this._repository.updateFolderPath(id, folderName);
-            if (this._repository.updateIsStaged) {
-                this._repository.updateIsStaged(id, newIsStaged);
-            }
-        }
+        // Unified contract enforces Liskov Substitution Principle
+        this._repository.updatePathAndStaging(id, folderName, newIsStaged);
 
         if (!suppressEvent) {
             const updatedEntity = this._repository[this._getByIdMethod](id);
@@ -392,14 +418,8 @@ class BaseEntityService {
         const entity = this.getById(id);
         if (!entity) return;
 
-        if (this._repository.updateEntity) {
-            this._repository.updateEntity(id, { folderPath: folderName, isStaged: true });
-        } else if (this._repository.updateFolderPath) {
-            this._repository.updateFolderPath(id, folderName);
-            if (this._repository.updateIsStaged) {
-                this._repository.updateIsStaged(id, true);
-            }
-        }
+        // Unified contract enforces Liskov Substitution Principle
+        this._repository.updatePathAndStaging(id, folderName, 1);
 
         if (!suppressEvent) {
             const updatedEntity = this._repository[this._getByIdMethod](id);
@@ -549,6 +569,17 @@ class BaseEntityService {
 
         this.updateMasterFile(id, fileName, suppressEvent);
 
+        const existingDocs = this.getDocuments(id);
+        const isRegistered = existingDocs.some(doc => doc.file_name === fileName || doc.fileName === fileName);
+
+        if (!isRegistered) {
+            this.registerDocumentRecord({
+                entityId: id,
+                docType: DOCUMENT_TYPES.MASTER_DOCUMENT,
+                fileName: fileName
+            });
+        }
+
         this.logActivity(id, {
             logType: LOG_LEVELS.INFO,
             message: `Master file generated: ${fileName}`
@@ -577,8 +608,19 @@ class BaseEntityService {
             throw err;
         }
 
+        let parsedMetadata = {};
+        if (existing.metadata) {
+            try {
+                parsedMetadata = typeof existing.metadata === 'string'
+                    ? JSON.parse(existing.metadata)
+                    : existing.metadata;
+            } catch (_err) {
+                parsedMetadata = {};
+            }
+        }
+
         const mergedMetadata = {
-            ...(existing.metadata || {}),
+            ...parsedMetadata,
             ...partialMetadata
         };
 
@@ -611,7 +653,7 @@ class BaseEntityService {
      */
     logActivity(id, { logType, message, verboseDetails = null }) {
         const absoluteFolderPath = this.getEntityFolderPath(id);
-        
+
         return this._logService.addActivityLog({
             entityType: this._resourceName,
             entityId: id,
@@ -629,7 +671,10 @@ class BaseEntityService {
      * @param {number} id - The entity ID.
      */
     resetProcessingTimer(id) {
-        this.updateMetadata(id, { processingStartedAt: new Date().toISOString() });
+        this.updateMetadata(id, {
+            processingStartedAt: new Date().toISOString(),
+            processingCompletedAt: null
+        });
     }
 
     /**
@@ -643,9 +688,20 @@ class BaseEntityService {
     finalizeEntityWorkspace(id, suppressEvent = false) {
         const entity = this.getById(id);
         if (!entity) throw new Error(`Entity ${id} not found.`);
-        
+
         const currentStagingPath = this.getEntityFolderPath(id);
         if (!currentStagingPath) throw new Error(`Entity ${id} has no folder path.`);
+
+        if (!currentStagingPath.includes('[Staging]')) {
+            return currentStagingPath;
+        }
+
+        const fs = require('fs');
+        if (!fs.existsSync(currentStagingPath)) {
+            const entityType = entity.entityType || entity.type || 'entity';
+            const nicename = entity.nicename || entity.displayName || entity.name || 'Unknown';
+            return this._fileService.generateVaultPath(entityType, nicename);
+        }
 
         const entityType = entity.entityType || entity.type || 'entity';
         const nicename = entity.nicename || entity.displayName || entity.name || 'Unknown';

@@ -79,6 +79,20 @@ export const criteriaApi = {
     return fetchWrapper(`/criteria/${id}/associations`);
   },
 
+  async linkEntity(criterionId: number, entityId: number, isRequired: boolean): Promise<void> {
+    return fetchWrapper(`/criteria/${criterionId}/link`, {
+      method: HTTP_METHODS.POST,
+      body: JSON.stringify({ entityId, isRequired })
+    });
+  },
+
+  async unlinkEntity(criterionId: number, entityId: number): Promise<void> {
+    return fetchWrapper(`/criteria/${criterionId}/unlink`, {
+      method: HTTP_METHODS.POST,
+      body: JSON.stringify({ entityId })
+    });
+  },
+
   /**
    * Deletes a criterion by ID.
    * @param {number} id - The criterion ID.
@@ -107,13 +121,14 @@ export const criteriaApi = {
 
   /**
    * Retrieves a single criterion by ID.
+   * Note: Backend returns a flat object, so we return 'data' directly.
    * @param {number} id - The criterion ID.
    * @returns {Promise<Criterion>} The criterion object.
    * @throws {Error} If the request fails.
    */
   async getCriterion(id: number): Promise<Criterion> {
-    const data = await fetchWrapper<{ criterion: Criterion }>(`/criteria/${id}`);
-    return data.criterion;
+    const data = await fetchWrapper<Criterion>(`/criteria/${id}`);
+    return data;
   },
 
   /**
@@ -145,11 +160,29 @@ export const criteriaApi = {
     return fetchWrapper<{ files: string[] }>(`/criteria/${id}/files`);
   },
 
-  /**
-   * Opens the criterion's folder in the native OS file manager.
-   * @param {number} id - The criterion ID.
-   */
+/**
+    * Opens the criterion's folder in the native OS file manager.
+    * @param {number} id - The criterion ID.
+    */
   async openFolder(id: number): Promise<void> {
     return fetchWrapper(`/criteria/${id}/folder/open`, { method: HTTP_METHODS.POST });
+  },
+
+  /**
+   * Creates a new criterion with optional entity linkage.
+   * @param {string} displayName - The display name for the criterion.
+   * @param {string} dimension - The dimension/category for the criterion.
+   * @param {number} [entityId] - Optional entity ID to link the criterion to.
+   * @param {boolean} [isRequired] - Whether the criterion is required for the linked entity.
+   * @returns {Promise<Criterion>} The created criterion object.
+   * @throws {Error} If the request fails.
+   */
+  async create(displayName: string, dimension: string, requirementId?: number, offeringId?: number): Promise<Criterion> {
+    const data = await fetchWrapper<{ criterion: Criterion }>('/criteria', {
+      method: HTTP_METHODS.POST,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName, dimension, requirementId, offeringId })
+    });
+    return data.criterion;
   },
 };

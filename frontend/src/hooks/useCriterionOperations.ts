@@ -7,20 +7,24 @@
  * - Consolidates toast-wrapped mutation handlers for criterion operations.
  * - Provides single source of truth for criterion operations across the app.
  * - Prevents WET violations and SoC breaches in criterion-related components.
+ * - Inherits common operations from useBaseEntityOperations hook
  * @boundary_rules
  * - ❌ MUST NOT contain UI rendering logic (JSX)
  * - ✅ MUST use useToast hook for all notification feedback
  * - ✅ MUST expose onSuccess callbacks for caller-driven refetch
+ * - ✅ MUST use useBaseEntityOperations for common delete, writeMasterFile, fetchMasterFile, openFolder
  */
 
-import { useCallback } from 'react';
-import { useToast } from '@/hooks/useToast';
+import { useBaseEntityOperations } from './useBaseEntityOperations';
+import { useToast } from './useToast';
 import { criteriaApi } from '@/lib/api/criteriaApi';
 import { TOAST_TYPES } from '@/lib/constants';
 
 interface UseCriterionOperationsOptions {
   /** Delete function from useCriteria hook (includes refetch internally) */
   deleteCriterionFn?: (id: number) => Promise<void>;
+  /** Callback to invoke on successful operations */
+  onSuccess?: () => void;
 }
 
 interface UseCriterionOperations {
@@ -28,70 +32,40 @@ interface UseCriterionOperations {
   writeMasterFileWithToast: (id: number, onSuccess: () => void) => Promise<void>;
   fetchMasterFileWithToast: (id: number) => Promise<string>;
   openFolderWithToast: (id: number) => Promise<void>;
+  createWithToast: (displayName: string, dimension: string, requirementId?: number, offeringId?: number, onSuccess?: () => void) => Promise<void>;
 }
 
-export function useCriterionOperations({ deleteCriterionFn }: UseCriterionOperationsOptions = {}): UseCriterionOperations {
+export function useCriterionOperations({ deleteCriterionFn, onSuccess }: UseCriterionOperationsOptions = {}): UseCriterionOperations {
+  const baseOps = useBaseEntityOperations({
+    apiClient: criteriaApi,
+    entityLabel: 'Criterion',
+    deleteFn: deleteCriterionFn
+  });
+
   const { addToast } = useToast();
 
-  const deleteWithToast = useCallback(
-    async (id: number, onSuccess: () => void): Promise<void> => {
-      try {
-        if (deleteCriterionFn) {
-          await deleteCriterionFn(id);
-        } else {
-          await criteriaApi.deleteCriterion(id);
-        }
-        addToast(TOAST_TYPES.SUCCESS, 'Criterion deleted');
-        onSuccess();
-      } catch (err) {
-        addToast(TOAST_TYPES.ERROR, 'Failed to delete criterion');
-      }
-    },
-    [addToast, deleteCriterionFn]
-  );
-
-  const writeMasterFileWithToast = useCallback(
-    async (id: number, onSuccess: () => void): Promise<void> => {
-      try {
-        await criteriaApi.writeMasterFile(id);
-        addToast(TOAST_TYPES.SUCCESS, 'Master file written');
-        onSuccess();
-      } catch (err) {
-        addToast(TOAST_TYPES.ERROR, 'Failed to write master file');
-      }
-    },
-    [addToast]
-  );
-
-  const fetchMasterFileWithToast = useCallback(
-    async (id: number): Promise<string> => {
-      try {
-        const content = await criteriaApi.getMasterFile(id);
-        addToast(TOAST_TYPES.SUCCESS, 'Master file refreshed');
-        return content;
-      } catch (err) {
-        addToast(TOAST_TYPES.ERROR, 'Failed to fetch master file');
-        throw err;
-      }
-    },
-    [addToast]
-  );
-
-  const openFolderWithToast = useCallback(
-    async (id: number): Promise<void> => {
-      try {
-        await criteriaApi.openFolder(id);
-      } catch (err) {
-        addToast(TOAST_TYPES.ERROR, 'Failed to open folder on server');
-      }
-    },
-    [addToast]
-  );
+  const createWithToast = async (
+    displayName: string,
+    dimension: string,
+    requirementId?: number,
+    offeringId?: number,
+    onSuccess?: () => void
+  ) => {
+    try {
+      await criteriaApi.create(displayName, dimension, requirementId, offeringId);
+      addToast(TOAST_TYPES.SUCCESS, 'Criterion created successfully');
+      onSuccess?.();
+    } catch (error) {
+      addToast(TOAST_TYPES.ERROR, 'Failed to create criterion');
+      throw error;
+    }
+  };
 
   return {
-    deleteWithToast,
-    writeMasterFileWithToast,
-    fetchMasterFileWithToast,
-    openFolderWithToast
+    deleteWithToast: baseOps.deleteWithToast,
+    writeMasterFileWithToast: baseOps.writeMasterFileWithToast,
+    fetchMasterFileWithToast: baseOps.fetchMasterFileWithToast,
+    openFolderWithToast: baseOps.openFolderWithToast,
+    createWithToast
   };
 }

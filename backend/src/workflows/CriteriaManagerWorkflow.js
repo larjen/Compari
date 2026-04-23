@@ -107,11 +107,7 @@ class CriteriaManagerWorkflow {
       * Separating this into the Workflow ensures the Controller remains thin and focused on HTTP handling.
       */
     async createManualCriterion(criterionDto, signal) {
-        const { displayName, dimension } = criterionDto;
-
-        if (!displayName || !dimension) {
-            throw new AppError('displayName and dimension are required', HTTP_STATUS.BAD_REQUEST);
-        }
+        const { displayName, dimension, requirementId, offeringId } = criterionDto;
 
         const normalizedName = this._normalizeCriterionName(displayName);
 
@@ -133,9 +129,33 @@ class CriteriaManagerWorkflow {
             embeddingArray: embedding
         });
 
+        if (requirementId != null) {
+            this._criteriaRepo.linkCriterionToEntity(requirementId, id, true);
+            const createdCriterionObject = [{
+                id,
+                normalizedName,
+                displayName,
+                dimension,
+                isRequired: true
+            }];
+            await this._criteriaMergeService.executeAutoMerge(requirementId, createdCriterionObject);
+        }
+
+        if (offeringId != null) {
+            this._criteriaRepo.linkCriterionToEntity(offeringId, id, false);
+            const createdCriterionObject = [{
+                id,
+                normalizedName,
+                displayName,
+                dimension,
+                isRequired: false
+            }];
+            await this._criteriaMergeService.executeAutoMerge(offeringId, createdCriterionObject);
+        }
+
         await this.writeMasterFileForCriterion(id);
 
-        return this._criteriaService.getCriterionByIdForApi(id);
+        return id;
     }
 
     /**

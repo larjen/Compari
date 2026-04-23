@@ -9,15 +9,17 @@ import { useModal } from '@/hooks/useModal';
 import { useDimensions } from '@/hooks/useDimensions';
 import { useFilterState } from '@/hooks/useFilterState';
 import { useDeepLinkedResource } from '@/hooks/useDeepLinkedResource';
+import { useCriterionOperations } from '@/hooks/useCriterionOperations';
 import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { EmptyState, ContentLoader } from '@/components/shared/PageStates';
 import { Criterion } from '@/lib/types';
-import { CriterionDetailModal, EntityDetailModal } from '@/components/modals';
+import { CriterionDetailModal, EntityDetailModal, CreateCriterionModal } from '@/components/modals';
 import { Pagination } from '@/components/shared/Pagination';
 import { FilterBar } from '@/components/shared/FilterBar';
 import { CriteriaViewer } from '@/components/shared/CriteriaViewer';
 import { AnimatedPageHeader } from '@/components/shared/AnimatedPageHeader';
 import { criteriaApi } from '@/lib/api/criteriaApi';
+import { MODAL_TYPES } from '@/lib/constants';
 
 /**
  * Global variants for the criteria results list.
@@ -45,7 +47,7 @@ function CriteriaPageContent() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { closeModal } = useModal();
+  const { activeModal, closeModal } = useModal();
 
   const { search, setSearch, debouncedSearch, status: selectedDimension, setStatus: setSelectedDimension, page, setPage } = useFilterState('all');
 
@@ -71,8 +73,9 @@ function CriteriaPageContent() {
   const sourceIdParam = searchParams.get('sourceId');
   const targetIdParam = searchParams.get('targetId');
 
-  const { entities: allEntities, loading: entitiesLoading, refetch: refetchEntities } = useEntities({ immediate: !!(sourceIdParam || targetIdParam) });
+  const { entities: allEntities, loading: entitiesLoading, refetch: refetchEntities } = useEntities({ immediate: !!(sourceIdParam || targetIdParam || criterionIdParam) });
   const { dimensions } = useDimensions();
+  const { createWithToast } = useCriterionOperations({ onSuccess: refetch });
 
   // =============================================================================
   // CONDITIONAL RENDERING BLOCK
@@ -185,6 +188,11 @@ function CriteriaPageContent() {
         open={!!inspectedTarget}
         onClose={() => router.push(criterionIdParam ? `?criterionId=${criterionIdParam}` : '/criteria')}
         onDelete={async () => { }}
+      />
+      <CreateCriterionModal
+        open={activeModal === MODAL_TYPES.CREATE_CRITERION}
+        onClose={closeModal}
+        onCreateCriterion={createWithToast}
       />
     </div>
   );

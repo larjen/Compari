@@ -238,6 +238,23 @@ class EntityController extends BaseCrudController {
     });
 
     /**
+     * POST /api/entities/:id/master-file
+     * Generates and writes the master file for an entity.
+     * @override
+     * @socexplanation Fetches criteria at the controller level to prevent a circular dependency between EntityService and CriteriaService.
+     */
+    writeMasterFile = asyncHandler(async (req, res) => {
+        const id = this._extractId(req);
+
+        const criteria = this._criteriaService.getCriteriaForEntity(id);
+        const criteriaFolderNames = criteria.map(c => this._criteriaService.getCleanLinkName(c));
+
+        await this._entityService.writeMasterFile(id, criteriaFolderNames);
+
+        res.json({ success: true, message: 'Master file written successfully' });
+    });
+
+    /**
      * GET /api/entities/:id/criteria
      * Retrieves criteria for a specific entity.
      * @param {Object} req - Express request object (req.params.id)

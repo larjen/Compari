@@ -7,15 +7,18 @@
  * - Consolidates duplicate bulk-file upload loops and toast-wrapped mutation handlers
  * - Provides single source of truth for entity operations across Requirements and Offerings pages
  * - Prevents WET (Write Everything Twice) violations and SoC (Separation of Concerns) breaches
+ * - Inherits common operations from useBaseEntityOperations hook
  * @boundary_rules
  * - ❌ MUST NOT contain UI rendering logic (JSX)
  * - ❌ MUST NOT use inline string unions (use EntityType from @/lib/types, TOAST_TYPES from @/lib/constants)
  * - ✅ MUST use useToast hook for all notification feedback
  * - ✅ MUST expose onSuccess callbacks for caller-driven refetch
+ * - ✅ MUST use useBaseEntityOperations for common delete, retry, writeMasterFile, fetchMasterFile, openFolder
  */
 
 import { useCallback } from 'react';
 import { useToast } from '@/hooks/useToast';
+import { useBaseEntityOperations } from './useBaseEntityOperations';
 import { entityApi, CreateEntityData } from '@/lib/api/entityApi';
 import { EntityType } from '@/lib/types';
 import { TOAST_TYPES } from '@/lib/constants';
@@ -43,6 +46,12 @@ interface UseEntityOperations {
 
 export function useEntityOperations({ deleteEntityFn }: UseEntityOperationsOptions = {}): UseEntityOperations {
   const { addToast } = useToast();
+
+  const baseOps = useBaseEntityOperations({
+    apiClient: entityApi,
+    entityLabel: 'Entity',
+    deleteFn: deleteEntityFn
+  });
 
   const bulkCreateFromFiles = useCallback(
     async (
@@ -93,36 +102,6 @@ export function useEntityOperations({ deleteEntityFn }: UseEntityOperationsOptio
     [addToast]
   );
 
-  const deleteWithToast = useCallback(
-    async (id: number, onSuccess: () => void): Promise<void> => {
-      try {
-        if (deleteEntityFn) {
-          await deleteEntityFn(id);
-        } else {
-          await entityApi.deleteEntity(id);
-        }
-        addToast(TOAST_TYPES.SUCCESS, 'Entity deleted');
-        onSuccess();
-      } catch (err) {
-        addToast(TOAST_TYPES.ERROR, 'Failed to delete entity');
-      }
-    },
-    [addToast, deleteEntityFn]
-  );
-
-  const retryWithToast = useCallback(
-    async (id: number, onSuccess: () => void): Promise<void> => {
-      try {
-        await entityApi.retryProcessing(id);
-        addToast(TOAST_TYPES.SUCCESS, 'Task queued for retry');
-        onSuccess();
-      } catch (err) {
-        addToast(TOAST_TYPES.ERROR, 'Failed to retry task');
-      }
-    },
-    [addToast]
-  );
-
   const updateWithToast = useCallback(
     async (id: number, data: Partial<CreateEntityData>, successMessage = 'Updated successfully'): Promise<void> => {
       try {
@@ -136,51 +115,13 @@ export function useEntityOperations({ deleteEntityFn }: UseEntityOperationsOptio
     [addToast]
   );
 
-  const writeMasterFileWithToast = useCallback(
-    async (id: number, onSuccess: () => void): Promise<void> => {
-      try {
-        await entityApi.writeMasterFile(id);
-        addToast(TOAST_TYPES.SUCCESS, 'Master file written');
-        onSuccess();
-      } catch (err) {
-        addToast(TOAST_TYPES.ERROR, 'Failed to write master file');
-      }
-    },
-    [addToast]
-  );
-
-  const openFolderWithToast = useCallback(
-    async (id: number): Promise<void> => {
-      try {
-        await entityApi.openFolder(id);
-      } catch (err) {
-        addToast(TOAST_TYPES.ERROR, 'Failed to open folder on server');
-      }
-    },
-    [addToast]
-  );
-
-  const fetchMasterFileWithToast = useCallback(
-    async (id: number): Promise<string> => {
-      try {
-        const content = await entityApi.getMasterFile(id);
-        addToast(TOAST_TYPES.SUCCESS, 'Master file refreshed');
-        return content || '';
-      } catch (err) {
-        addToast(TOAST_TYPES.ERROR, 'Failed to fetch master file');
-        throw err;
-      }
-    },
-    [addToast]
-  );
-
   return {
     bulkCreateFromFiles,
-    deleteWithToast,
-    retryWithToast,
+    deleteWithToast: baseOps.deleteWithToast,
+    retryWithToast: baseOps.retryWithToast,
     updateWithToast,
-    writeMasterFileWithToast,
-    openFolderWithToast,
-    fetchMasterFileWithToast
+    writeMasterFileWithToast: baseOps.writeMasterFileWithToast,
+    openFolderWithToast: baseOps.openFolderWithToast,
+    fetchMasterFileWithToast: baseOps.fetchMasterFileWithToast
   };
 }

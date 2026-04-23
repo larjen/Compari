@@ -64,7 +64,7 @@ export function formatDate(dateString: string | null): string {
  * formatElapsedTime('2026-04-02T17:27:00Z') // returns "5m"
  * formatElapsedTime(null) // returns ""
  */
-export function formatElapsedTime(startTime: string | null): string {
+export function formatElapsedTime(startTime: string | null, endTime?: string | null): string {
   if (!startTime) return '';
   
   let safeTimeStr = startTime;
@@ -81,14 +81,35 @@ export function formatElapsedTime(startTime: string | null): string {
     start = new Date(safeTimeStr);
   }
   
-  const now = new Date();
-  const diff = Math.floor((now.getTime() - start.getTime()) / 1000);
+  const end = endTime ? new Date(endTime) : new Date();
+  const diff = Math.floor((end.getTime() - start.getTime()) / 1000);
   
   if (diff <= 0) return '0s';
   if (diff < 60) return `${diff}s`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
   return `${Math.floor(diff / 86400)}d`;
+}
+
+/**
+ * Normalizes base properties for any CTI entity (Requirement, Offering, Match).
+ * Safely parses raw SQLite metadata strings and extracts canonical processing timers.
+ */
+export function extractBaseEntityData(entity: any) {
+  if (!entity) return { metadata: {}, startTime: undefined };
+
+  let metadata: Record<string, any> = {};
+  try {
+    metadata = typeof entity.metadata === 'string' 
+      ? JSON.parse(entity.metadata) 
+      : (entity.metadata || {});
+  } catch (e) {
+    metadata = {};
+  }
+
+  const startTime = metadata.processingStartedAt || entity.updated_at || entity.created_at;
+
+  return { metadata, startTime };
 }
 
 

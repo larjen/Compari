@@ -16,7 +16,7 @@
  */
 import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { EntityMatch } from '@/lib/types';
-import { parseMatchEntities, formatPercentage, getEntityDisplayNames } from '@/lib/utils';
+import { parseMatchEntities, formatPercentage, getEntityDisplayNames, extractBaseEntityData } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { DownloadButton } from '@/components/ui';
 import { BaseCard } from '../shared/BaseCard';
@@ -42,6 +42,8 @@ export function MatchCard({ match, onClick, onDelete, onRetry }: MatchCardProps)
 
   const { reqEntity, offEntity } = parseMatchEntities(match);
 
+  const { metadata, startTime } = extractBaseEntityData(match);
+
   const { primary: reqPrimaryName } = getEntityDisplayNames(reqEntity);
   const { primary: offPrimaryName } = getEntityDisplayNames(offEntity);
 
@@ -60,9 +62,10 @@ export function MatchCard({ match, onClick, onDelete, onRetry }: MatchCardProps)
     <BaseCard
       id={match.id}
       status={match.status ?? null}
-      startTime={match.status === 'processing' ? match.updated_at : match.created_at}
+      startTime={startTime}
       taskName="assessment"
       errorMessage={match.error || undefined}
+      metadata={metadata}
       onClick={onClick}
       onDelete={onDelete}
       onRetry={onRetry}

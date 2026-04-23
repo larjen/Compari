@@ -63,13 +63,15 @@ export function Navbar({ isLoading }: NavbarProps) {
   /**
    * Navigation route configuration.
    * Note: Setting modalType to null hides the global 'Create' button for that specific route.
-   * Blueprints and Dimensions are moved to Settings modal.
+   * * @socexplanation 
+   * The 'Requirements' route is explicitly set to '/requirements' (matching its canonical path) 
+   * to ensure navigation highlighting works via the startsWith logic in the isActive helper.
    */
   const NAV_ROUTES: NavRoute[] = [
-    { label: requirementLabelPlural, href: '/', modalType: MODAL_TYPES.CREATE_REQUIREMENT, entityName: requirementLabelSingular },
+    { label: requirementLabelPlural, href: '/requirements', modalType: MODAL_TYPES.CREATE_REQUIREMENT, entityName: requirementLabelSingular },
     { label: offeringLabelPlural, href: '/offerings', modalType: MODAL_TYPES.CREATE_OFFERING, entityName: offeringLabelSingular },
+    { label: 'Criteria', href: '/criteria', modalType: MODAL_TYPES.CREATE_CRITERION, entityName: 'Criterion' },
     { label: 'Matches', href: '/matches', modalType: MODAL_TYPES.CREATE_MATCH, entityName: 'Match' },
-    { label: 'Criteria', href: '/criteria', modalType: null, entityName: 'Criterion' },
   ];
 
   const currentRoute = NAV_ROUTES.find((route) => {

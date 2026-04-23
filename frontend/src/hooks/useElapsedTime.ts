@@ -35,7 +35,7 @@ import { formatElapsedTime } from '@/lib/utils';
  * This avoids duplicating the useEffect + setInterval pattern across multiple Card components,
  * centralizing the elapsed time logic in a reusable hook.
  */
-export function useElapsedTime(startedAt: string | null | undefined): string {
+export function useElapsedTime(startedAt: string | null | undefined, endedAt?: string | null | undefined): string {
   const [elapsedTime, setElapsedTime] = useState<string>('');
 
   useEffect(() => {
@@ -44,14 +44,18 @@ export function useElapsedTime(startedAt: string | null | undefined): string {
       return;
     }
 
-    setElapsedTime(formatElapsedTime(startedAt));
+    if (endedAt) {
+      setElapsedTime(formatElapsedTime(startedAt, endedAt));
+      return;
+    }
 
+    setElapsedTime(formatElapsedTime(startedAt));
     const interval = setInterval(() => {
       setElapsedTime(formatElapsedTime(startedAt));
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [startedAt]);
+  }, [startedAt, endedAt]);
 
   return elapsedTime;
 }

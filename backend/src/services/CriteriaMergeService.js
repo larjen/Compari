@@ -79,7 +79,7 @@ class CriteriaMergeService {
      * are isolated from workflow orchestration.
      */
     async executeAutoMerge(entityId, criteriaBatch) {
-        const allDbCriteria = this._criteriaRepo._getAllCriteriaWithEmbeddings();
+        const allDbCriteria = this._criteriaRepo.getAllCriteriaWithEmbeddings();
         const threshold = parseFloat(this._settingsManager.get(SETTING_KEYS.AUTO_MERGE_THRESHOLD)) || 0.95;
         const deletedCriteriaIds = new Set();
 
@@ -116,10 +116,10 @@ class CriteriaMergeService {
                             continue;
                         }
 
-                        await this._criteriaService.mergeCriteria(linked.id, newCriterionFull.id);
-                        deletedCriteriaIds.add(newCriterionFull.id);
+                        await this._criteriaService.mergeCriteria(newCriterionFull.id, linked.id);
+                        deletedCriteriaIds.add(linked.id);
 
-                        this._logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'CriteriaMergeService', message: `Auto-merged ${newTitle} into ${existingTitle} (Likeness: ${Math.round(score * 100)}%)` });
+                        this._logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'CriteriaMergeService', message: `Manual entry "${newTitle}" preserved; merged existing duplicate "${existingTitle}". (Likeness: ${Math.round(score * 100)}%)` });
                         break;
                     }
                 } catch (e) {

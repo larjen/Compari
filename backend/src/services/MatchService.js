@@ -320,6 +320,11 @@ class MatchService extends BaseEntityService {
             throw new Error('Match folder path is not set');
         }
 
+        const folderName = path.basename(matchFolderPath);
+        const masterFileName = `${folderName}.md`;
+        const allFiles = this._fileService.listFilesInFolder(matchFolderPath) || [];
+        const associatedFiles = allFiles.filter(f => f !== masterFileName);
+
         const generateMatchContent = ({ folderName }) => {
             const reportPath = path.join(matchFolderPath, 'match_report.json');
             const reportData = this._fileService.readJsonFile(reportPath);
@@ -332,26 +337,27 @@ class MatchService extends BaseEntityService {
             const reqFolderName = this.getCleanLinkName(sourceEntity);
             const offFolderName = this.getCleanLinkName(targetEntity);
 
-            const matchedCriteriaSet = new Set();
+            const dimensionalSummaries = [];
             if (reportData && reportData.dimensions) {
                 for (const dim of Object.values(reportData.dimensions)) {
-                    const processMatch = (m) => {
-                        if (m.reqCriteria) matchedCriteriaSet.add(m.reqCriteria);
-                        if (m.offCriteria) matchedCriteriaSet.add(m.offCriteria);
-                    };
-                    if (Array.isArray(dim.perfectMatch)) dim.perfectMatch.forEach(processMatch);
-                    if (Array.isArray(dim.partialMatch)) dim.partialMatch.forEach(processMatch);
+                    if (dim.ai_summary) {
+                        dimensionalSummaries.push({
+                            displayName: dim.displayName || 'Dimension',
+                            summary: dim.ai_summary
+                        });
+                    }
                 }
             }
-            const matchedCriteriaLinks = Array.from(matchedCriteriaSet);
 
             return this._markdownGenerator.generateMatchMaster({
                 matchFolderName: folderName,
                 reqFolderName,
                 offFolderName,
                 executiveSummary: aiSummaryExecutive,
+                dimensionalSummaries,
                 matchId,
-                matchedCriteriaLinks
+                matchScore: match.matchScore ?? match.match_score,
+                associatedFiles
             });
         };
 

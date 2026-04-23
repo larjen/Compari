@@ -5,16 +5,20 @@ import { useState, useEffect } from 'react';
 import { Entity, Criterion } from '@/lib/types';
 import { criteriaApi } from '@/lib/api/criteriaApi';
 import { motion } from 'framer-motion';
-import { getEntityDisplayNames } from '@/lib/utils';
+import { getEntityDisplayNames, extractBaseEntityData } from '@/lib/utils';
 import { useTerminology } from '@/hooks/useTerminology';
 import { useCriteriaFiles } from '@/hooks/useEntityData';
 import { useCriterionOperations } from '@/hooks/useCriterionOperations';
 import { EntityDetailLayout } from '@/components/shared/EntityDetailLayout';
-import { DeleteAction, EditButton, ViewButton } from '@/components/ui';
+import { DeleteAction, EditButton, ViewButton, Button } from '@/components/ui';
 import { useSettings } from '@/hooks/useSettings';
 import { SharedDebugTab } from '@/components/shared/SharedDebugTab';
 import { MergeTab } from '@/components/criteria/MergeTab';
 import { FilesTabContent } from '@/components/shared/FilesTabContent';
+import { EntityCombobox } from '@/components/shared/EntityCombobox';
+import { useBlueprints } from '@/hooks/useBlueprints';
+import { useToast } from '@/hooks/useToast';
+import { ENTITY_ROLES, TOAST_TYPES } from '@/lib/constants';
 
 const CRITERION_TABS = {
   ASSOCIATIONS: 'associations',
@@ -42,9 +46,9 @@ interface CriterionDetailModalProps {
   onEdit?: () => void;
 }
 
-export function CriterionDetailModal({ 
-  criterion, 
-  open, 
+export function CriterionDetailModal({
+  criterion,
+  open,
   onClose,
   onSourceClick,
   onTargetClick,
@@ -54,18 +58,20 @@ export function CriterionDetailModal({
 }: CriterionDetailModalProps) {
   const { settings } = useSettings(open);
   const { activeLabels, getEntityLabels } = useTerminology();
-  
-  const { 
-    deleteWithToast, 
-    openFolderWithToast, 
-    writeMasterFileWithToast, 
-    fetchMasterFileWithToast 
+  const { blueprints } = useBlueprints();
+  const { addToast } = useToast();
+
+  const {
+    deleteWithToast,
+    openFolderWithToast,
+    writeMasterFileWithToast,
+    fetchMasterFileWithToast
   } = useCriterionOperations({ deleteCriterionFn: onDelete });
 
   const tabs = settings.debug_mode === 'true'
     ? [...baseTabs, { id: CRITERION_TABS.DEBUG, label: 'Debug', icon: DOMAIN_ICONS.SETTINGS }]
     : baseTabs;
-  const { requirement: { plural: sourceLabel }, offering: { plural: targetLabel } } = activeLabels;
+  const { requirement: { plural: sourceLabel, singular: reqSingular }, offering: { plural: targetLabel, singular: offSingular } } = activeLabels;
 
   const [sources, setSources] = useState<Entity[]>([]);
   const [targets, setTargets] = useState<Entity[]>([]);
@@ -73,28 +79,67 @@ export function CriterionDetailModal({
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>(CRITERION_TABS.ASSOCIATIONS);
 
+  const [selectedReqId, setSelectedReqId] = useState<number | null>(null);
+  const [selectedOffId, setSelectedOffId] = useState<number | null>(null);
+  const [isLinking, setIsLinking] = useState(false);
+
   const { files, loading: loadingFiles } = useCriteriaFiles(activeTab === CRITERION_TABS.FILES ? criterion?.id : undefined);
   const folderPath = criterion?.folderPath || (criterion as any)?.folder_path || null;
 
+  const loadAssociations = async () => {
+    if (!criterion?.id) return;
+    setLoading(true);
+    try {
+      const data = await criteriaApi.getCriterionAssociations(criterion.id);
+      setSources(data.sources || []);
+      setTargets(data.targets || []);
+    } catch (err) {
+      console.error('Failed to load criterion associations:', err);
+      setSources([]);
+      setTargets([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (open && criterion?.id) {
-      setActiveTab(CRITERION_TABS.ASSOCIATIONS); // Reset tab to default when opening a new criterion
-      setLoading(true);
-      criteriaApi.getCriterionAssociations(criterion.id)
-        .then((data) => {
-          setSources(data.sources || []);
-          setTargets(data.targets || []);
-        })
-        .catch((err) => {
-          console.error('Failed to load criterion associations:', err);
-          setSources([]);
-          setTargets([]);
-        })
-        .finally(() => {
-          setLoading(false);
-        });
+      setActiveTab(CRITERION_TABS.ASSOCIATIONS);
+      loadAssociations();
+      setSelectedReqId(null);
+      setSelectedOffId(null);
     }
   }, [open, criterion?.id]);
+
+  const handleAssociate = async (entityId: number, isRequirement: boolean) => {
+    if (!criterion) return;
+    setIsLinking(true);
+    try {
+      await criteriaApi.linkEntity(criterion.id, entityId, isRequirement);
+      addToast(TOAST_TYPES.SUCCESS, 'Associated successfully');
+      if (isRequirement) setSelectedReqId(null);
+      else setSelectedOffId(null);
+      await loadAssociations();
+    } catch (err) {
+      addToast(TOAST_TYPES.ERROR, 'Failed to associate entity');
+    } finally {
+      setIsLinking(false);
+    }
+  };
+
+  const handleUnlink = async (entityId: number) => {
+    if (!criterion) return;
+    try {
+      await criteriaApi.unlinkEntity(criterion.id, entityId);
+      addToast(TOAST_TYPES.SUCCESS, 'Unlinked successfully');
+      await loadAssociations();
+    } catch (err) {
+      addToast(TOAST_TYPES.ERROR, 'Failed to unlink entity');
+    }
+  };
+
+  const isReqDisabled = !selectedReqId || sources.some(s => s.id === selectedReqId) || isLinking;
+  const isOffDisabled = !selectedOffId || targets.some(t => t.id === selectedOffId) || isLinking;
 
   useEffect(() => {
     if (open && criterion?.id && activeTab === CRITERION_TABS.HISTORY) {
@@ -131,12 +176,13 @@ export function CriterionDetailModal({
             <p className="text-sm font-medium opacity-75 line-clamp-1 mt-0.5">{secondaryName}</p>
           )}
         </div>
-        <div className="flex items-center gap-4 ml-4 shrink-0">
+        <div className="flex items-center gap-3 ml-4 shrink-0">
           <ViewButton
             entityName={entityLabel}
-            size="sm"
+            size="md"
             onClick={() => onClick?.(entity)}
           />
+          <DeleteAction onDelete={() => handleUnlink(entity.id)} />
         </div>
       </motion.div>
     );
@@ -156,8 +202,8 @@ export function CriterionDetailModal({
         criterion && (
           <div className="flex items-center gap-3">
             {onEdit && <EditButton entityName="Criterion" onClick={onEdit} />}
-            <DeleteAction 
-              onDelete={() => deleteWithToast(criterion.id, onClose)} 
+            <DeleteAction
+              onDelete={() => deleteWithToast(criterion.id, onClose)}
             />
           </div>
         )
@@ -170,43 +216,96 @@ export function CriterionDetailModal({
       ) : (
         <div className="h-full">
           {activeTab === CRITERION_TABS.ASSOCIATIONS && (
-            <div className="flex flex-col gap-8">
-              {sources.length === 0 && targets.length === 0 && (
-                <div className="flex items-center justify-center py-8">
-                  <p className="text-sm text-accent-forest/40 italic">No associations found for this criterion.</p>
-                </div>
-              )}
+            <div className="flex flex-col h-[60vh] overflow-hidden">
 
-              {sources.length > 0 && (
-                <div className="space-y-3">
-                  <h3 className="text-sm font-bold text-accent-forest/80 uppercase tracking-wider flex items-center gap-2 mb-4">
-                    <DOMAIN_ICONS.REQUIREMENT className="w-4 h-4" />
-                    {sourceLabel}
-                    <span className="font-normal text-accent-forest/50">({sources.length})</span>
-                  </h3>
-                  <div className="space-y-2">
-                    {sources.map((entity, idx) => renderEntityCard(entity, idx, onSourceClick))}
+              <div className="shrink-0 space-y-4 p-6 bg-themed-inner border border-themed-border rounded-xl mb-4">
+                <div className="flex items-end gap-3">
+                  <div className="flex-1">
+                    <EntityCombobox
+                      type={ENTITY_ROLES.REQUIREMENT}
+                      label={reqSingular}
+                      value={selectedReqId}
+                      onChange={setSelectedReqId}
+                      blueprints={blueprints}
+                      disabled={isLinking}
+                      excludeIds={sources.map(s => s.id)}
+                    />
                   </div>
+                  <Button
+                    variant="secondary"
+                    size="md"
+                    disabled={isReqDisabled}
+                    onClick={() => selectedReqId && handleAssociate(selectedReqId, true)}
+                    className="mb-[2px]"
+                  >
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                    Associate
+                  </Button>
                 </div>
-              )}
 
-              {targets.length > 0 && (
-                <div className="space-y-3">
-                  <h3 className="text-sm font-bold text-accent-forest/80 uppercase tracking-wider flex items-center gap-2 mb-4">
-                    <DOMAIN_ICONS.OFFERING className="w-4 h-4" />
-                    {targetLabel}
-                    <span className="font-normal text-accent-forest/50">({targets.length})</span>
-                  </h3>
-                  <div className="space-y-2">
-                    {targets.map((entity, idx) => renderEntityCard(entity, idx, onTargetClick))}
+                <div className="flex items-end gap-3">
+                  <div className="flex-1">
+                    <EntityCombobox
+                      type={ENTITY_ROLES.OFFERING}
+                      label={offSingular}
+                      value={selectedOffId}
+                      onChange={setSelectedOffId}
+                      blueprints={blueprints}
+                      disabled={isLinking}
+                      excludeIds={targets.map(t => t.id)}
+                    />
                   </div>
+                  <Button
+                    variant="secondary"
+                    size="md"
+                    disabled={isOffDisabled}
+                    onClick={() => selectedOffId && handleAssociate(selectedOffId, false)}
+                    className="mb-[2px]"
+                  >
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                    Associate
+                  </Button>
                 </div>
-              )}
+              </div>
+
+              <div className="flex-1 overflow-y-auto pr-2 pb-4 space-y-8">
+                {sources.length === 0 && targets.length === 0 && (
+                  <div className="flex items-center justify-center py-8">
+                    <p className="text-sm text-accent-forest/40 italic">No associations found for this criterion.</p>
+                  </div>
+                )}
+
+                {sources.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-accent-forest/80 uppercase tracking-wider flex items-center gap-2 mb-4">
+                      <DOMAIN_ICONS.REQUIREMENT className="w-4 h-4" />
+                      {sourceLabel}
+                      <span className="font-normal text-accent-forest/50">({sources.length})</span>
+                    </h3>
+                    <div className="space-y-2">
+                      {sources.map((entity, idx) => renderEntityCard(entity, idx, onSourceClick))}
+                    </div>
+                  </div>
+                )}
+
+                {targets.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-accent-forest/80 uppercase tracking-wider flex items-center gap-2 mb-4">
+                      <DOMAIN_ICONS.OFFERING className="w-4 h-4" />
+                      {targetLabel}
+                      <span className="font-normal text-accent-forest/50">({targets.length})</span>
+                    </h3>
+                    <div className="space-y-2">
+                      {targets.map((entity, idx) => renderEntityCard(entity, idx, onTargetClick))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
           {activeTab === CRITERION_TABS.MERGE && criterion && (
-            <MergeTab 
-              criterion={criterion} 
+            <MergeTab
+              criterion={criterion}
               onMerged={onMerged || (() => {})}
             />
           )}
@@ -254,7 +353,7 @@ export function CriterionDetailModal({
               transition={{ duration: 0.15 }}
             >
               <SharedDebugTab
-                rawData={criterion}
+                rawData={criterion ? { ...criterion, metadata: extractBaseEntityData(criterion).metadata } : null}
                 onGenerateMasterFile={() => criterion ? writeMasterFileWithToast(criterion.id, () => {}) : Promise.resolve()}
                 onFetchMasterFile={async () => {
                   if (!criterion) throw new Error('No criterion');

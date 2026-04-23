@@ -266,3 +266,80 @@ Every JSDoc block MUST include:
   * ❌ STRICTLY FORBIDDEN: Do not use old v3 directives like `@tailwind base;`. Use `@import "tailwindcss";` exclusively.
 * **PostCSS Requirement:** The project processes styles via `@tailwindcss/postcss`. 
   * ✅ MANDATORY: If modifying build tools, ensure `postcss.config.js` maintains `@tailwindcss/postcss` and NEVER the legacy `tailwindcss` plugin.
+
+---
+
+## 10. Shared Entity Operations (DRY Principle)
+
+**THE LAW:** Because Matches, Offerings, Requirements, and Criteria share a common `BaseEntity` lineage on the backend, their frontend data operations MUST be centralized to eliminate WET (Write Everything Twice) code.
+
+### A. Base Hook Composition
+
+* **Rule:** Operations common to ALL entity types—`delete`, `writeMasterFile`, `fetchMasterFile`, `retry`, and `openFolder`—MUST be implemented exclusively in `useBaseEntityOperations`.
+* **Enforcement:** The `useBaseEntityOperations` hook (`src/hooks/useBaseEntityOperations.ts`) serves as the single source of truth for these shared operations. It accepts an API client and entity label to dynamically generate toast messages.
+* **Rationale:** Duplicating these operations across `useMatchOperations`, `useEntityOperations`, and `useCriterionOperations` creates maintenance nightmares and inconsistent behavior.
+
+### B. Specific Hooks Inherit from Base
+
+* **Rule:** Entity-specific hooks (`useMatchOperations`, `useEntityOperations`, `useCriterionOperations`) MUST compose/inherit from `useBaseEntityOperations` rather than re-implementing common operations.
+* **Correct Pattern:**
+  ```typescript
+  // ✅ MANDATORY - Compose from base hook
+  import { useBaseEntityOperations } from './useBaseEntityOperations';
+  import { matchApi } from '@/lib/api/matchApi';
+
+  export function useMatchOperations() {
+    const baseOps = useBaseEntityOperations({
+      apiClient: matchApi,
+      entityLabel: 'Match'
+    });
+
+    return {
+      deleteWithToast: baseOps.deleteWithToast,
+      writeMasterFileWithToast: baseOps.writeMasterFileWithToast,
+      fetchMasterFileWithToast: baseOps.fetchMasterFileWithToast,
+      // ... entity-specific operations only
+    };
+  }
+  ```
+* **Violation Example:**
+  ```typescript
+  // ❌ STRICTLY FORBIDDEN - Duplicating base operations
+  const deleteWithToast = useCallback(async (id, onSuccess) => {
+    await matchApi.deleteMatch(id);
+    addToast(TOAST_TYPES.SUCCESS, 'Match deleted');
+    onSuccess();
+  }, []);
+  ```
+
+### C. Toast Notifications: Exclusive Hook Responsibility
+
+* **Rule:** UI Toast feedback for data operations MUST be handled EXCLUSIVELY inside the operations hooks (`useBaseEntityOperations` or specific hooks). UI components (Modals, Buttons, Pages) and raw API clients MUST NOT fire toasts.
+* **Rationale:** Scattering `addToast` calls in UI components causes double-toast bugs, inconsistent styling, and DRY violations.
+* **Correct Pattern:**
+  ```typescript
+  // ✅ MANDATORY - Toast handled in hook only
+  const writeMasterFileWithToast = useCallback(
+    async (id: number, onSuccess: () => void) => {
+      await api.writeMasterFile(id);
+      addToast(TOAST_TYPES.SUCCESS, 'Master file written'); // Single toast
+      onSuccess();
+    },
+    [addToast]
+  );
+  ```
+* **Violation Example:**
+  ```typescript
+  // ❌ STRICTLY FORBIDDEN - Toast in UI component
+  const handleWrite = async () => {
+    await writeMasterFileWithToast(id, () => {});
+    addToast('Success', 'extra toast'); // Double-toast bug!
+  };
+  ```
+
+### D. Hook File Structure
+
+* **`useBaseEntityOperations.ts`:** Shared operations for all entity types. Returns `deleteWithToast`, `retryWithToast`, `writeMasterFileWithToast`, `fetchMasterFileWithToast`, `openFolderWithToast`.
+* **`useEntityOperations.ts`:** Inherits base operations. Adds entity-specific `bulkCreateFromFiles`, `updateWithToast`.
+* **`useMatchOperations.ts`:** Inherits base operations. Adds match-specific `downloadPdfWithToast`.
+* **`useCriterionOperations.ts`:** Inherits base operations. No additional operations required.

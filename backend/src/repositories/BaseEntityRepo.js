@@ -103,6 +103,20 @@ class BaseEntityRepo extends BaseRepository {
     }
 
     /**
+     * Unified method to update both folder path and staging status.
+     * Enforces Liskov Substitution Principle by providing a standard interface for all child repos.
+     * @method updatePathAndStaging
+     * @param {number} id - The entity ID.
+     * @param {string} folderPath - The folder path.
+     * @param {boolean|number} isStaged - The staging status.
+     * @returns {boolean} True if the row was updated.
+     */
+    updatePathAndStaging(id, folderPath, isStaged) {
+        const stagedValue = isStaged ? 1 : 0;
+        return super.update(id, { folder_path: folderPath, is_staged: stagedValue });
+    }
+
+    /**
      * Updates the metadata for an entity.
      * @method updateMetadata
      * @param {number} id - The entity ID.

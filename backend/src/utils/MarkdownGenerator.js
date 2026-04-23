@@ -50,71 +50,117 @@ class MarkdownGenerator {
 ${extractedData.verbatimPosting || extractedData.rawText || "No text parsed."}`;
     }
 
-    /**
+/**
      * Generates an Obsidian-compatible master markdown file for a Match entity.
-     * Uses Wiki Links ([[FileName]]) for vault traversal between Requirement, Offering, and Matched Criteria.
+     * Uses Wiki Links ([[FileName]]) for vault traversal between Requirement and Offering.
      *
      * @method generateMatchMaster
      * @memberof MarkdownGenerator
      */
-    static generateMatchMaster({ matchFolderName, reqFolderName, offFolderName, executiveSummary, matchId, matchedCriteriaLinks }) {
+    static generateMatchMaster({ matchFolderName, reqFolderName, offFolderName, executiveSummary, dimensionalSummaries, matchId, matchScore, associatedFiles }) {
         const safeMatchName = matchFolderName || "Unknown Match";
         const safeReqName = reqFolderName || "Unknown Requirement";
         const safeOffName = offFolderName || "Unknown Offering";
-        const safeSummary = executiveSummary || "No summary available.";
-        const criteriaLinks = Array.isArray(matchedCriteriaLinks) ? matchedCriteriaLinks : [];
+        const fileLinks = Array.isArray(associatedFiles) ? associatedFiles : [];
 
         const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
-        const deeplink = matchId ? `${baseUrl}/matches?matchId=${matchId}` : baseUrl;
+        const safeDeeplink = matchId ? `${baseUrl}/matches?matchId=${matchId}` : baseUrl;
 
-        let criteriaSection;
-        if (criteriaLinks.length > 0) {
-            const criteriaList = criteriaLinks.map(c => `- [[${c}]]`).join('\n');
-            criteriaSection = `## Matched Criteria\n${criteriaList}\n\n---\n\n`;
-        } else {
-            criteriaSection = `---\n\n`;
+        let frontmatter = "---\n";
+        frontmatter += `Compari Link: "${safeDeeplink}"\n`;
+
+        if (matchScore !== undefined && matchScore !== null) {
+            frontmatter += `Match Score: "${matchScore}"\n`;
         }
 
-        return `# ${safeMatchName}
+        frontmatter += "---\n\n";
 
-**[View Match in Compari](${deeplink})**
+        let filesSection = "";
+        if (fileLinks.length > 0) {
+            filesSection = `## Associated Files\n${fileLinks.map(file => `- [[${file}]]`).join('\n')}\n\n`;
+        }
+
+        let summarySection = "";
+        if (executiveSummary && executiveSummary.trim() !== "") {
+            summarySection += `## Executive Summary\n\n${executiveSummary}\n\n`;
+        }
+
+        if (Array.isArray(dimensionalSummaries) && dimensionalSummaries.length > 0) {
+            for (const dim of dimensionalSummaries) {
+                if (dim.summary && dim.summary.trim() !== "") {
+                    summarySection += `### ${dim.displayName}\n\n${dim.summary}\n\n`;
+                }
+            }
+        }
+
+        return `${frontmatter}# ${safeMatchName}
 
 **Requirement:** [[${safeReqName}]]
 **Offering:** [[${safeOffName}]]
 
-${criteriaSection}${safeSummary}`;
+---
+
+${filesSection}${summarySection}`;
     }
 
     /**
-     * Generates an Obsidian-compatible master markdown file for an Entity with associated Criteria.
-     * Uses Wiki Links for vault traversal to linked Criteria folders.
+     * Generates an Obsidian-compatible master markdown file for an Entity (Requirement/Offering).
+     * Dynamically renders extracted metadata into the YAML frontmatter.
      *
      * @method generateEntityMaster
      * @memberof MarkdownGenerator
      * @param {Object} dto - The data transfer object.
+     * @param {number} dto.entityId - The entity ID for building the deep link.
      * @param {string} dto.entityFolderName - The name of the entity folder (H1 title).
      * @param {string} dto.entityType - The entity type (requirement/offering).
+     * @param {Object} dto.metadata - The extracted metadata object with dynamic key-value pairs.
+     * @param {string} dto.verbatimContent - The verbatim extraction content.
      * @param {Array<string>} dto.criteriaFolderNames - Array of criterion folder names for Wiki Links.
-     * @param {string} dto.deeplink - The deep link URL to view the entity in Compari.
+     * @param {Array<string>} dto.associatedFiles - Array of associated file names.
      * @returns {string} The formatted Obsidian-compatible markdown content.
-     *
-     * @socexplanation
-     * Generates Obsidian-compatible Wiki Links for vault traversal. The Associated Criteria
-     * section creates clickable links to each criterion's vault file for cross-referencing.
      */
-    static generateEntityMaster({ entityFolderName, entityType, criteriaFolderNames, deeplink, associatedFiles }) {
+    static generateEntityMaster({ entityId, entityFolderName, entityType, metadata, verbatimContent, criteriaFolderNames, associatedFiles }) {
         const safeEntityName = entityFolderName || "Unknown Entity";
         const safeType = entityType || "entity";
-        const safeDeeplink = deeplink || "#";
         const criteriaLinks = Array.isArray(criteriaFolderNames) ? criteriaFolderNames : [];
         const fileLinks = Array.isArray(associatedFiles) ? associatedFiles : [];
+
+        const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+        const routePrefix = safeType.toLowerCase() === 'requirement' ? 'requirements' : 'offerings';
+        const safeDeeplink = entityId ? `${baseUrl}/${routePrefix}?entityId=${entityId}` : baseUrl;
+
+        let frontmatter = "---\n";
+        frontmatter += `Compari Link: "${safeDeeplink}"\n`;
+
+        if (metadata && Object.keys(metadata).length > 0) {
+            for (const [key, value] of Object.entries(metadata)) {
+                if (key.startsWith('_') || key === 'processingStartedAt' || key === 'processingCompletedAt' || key === 'processingFileName') continue;
+
+                let safeValue = value;
+                if (Array.isArray(value)) {
+                    safeValue = value.join(', ');
+                } else if (typeof value === 'object' && value !== null) {
+                    safeValue = JSON.stringify(value);
+                }
+
+                const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+                frontmatter += `${formattedKey}: "${safeValue}"\n`;
+            }
+        }
+        frontmatter += "---\n\n";
+
+        let verbatimSection = "";
+        if (verbatimContent && verbatimContent.trim()) {
+            verbatimSection = `\n---\n\n## Verbatim Profile\n\n${verbatimContent}\n`;
+        }
 
         let filesSection = "";
         if (fileLinks.length > 0) {
             const filesList = fileLinks
                 .map(file => `- [[${file}]]`)
                 .join('\n');
-            filesSection = `## Associated Files\n${filesList}\n`;
+            filesSection = `\n---\n\n## Associated Files\n${filesList}\n`;
         }
 
         let criteriaSection = "";
@@ -122,15 +168,10 @@ ${criteriaSection}${safeSummary}`;
             const criteriaList = criteriaLinks
                 .map(criterion => `- [[${criterion}]]`)
                 .join('\n');
-            criteriaSection = `## Associated Criteria\n${criteriaList}\n`;
+            criteriaSection = `\n---\n\n## Associated Criteria\n${criteriaList}\n`;
         }
 
-        return `# ${safeEntityName}
-
-**[View ${safeType} in Compari](${safeDeeplink})**
-
-${filesSection}
-${criteriaSection}`;
+        return `${frontmatter}# ${safeEntityName}\n${verbatimSection}${filesSection}${criteriaSection}`;
     }
 
     /**
@@ -140,10 +181,14 @@ ${criteriaSection}`;
      * @method generateCriterionMaster
      * @memberof MarkdownGenerator
      * @param {Object} dto - The data transfer object.
+     * @param {number} dto.criterionId - The criterion ID for building the deep link.
      * @param {string} dto.criterionFolderName - The name of the criterion folder (H1 title).
      * @param {string} dto.dimension - The dimension/category of the criterion.
+     * @param {string} dto.dimensionDisplayName - The user-friendly dimension display name.
      * @param {Array<string>} dto.reqFolderNames - Array of requirement folder names for Wiki Links.
      * @param {Array<string>} dto.offFolderNames - Array of offering folder names for Wiki Links.
+     * @param {Array<string>} dto.similarCriterionNames - Array of similar criterion names.
+     * @param {Array<string>} dto.mergedNames - Array of merged criterion names.
      * @returns {string} The formatted Obsidian-compatible markdown content.
      *
      * @socexplanation
@@ -151,13 +196,22 @@ ${criteriaSection}`;
      * and Offerings sections create clickable links to each entity's vault file, enabling
      * bidirectional navigation between criteria and linked entities.
      */
-    static generateCriterionMaster({ criterionFolderName, dimension, reqFolderNames, offFolderNames, similarCriterionNames, mergedNames }) {
+    static generateCriterionMaster({ criterionId, criterionFolderName, dimension, dimensionDisplayName, reqFolderNames, offFolderNames, similarCriterionNames, mergedNames }) {
         const safeCriterionName = criterionFolderName || "Unknown Criterion";
         const safeDimension = dimension || "uncategorized";
+        const safeDimensionNiceName = dimensionDisplayName || safeDimension;
         const reqLinks = Array.isArray(reqFolderNames) ? reqFolderNames : [];
         const offLinks = Array.isArray(offFolderNames) ? offFolderNames : [];
         const similarLinks = Array.isArray(similarCriterionNames) ? similarCriterionNames : [];
         const mergeLinks = Array.isArray(mergedNames) ? mergedNames : [];
+
+        const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+        const safeDeeplink = criterionId ? `${baseUrl}/criteria?criterionId=${criterionId}` : baseUrl;
+
+        let frontmatter = "---\n";
+        frontmatter += `Compari Link: "${safeDeeplink}"\n`;
+        frontmatter += `Dimension: "${safeDimensionNiceName}"\n`;
+        frontmatter += "---\n\n";
 
         let reqSection = "";
         if (reqLinks.length > 0) {
@@ -183,7 +237,7 @@ ${criteriaSection}`;
             mergedSection = `## Merged Criteria (Synonyms)\n${mergeList}\n`;
         }
 
-        return `# ${safeCriterionName}
+        return `${frontmatter}# ${safeCriterionName}
 
 **Dimension:** ${safeDimension}
 

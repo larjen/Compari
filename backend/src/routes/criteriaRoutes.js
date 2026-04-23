@@ -18,9 +18,12 @@ const container = require('../config/container').getContainer();
 const criteriaController = container.resolve('criteriaController');
 
 router.get('/', criteriaController.getAll);
+router.post('/', criteriaController.create);
 router.get('/:id', criteriaController.getById);
 
 router.get('/:id/associations', criteriaController.getAssociations);
+router.post('/:id/link', criteriaController.linkEntity);
+router.post('/:id/unlink', criteriaController.unlinkEntity);
 
 router.delete('/:id', criteriaController.delete);
 

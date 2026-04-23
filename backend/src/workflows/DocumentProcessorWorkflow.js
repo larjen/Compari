@@ -95,7 +95,7 @@ class DocumentProcessorWorkflow {
 
         this._entityService.resetProcessingTimer(entityId);
 
-        const filePath = this._entityService.resolveEntityFilePath(entityId, fileName);
+        let filePath = this._entityService.resolveEntityFilePath(entityId, fileName);
         if (!filePath) {
             throw new Error(`Could not resolve folder path for entity #${entityId}.`);
         }
@@ -103,10 +103,16 @@ class DocumentProcessorWorkflow {
             throw new Error(`Invalid fileName provided for entity #${entityId}. Expected string, received ${typeof fileName}.`);
         }
 
-        if (!fileService.validatePath(filePath)) {
-            const error = new Error(`File not found at path: ${filePath}. The file was not moved correctly during upload.`);
-            error.isFatalClientError = true;
-            throw error;
+        const fileExists = await fileService.waitForFile(filePath);
+
+        if (!fileExists) {
+            filePath = this._entityService.resolveEntityFilePath(entityId, fileName);
+            
+            if (!filePath || !fileService.validatePath(filePath)) {
+                const error = new Error(`File not found at path: ${filePath}. The file was not moved correctly during upload or the folder was moved by a concurrent task.`);
+                error.isFatalClientError = true;
+                throw error;
+            }
         }
 
         let rawText;
@@ -371,15 +377,11 @@ class DocumentProcessorWorkflow {
 
         // 3. Generate dynamic master document and update database via centralized lifecycle
         const finalFileName = await this._entityService.generateAndSaveMasterDocument(entityId, ({ entity, folderName }) => {
-            const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
-            const route = entity.entityType === 'requirement' ? 'requirements' : 'offerings';
-            const deeplink = `${baseUrl}/${route}?id=${entity.id}`;
-
             return MarkdownGenerator.generateEntityMaster({
+                entityId: entity.id,
                 entityFolderName: folderName,
                 entityType: entity.entityType,
                 criteriaFolderNames,
-                deeplink,
                 associatedFiles
             });
         });

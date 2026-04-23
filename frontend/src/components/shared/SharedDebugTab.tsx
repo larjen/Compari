@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/Button';
 import { SettingsCard } from '@/components/shared/SettingsCard';
 import { Tabs } from '@/components/shared/Tabs';
 import { DOMAIN_ICONS } from '@/lib/iconRegistry';
-import { useToast } from '@/hooks/useToast';
 
 interface SharedDebugTabProps {
   /** The raw JSON data to display in the debug viewer */
@@ -40,7 +39,6 @@ export function SharedDebugTab({
   onFetchMasterFile,
   isGenerating = false,
 }: SharedDebugTabProps) {
-  const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState('markdown');
   const [markdownContent, setMarkdownContent] = useState<string | null>(null);
   const [isFetching, setIsFetching] = useState(false);
@@ -70,12 +68,11 @@ export function SharedDebugTab({
   const handleGenerateMasterFile = async () => {
     try {
       await onGenerateMasterFile();
-      addToast('success', 'Master file generated successfully');
       if (activeTab === 'markdown') {
         await fetchMarkdownContent();
       }
     } catch (error) {
-      addToast('error', error instanceof Error ? error.message : 'Failed to generate master file');
+      console.error('Failed to generate master file:', error);
     }
   };
 

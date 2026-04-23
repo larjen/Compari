@@ -40,22 +40,30 @@ class CriteriaRepo extends BaseEntityRepo {
         super({ db, logService });
     }
     /**
-     * Retrieves a criterion by its ID for deep-linking.
-     * @param {number} id - The criterion ID.
-     * @returns {Object|null} Criterion object with all fields.
-     * @returns {string} returns.folderPath - The folder path from entities_base (CTI).
-     * @returns {boolean} returns.isStaged - Whether the entity is in staging (CTI).
-     * @returns {string|null} returns.masterFile - The master file path from entities_base (CTI).
+     * Retrieves a single criterion by ID, joining base and child tables.
+     * @method getCriterionById
+     * @memberof CriteriaRepo
+     * @param {number} id - The unique identifier of the criterion.
+     * @returns {Object|null} The populated criterion object or null if not found.
+     * @socexplanation 
+     * - Implements CTI JOIN between entities_base and entities_criterion.
+     * - Parses embedding JSON string into a numeric array for internal service use.
+     * - This method is the SSoT for single-criterion retrieval.
      */
-    getCriterionByIdForApi(id) {
+    getCriterionById(id) {
         const stmt = this.db.prepare(`
-            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, c.entity_type, c.folder_path, c.is_staged, c.master_file, ec.dimension, ec.embedding
+            SELECT
+                c.id, c.normalized_name, c.nicename as display_name, c.hash,
+                c.entity_type, c.folder_path, c.is_staged, c.master_file,
+                c.nice_name_line_2 as dimension_display_name,
+                ec.dimension, ec.embedding
             FROM entities_base c
             JOIN entities_criterion ec ON c.id = ec.entity_id
             WHERE c.id = ? AND c.entity_type = ?
         `);
-        const row = stmt.get(id, ENTITY_TYPES.CRITERION);
+        const row = stmt.get(id, require('../config/constants').ENTITY_TYPES.CRITERION);
         if (!row) return null;
+
         return {
             id: row.id,
             normalizedName: row.normalized_name,
@@ -65,8 +73,9 @@ class CriteriaRepo extends BaseEntityRepo {
             folderPath: row.folder_path,
             isStaged: row.is_staged === 1,
             masterFile: row.master_file,
+            dimensionDisplayName: row.dimension_display_name,
             dimension: row.dimension,
-            embedding: JSON.parse(row.embedding)
+            embedding: row.embedding ? JSON.parse(row.embedding) : null
         };
     }
     /**
@@ -165,13 +174,13 @@ class CriteriaRepo extends BaseEntityRepo {
     }
 
     /**
-     * Internal method for retrieving all criteria WITH embeddings.
-     * Used by CriteriaService for vector math operations.
-     * @method _getAllCriteriaWithEmbeddings
-     * @private
+     * Retrieves all criteria WITH embeddings.
+     * Used by CriteriaService and CriteriaMergeService for vector math operations.
+     * @method getAllCriteriaWithEmbeddings
+     * @public
      * @returns {Array<Object>} Array of criterion objects with id, normalized_name, display_name, dimension, and embedding (array).
      */
-    _getAllCriteriaWithEmbeddings() {
+    getAllCriteriaWithEmbeddings() {
         const stmt = this.db.prepare(`
             SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, ec.dimension, ec.embedding
             FROM entities_base c
@@ -284,14 +293,30 @@ class CriteriaRepo extends BaseEntityRepo {
      * @param {number} entityId - The entity ID.
      * @param {number} criterionId - The criterion ID to link.
      * @param {boolean} [isRequired=true] - Whether the criterion is required (true) or preferred (false).
-     * @why_not_base - Inserts into 'entity_criteria' junction table (not base table).
+     * @returns {boolean} True if a new link was created, false if it already existed.
      */
     linkCriterionToEntity(entityId, criterionId, isRequired = true) {
         const stmt = this.db.prepare(`
-            INSERT OR IGNORE INTO entity_criteria (entity_id, criterion_id, is_required) 
+            INSERT OR IGNORE INTO entity_criteria (entity_id, criterion_id, is_required)
             VALUES (?, ?, ?)
         `);
-        stmt.run(entityId, criterionId, isRequired ? 1 : 0);
+        const info = stmt.run(entityId, criterionId, isRequired ? 1 : 0);
+        return info.changes > 0;
+    }
+
+    /**
+     * Removes the link between a criterion and an entity.
+     * @method unlinkCriterionFromEntity
+     * @param {number} entityId - The entity ID.
+     * @param {number} criterionId - The criterion ID to unlink.
+     * @returns {boolean} True if a link was removed, false if it didn't exist.
+     */
+    unlinkCriterionFromEntity(entityId, criterionId) {
+        const stmt = this.db.prepare(`
+            DELETE FROM entity_criteria
+            WHERE entity_id = ? AND criterion_id = ?
+        `);
+        stmt.run(entityId, criterionId);
     }
 
     /**
@@ -525,40 +550,7 @@ class CriteriaRepo extends BaseEntityRepo {
         return rows.map(row => EntityFactory.fromRow(row, this._logService));
     }
 
-    /**
-     * Retrieves a criterion by its ID.
-     * @method getCriterionById
-     * @param {number} id - The criterion ID.
-     * @returns {Object|null} Criterion object or null.
-     * @returns {string} returns.folderPath - The folder path from entities_base (CTI).
-     * @returns {boolean} returns.isStaged - Whether the entity is in staging (CTI).
-     * @returns {string|null} returns.masterFile - The master file path from entities_base (CTI).
-     * @why_not_base - Custom return format with JSON.parse for embedding array.
-     */
-    getCriterionById(id) {
-        const stmt = this.db.prepare(`
-            SELECT c.id, c.normalized_name, c.nicename as display_name, c.hash, c.entity_type, c.folder_path, c.is_staged, c.master_file, ec.dimension, ec.embedding
-            FROM entities_base c
-            JOIN entities_criterion ec ON c.id = ec.entity_id
-            WHERE c.id = ? AND c.entity_type = ?
-        `);
-        const row = stmt.get(id, ENTITY_TYPES.CRITERION);
-        if (!row) return null;
-        return {
-            id: row.id,
-            normalizedName: row.normalized_name,
-            displayName: row.display_name,
-            hash: row.hash,
-            entityType: row.entity_type,
-            folderPath: row.folder_path,
-            isStaged: row.is_staged === 1,
-            masterFile: row.master_file,
-            dimension: row.dimension,
-            embedding: JSON.parse(row.embedding)
-        };
-    }
-
-    /**
+/**
      * Merges removeId into keepId, transferring all entity links and deleting the old criterion.
      * Records the merge in the criterion_merge_history table for audit purposes.
      * 

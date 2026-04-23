@@ -122,11 +122,31 @@ const extractSchema = z.object({
     fileName: z.string().min(1, 'fileName is required')
 });
 
+/**
+ * @typedef {Object} CriterionInput
+ * @property {string} displayName - The display name for the criterion.
+ * @property {string} dimension - The dimension category for the criterion.
+ * @property {number|null} [requirementId] - Optional requirement entity ID.
+ * @property {number|null} [offeringId] - Optional offering entity ID.
+ */
+
+/**
+ * Schema for validating manual criterion creation.
+ * @type {z.ZodSchema<CriterionInput>}
+ */
+const criterionSchema = z.object({
+    displayName: z.string().min(1, 'displayName is required'),
+    dimension: z.string().min(1, 'dimension is required'),
+    requirementId: z.number().int().positive().nullable().optional(),
+    offeringId: z.number().int().positive().nullable().optional()
+});
+
 module.exports = {
     aiModelSchema,
     blueprintSchema,
     dimensionSchema,
     entitySchema,
     matchSchema,
-    extractSchema
+    extractSchema,
+    criterionSchema
 };

@@ -17,7 +17,7 @@
 import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Entity } from '@/lib/types';
 import { ENTITY_ROLES, ENTITY_STATUS } from '@/lib/constants';
-import { cn, formatPercentage, getEntityDisplayNames } from '@/lib/utils';
+import { cn, formatPercentage, getEntityDisplayNames, extractBaseEntityData } from '@/lib/utils';
 import { BaseCard } from '../shared/BaseCard';
 
 interface EntityCardProps {
@@ -46,7 +46,7 @@ export function EntityCard({
   onDelete,
   onCancel
 }: EntityCardProps) {
-  const startTime = processingStartedAt || (entity.metadata?.processingStartedAt as string) || (entity as any).updated_at;
+  const { metadata, startTime } = extractBaseEntityData(entity);
   const isRequirement = entity.type === ENTITY_ROLES.REQUIREMENT;
 
   const { primary: primaryName, secondary: secondaryName } = getEntityDisplayNames(entity);
@@ -62,6 +62,7 @@ export function EntityCard({
       onRetry={onRetry}
       onDelete={onDelete}
       onCancel={onCancel}
+      metadata={metadata}
     >
       <div className={cn(
         "mb-2 flex flex-col items-center transition-colors group-hover:text-accent-forest-light",

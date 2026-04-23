@@ -81,6 +81,18 @@ class FileService {
     }
 
     /**
+     * Polls the file system to wait for a file to become available.
+     * Mitigates OS-level file lock race conditions immediately after an upload.
+     */
+    async waitForFile(filePath, maxRetries = 5, delayMs = 500) {
+        for (let i = 0; i < maxRetries; i++) {
+            if (fs.existsSync(filePath)) return true;
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+        return false;
+    }
+
+    /**
      * @socexplanation
      * Ensures the new directory structure (Offerings/Requirements) is created
      * automatically if it doesn't exist on the host system.

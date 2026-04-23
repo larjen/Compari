@@ -365,20 +365,64 @@ class EntityService extends BaseEntityService {
     }
 
 /**
-      * Generates and writes the master markdown file for an entity in its folder.
-      * This is intended as a debug/utility function.
-      * @param {number} entityId - The ID of the entity.
-      * @returns {Promise<void>}
-      */
-     async writeMasterFile(entityId) {
-         const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+     * Generates and writes the master markdown file for an entity in its folder.
+     * This is intended as a debug/utility function.
+     * @method writeMasterFile
+     * @param {number} entityId - The ID of the entity.
+     * @param {Array<string>} [criteriaFolderNames=[]] - Optional array of criteria folder names for Wiki Links.
+     * @returns {Promise<void>}
+     * @responsibility 
+     * - Manually regenerates the master markdown file for debugging or utility purposes.
+     * - Merges entity metadata and verbatim extraction into a single markdown string.
+     * @boundary_rules
+     * - ❌ MUST NOT handle HTTP requests or responses.
+     * - ✅ MUST delegate markdown generation to the pure utility `MarkdownGenerator`.
+     * - ✅ MUST delegate file system operations and database updates to the base class `generateAndSaveMasterDocument` method.
+     * @socexplanation
+     * This method orchestrates the retrieval of entity data but delegates string formatting 
+     * to a pure utility (`MarkdownGenerator`). It relies on the base class lifecycle method 
+     * `generateAndSaveMasterDocument` to handle file I/O and database persistence, adhering to DRY principles.
+     */
+    async writeMasterFile(entityId, criteriaFolderNames = []) {
+        const finalFolderPath = this.getEntityFolderPath(entityId);
+        const folderName = path.basename(finalFolderPath);
+        const masterFileName = `${folderName}.md`;
+        const allFiles = this._fileService.listFilesInFolder(finalFolderPath) || [];
+        const associatedFiles = allFiles.filter(f => f !== masterFileName);
 
-         await this.generateAndSaveMasterDocument(entityId, ({ entity, folderName }) => {
-             const route = entity.entityType === 'requirement' ? 'requirements' : 'offerings';
-             const deeplink = `${baseUrl}/${route}?id=${entity.id}`;
-             return `# ${folderName}\n\n**[View Entity in Compari](${deeplink})**\n`;
-         });
-     }
+        let verbatimContent = "";
+        if (allFiles.includes('verbatim_extraction.md')) {
+            const verbatimPath = path.join(finalFolderPath, 'verbatim_extraction.md');
+            verbatimContent = await this._fileService.readTextFile(verbatimPath) || "";
+        }
+
+        const entity = this.getById(entityId);
+
+        await this.generateAndSaveMasterDocument(entityId, ({ entity: callbackEntity, folderName: entityFolderName }) => {
+            const targetEntity = callbackEntity.nicename !== undefined ? callbackEntity : entity;
+
+            let parsedMetadata = {};
+            if (typeof targetEntity.metadata === 'string') {
+                try { 
+                    parsedMetadata = JSON.parse(targetEntity.metadata); 
+                } catch (_e) { 
+                    // Fallback to the initial {} value if parsing fails
+                }
+            } else {
+                parsedMetadata = targetEntity.metadata || {};
+            }
+
+            return MarkdownGenerator.generateEntityMaster({
+                entityId: targetEntity.id,
+                entityFolderName,
+                entityType: targetEntity.entityType || targetEntity.type,
+                metadata: parsedMetadata,
+                verbatimContent,
+                criteriaFolderNames,
+                associatedFiles
+            });
+        });
+    }
 
 /**
       * Generates and saves the verbatim profile markdown file for an entity.

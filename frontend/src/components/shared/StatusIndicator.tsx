@@ -19,18 +19,21 @@ interface StatusIndicatorProps {
   startTime?: string | null;
   /** Error message to display */
   errorMessage?: string;
+  metadata?: any;
 }
 
 export function StatusIndicator({
   status,
   taskName,
   startTime,
-  errorMessage
+  errorMessage,
+  metadata
 }: StatusIndicatorProps) {
   const { isPending, isProcessing, hasError, elapsedTime } = useTaskLifecycle(
     status,
     startTime,
-    errorMessage
+    errorMessage,
+    metadata
   );
 
   if (isPending) {
