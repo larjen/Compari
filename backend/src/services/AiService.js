@@ -42,7 +42,7 @@
 const crypto = require('crypto');
 const path = require('path');
 const { OpenAI } = require('openai');
-const { AI_MODEL_ROLES, AI_TASK_TYPES, LOG_LEVELS, LOG_SYMBOLS, SETTING_KEYS } = require('../config/constants');
+const { AI_MODEL_ROLES, AI_TASK_TYPES, LOG_LEVELS, LOG_SYMBOLS, SETTING_KEYS, PROMPT_SYSTEM_NAMES } = require('../config/constants');
 
 class AiService {
     /**
@@ -54,15 +54,17 @@ class AiService {
      * @param {Object} deps.fileService - The FileService instance
      * @param {Function} deps.processAiTasks - The processAiTasks utility function
      * @param {string} deps.aiCacheDir - The directory for AI cache
+     * @param {Object} deps.promptRepo - The PromptRepo instance
      * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
      */
-    constructor({ settingsManager, aiModelRepo, logService, fileService, processAiTasks, aiCacheDir }) {
+    constructor({ settingsManager, aiModelRepo, logService, fileService, processAiTasks, aiCacheDir, promptRepo }) {
         this._settingsManager = settingsManager;
         this._aiModelRepo = aiModelRepo;
         this._logService = logService;
         this._fileService = fileService;
         this._processAiTasks = processAiTasks;
         this._aiCacheDir = aiCacheDir;
+        this._promptRepo = promptRepo;
         this.clientCache = new Map();
         this.isTestingConnection = false;
     }
@@ -106,6 +108,15 @@ class AiService {
         if (this._settingsManager.get(SETTING_KEYS.USE_AI_CACHE) !== 'true') return;
         const cachePath = path.join(this._aiCacheDir, cacheKey);
         this._fileService.writeJsonFile(cachePath, data);
+    }
+
+    /**
+     * @private
+     * Retrieves the reasoning system prompt from the database, falling back to a default.
+     */
+    _getReasoningSystemPrompt() {
+        const promptRecord = this._promptRepo ? this._promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.REASONING_SYSTEM) : null;
+        return promptRecord ? promptRecord.prompt : 'You are a deep reasoning assistant. Analyze the provided context carefully and provide thoughtful insights.';
     }
 
     /**
@@ -222,6 +233,9 @@ class AiService {
                 break;
             case AI_TASK_TYPES.METADATA:
                 settingKey = SETTING_KEYS.MODEL_ROUTING_METADATA;
+                break;
+            case AI_TASK_TYPES.REASONING:
+                settingKey = SETTING_KEYS.MODEL_ROUTING_REASONING;
                 break;
             default: {
                 // Scoped block {} fixes the ESLint no-case-declarations error
@@ -699,6 +713,118 @@ class AiService {
         } finally {
             this.isTestingConnection = false;
         }
+    }
+
+    /**
+     * Generates a reasoning response using a dedicated reasoning model.
+     * Provides high-context inference with external context from MCP vault.
+     * @param {string} prompt - The user prompt.
+     * @param {string} context - External context to inform reasoning.
+     * @param {Object} [optionsDto={}] - Optional configuration.
+     * @returns {Promise<Object>} The response content with model and duration.
+     * 
+     * @responsibility Orchestrates the 'Context + Prompt' pattern for deep reasoning tasks.
+     * @boundary_rules - MUST NOT contain business logic beyond AI orchestration.
+     * - Markdown is intentionally suppressed at the system prompt level to enforce plain-text UI rendering.
+     */
+    async generateReasoningResponse(messages, optionsDto = {}) {
+        const { overrideConfig, signal, logAction, temperature } = optionsDto;
+        const startTime = Date.now();
+        let config = overrideConfig;
+
+        if (!config) {
+            config = this._getModelConfigForTask(AI_TASK_TYPES.REASONING);
+        }
+
+        const { client, model: selectedModel } = this._getClient(config);
+
+        const chatParams = {
+            model: selectedModel,
+            messages: messages,
+            temperature: temperature !== undefined ? temperature : (config.temperature ?? 0.3)
+        };
+
+        let response;
+        try {
+            const timeoutSignal = AbortSignal.timeout(300000);
+            const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+
+            response = await client.chat.completions.create(chatParams, { signal: combinedSignal });
+        } catch (error) {
+            this._handleAiApiError(error, { messages: 'Reasoning query sent (omitted for brevity)' });
+        }
+
+        const content = response?.choices?.[0]?.message?.content?.trim() || '';
+        const durationMs = Date.now() - startTime;
+
+        if (logAction) {
+            const timeStr = durationMs < 1000 ? `${durationMs}ms` : this._logService.formatDuration(durationMs);
+            this._logService.logTerminal({ 
+                status: LOG_LEVELS.INFO, 
+                symbolKey: LOG_SYMBOLS.LIGHTNING, 
+                origin: 'AiService', 
+                message: `[Model: ${selectedModel}] [Time: ${timeStr}] ${logAction}` 
+            });
+        }
+
+        return { content, model: selectedModel, durationMs };
+    }
+
+    /**
+     * Streams a reasoning response token-by-token.
+     * @param {string} prompt - The user prompt.
+     * @param {string} context - External context.
+     * @param {Object} optionsDto - Optional configuration.
+     * @param {Function} onChunk - Callback executed per token chunk.
+     * 
+     * @responsibility Streams AI response chunks for real-time UI updates.
+     * @boundary_rules - MUST NOT contain business logic beyond AI streaming.
+     * - Markdown is intentionally suppressed at the system prompt level to enforce plain-text UI rendering.
+     */
+    async streamReasoningResponse(messages, optionsDto = {}) {
+        const { overrideConfig, signal, logAction, temperature, onChunk } = optionsDto;
+        const startTime = Date.now();
+        let config = overrideConfig;
+
+        if (!config) {
+            config = this._getModelConfigForTask(AI_TASK_TYPES.REASONING);
+        }
+
+        const { client, model: selectedModel } = this._getClient(config);
+
+        const chatParams = {
+            model: selectedModel,
+            messages: messages,
+            temperature: temperature !== undefined ? temperature : (config.temperature ?? 0.3),
+            stream: true // Enable streaming
+        };
+
+        let fullContent = '';
+        try {
+            const stream = await client.chat.completions.create(chatParams, { signal });
+            
+            for await (const chunk of stream) {
+                const text = chunk.choices?.[0]?.delta?.content || '';
+                if (text) {
+                    fullContent += text;
+                    if (onChunk) onChunk(text);
+                }
+            }
+        } catch (error) {
+            this._handleAiApiError(error, { messages: 'Reasoning stream query sent' });
+        }
+
+        const durationMs = Date.now() - startTime;
+        if (logAction) {
+            this._logService.logTerminal({ 
+                status: 'INFO', 
+                symbolKey: 'LIGHTNING', 
+                origin: 'AiService', 
+                message: `[Model: ${selectedModel}] [Time: ${durationMs}ms] ${logAction} (Streamed)` 
+            });
+        }
+
+        return { content: fullContent, model: selectedModel, durationMs };
     }
 }
 

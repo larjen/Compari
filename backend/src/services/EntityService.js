@@ -22,7 +22,7 @@
  * Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
  */
 const path = require('path');
-const { ENTITY_STATUS, APP_EVENTS, LOG_LEVELS } = require('../config/constants');
+const { ENTITY_STATUS, APP_EVENTS, LOG_LEVELS, ENTITY_TYPES } = require('../config/constants');
 const BaseEntityService = require('./BaseEntityService');
 const NameGenerator = require('../utils/NameGenerator');
 const MarkdownGenerator = require('../utils/MarkdownGenerator');
@@ -37,12 +37,13 @@ class EntityService extends BaseEntityService {
      * @param {Object} deps.eventService - The EventService instance
      * @dependency_injection Dependencies are injected strictly via the constructor. Defensive getters are not required as instantiation guarantees dependency presence.
      */
-    constructor({ entityRepo, fileService, logService, eventService }) {
+    constructor({ entityRepo, fileService, logService, eventService, blueprintRepo }) {
         super({ repository: entityRepo, eventService, logService, fileService, resourceName: 'Entity', getByIdMethod: 'getEntityById' });
         this._entityRepo = entityRepo;
         this._fileService = fileService;
         this._logService = logService;
         this._eventService = eventService;
+        this._blueprintRepo = blueprintRepo;
     }
 
     /**
@@ -412,10 +413,21 @@ class EntityService extends BaseEntityService {
                 parsedMetadata = targetEntity.metadata || {};
             }
 
+            const blueprintId = targetEntity.blueprintId;
+            let blueprintLabel = null;
+            if (blueprintId) {
+                const blueprint = this._blueprintRepo.getBlueprintById(blueprintId);
+                if (blueprint) {
+                    const isReq = (targetEntity.entityType || targetEntity.type) === ENTITY_TYPES.REQUIREMENT;
+                    blueprintLabel = isReq ? blueprint.requirementLabelSingular : blueprint.offeringLabelSingular;
+                }
+            }
+
             return MarkdownGenerator.generateEntityMaster({
                 entityId: targetEntity.id,
                 entityFolderName,
                 entityType: targetEntity.entityType || targetEntity.type,
+                blueprintLabel,
                 metadata: parsedMetadata,
                 verbatimContent,
                 criteriaFolderNames,

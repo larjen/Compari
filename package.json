@@ -20,6 +20,7 @@
         "bump:major": "npm version major --workspaces --include-workspace-root --no-git-tag-version && npm install --package-lock-only"
     },
     "devDependencies": {
+        "@bitbonsai/mcpvault": "^0.11.0",
         "@testing-library/dom": "^10.4.1",
         "@testing-library/jest-dom": "^6.9.1",
         "@testing-library/react": "^16.3.2",
@@ -56,5 +57,9 @@
                 ]
             }
         }
+    },
+    "dependencies": {
+        "@modelcontextprotocol/client": "^2.0.0-alpha.2",
+        "@modelcontextprotocol/sdk": "^1.29.0"
     }
 }

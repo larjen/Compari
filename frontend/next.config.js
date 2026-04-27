@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    // Increase proxy timeout to 5 minutes (300000ms) for long-running local AI tasks
+    proxyTimeout: 300000,
+  },
   async rewrites() {
     return [
       {

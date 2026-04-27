@@ -9,6 +9,8 @@ interface DeleteActionProps {
   onDelete: () => Promise<void>;
   buttonText?: string;
   iconOnly?: boolean;
+  inverted?: boolean;
+  disabled?: boolean;
   className?: string;
 }
 
@@ -28,7 +30,7 @@ interface DeleteActionProps {
  * @param buttonText - Optional custom text for the button (default: 'Delete')
  * @param iconOnly - If true, renders only the icon without text padding (default: false)
  */
-export function DeleteAction({ onDelete, buttonText = 'Delete', iconOnly = false, className }: DeleteActionProps) {
+export function DeleteAction({ onDelete, buttonText = 'Delete', iconOnly = false, inverted = false, disabled = false, className }: DeleteActionProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -55,7 +57,7 @@ export function DeleteAction({ onDelete, buttonText = 'Delete', iconOnly = false
             </>
           )}
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => setShowConfirm(false)}>
+        <Button variant="ghost" size="sm" onClick={() => setShowConfirm(false)} className={className}>
           Cancel
         </Button>
       </>
@@ -65,13 +67,17 @@ export function DeleteAction({ onDelete, buttonText = 'Delete', iconOnly = false
   if (iconOnly) {
     return (
       <Button
-        variant="ghost"
+        variant={inverted ? "primary" : "ghost"}
         size="sm"
         onClick={() => setShowConfirm(true)}
-        className={cn("text-red-500 hover:bg-red-50 p-1", className)}
+        disabled={disabled}
+        className={cn(
+          inverted ? "w-9 h-9 p-0 rounded-lg flex items-center justify-center shrink-0 bg-accent-forest hover:bg-accent-forest/90" : "text-red-500 hover:bg-red-50 p-1",
+          className
+        )}
         title="Delete"
       >
-        <DOMAIN_ICONS.DELETE className="w-4 h-4" />
+        <DOMAIN_ICONS.DELETE className={cn("w-4 h-4", inverted && "text-white")} />
       </Button>
     );
   }
@@ -80,6 +86,7 @@ export function DeleteAction({ onDelete, buttonText = 'Delete', iconOnly = false
     <Button
       variant="ghost"
       onClick={() => setShowConfirm(true)}
+      disabled={disabled}
       className={cn("text-red-600 hover:bg-red-50", className)}
     >
       <DOMAIN_ICONS.DELETE className="w-4 h-4 mr-2" />

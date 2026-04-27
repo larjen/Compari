@@ -71,109 +71,83 @@ try {
     process.exit(1);
 }
 
-// Phase 2.5: Composition Root (Dependency Injection Container)
-// =============================================================
-try {
-    const { bootstrap } = require('./src/config/container');
-    bootstrap();
-} catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('[FATAL] Phase 2.5 Failed: Container Bootstrap Error:', err.message);
-    process.exit(1);
-}
-
-// Phase 3: Application Logic
-// ==========================
-const container = require('./src/config/container').getContainer();
-const logService = container.resolve('logService');
-const settingsManager = container.resolve('settingsManager');
-const { LOG_LEVELS, LOG_SYMBOLS, HTTP_STATUS } = require('./src/config/constants');
-const setupRoutes = require('./src/routes/index');
-
-logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.NONE, origin: 'server.js', message: `Server starting...` });
-
-const express = require('express');
-
-const Logger = require('./src/utils/Logger');
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-const logger = new Logger('system', { logService, settingsManager });
-app.use(logger.middleware());
-
-app.use(express.json());
-
-setupRoutes(app);
-
-app.get('/', (req, res) => {
-    res.status(HTTP_STATUS.OK).json({
-        success: true,
-        message: "Compari API is running successfully.",
-        timestamp: new Date().toISOString()
-    });
-});
-
-/**
- * Catch-all 404 handler for unmatched routes.
- * Part of server error hardening - ensures all unmatched routes return structured JSON
- * instead of default HTML error pages.
- * 
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next function
- */
-app.use((req, res, next) => {
-    const error = new Error(`Route not found: ${req.originalUrl}`);
-    error.status = HTTP_STATUS.NOT_FOUND;
-    next(error);
-});
-
-/**
- * Global error handler middleware.
- * Final safety net for the application - catches all unhandled errors from controllers.
- * Enforces SoC by keeping infrastructure logging out of the routing layer.
- * Uses LogService to automatically format and print full stack traces in development.
- *
- * @param {Error} err - The error object passed from controllers via next(error)
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next function
- *
- * @socexplanation
- * Error handling has been consolidated to the logSystemFault method to enforce DRY principles
- * and maintain terminal stack trace visibility. This replaces the previous pattern of calling
- * logTerminal followed by logErrorFile separately.
- */
-app.use((err, req, res, next) => {
-    logService.logSystemFault({ origin: 'GlobalErrorHandler', message: `API Error on ${req.method} ${req.url}`, errorObj: err });
-
-    res.status(err.status || 500).json({
-        success: false,
-        error: err.message,
-        path: req.url
-    });
-});
-
-const queueService = container.resolve('queueService');
-
-app.listen(PORT, '0.0.0.0', async () => {
-    const startupTime = Math.round(performance.now() - startTime);
-
-    await queueService.sweepOrphanedTasks();
-    queueService.start();
-
-    logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'server.js', message: `Backend API running on http://localhost:${PORT}` });
-
-    const debugMode = settingsManager.get('debug_mode');
-    if (debugMode === 'true') {
-        logService.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'server.js', message: 'Server is running in DEBUG/DEV mode. Verbose logging is enabled.' });
-        logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.NONE, origin: 'server.js', message: 'To disable debug mode toggle switch in Settings.' });
-    } else {
-        logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'server.js', message: 'Server is not running in debug mode, toggle switch in Settings to change.' });
+// Phase 2.5 & 3: Composition & Start
+// ==================================
+async function startServer() {
+    try {
+        const { bootstrap } = require('./src/config/container');
+        await bootstrap();
+    } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[FATAL] Phase 2.5 Failed: Container Bootstrap Error:', err.message);
+        process.exit(1);
     }
 
-    logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'server.js', message: `Server started in ${startupTime}ms` });
-    // eslint-disable-next-line no-console
-    console.log();
-});
+    const container = require('./src/config/container').getContainer();
+    const logService = container.resolve('logService');
+    const settingsManager = container.resolve('settingsManager');
+    const { LOG_LEVELS, LOG_SYMBOLS, HTTP_STATUS } = require('./src/config/constants');
+    const setupRoutes = require('./src/routes/index');
+
+    logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.NONE, origin: 'server.js', message: `Server starting...` });
+
+    const express = require('express');
+    const Logger = require('./src/utils/Logger');
+
+    const app = express();
+    const PORT = process.env.PORT || 3000;
+
+    const logger = new Logger('system', { logService, settingsManager });
+    app.use(logger.middleware());
+    app.use(express.json());
+
+    setupRoutes(app, container);
+
+    app.get('/', (req, res) => {
+        res.status(HTTP_STATUS.OK).json({
+            success: true,
+            message: "Compari API is running successfully.",
+            timestamp: new Date().toISOString()
+        });
+    });
+
+    app.use((req, res, next) => {
+        const error = new Error(`Route not found: ${req.originalUrl}`);
+        error.status = HTTP_STATUS.NOT_FOUND;
+        next(error);
+    });
+
+    app.use((err, req, res, next) => {
+        logService.logSystemFault({ origin: 'GlobalErrorHandler', message: `API Error on ${req.method} ${req.url}`, errorObj: err });
+        res.status(err.status || 500).json({
+            success: false,
+            error: err.message,
+            path: req.url
+        });
+    });
+
+    const queueService = container.resolve('queueService');
+
+    // Update the listen block to handle long-running reasoning tasks
+    const server = app.listen(PORT, '0.0.0.0', async () => {
+        const startupTime = Math.round(performance.now() - startTime);
+
+        await queueService.sweepOrphanedTasks();
+        queueService.start();
+
+        logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'server.js', message: `Backend API running on http://localhost:${PORT}` });
+
+        const debugMode = settingsManager.get('debug_mode');
+        if (debugMode === 'true') {
+            logService.logTerminal({ status: LOG_LEVELS.WARN, symbolKey: LOG_SYMBOLS.WARNING, origin: 'server.js', message: 'Server is running in DEBUG/DEV mode. Verbose logging is enabled.' });
+        }
+
+        logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.CHECKMARK, origin: 'server.js', message: `Server started in ${startupTime}ms` });
+    });
+
+    // Enforce a 5-minute timeout for AI reasoning and heavy processing
+    server.timeout = 300000;
+}
+
+// Execute the async startup
+startServer();

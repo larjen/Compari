@@ -10,7 +10,7 @@ Instead of relying on rigid keyword matching, Compari "reads" and understands th
 
 Each requirement criterion is mathed against a the set of criteria in the offering, and then analyzed to create a match score and a downloadable PDF report.
 
-The math and accuracy of this report should be used with caution, as the math and the process is indeterministic and unverified.
+The math and accuracy of this report should be used with caution, as the math and the process is indeterministic and for local models this needs serious tweaking in order to produce useable results.
 
 ### Core Features
 
@@ -18,22 +18,36 @@ The math and accuracy of this report should be used with caution, as the math an
 * **Semantic Criteria Parsing:** The engine extracts specific, atomic criteria (like soft skills, hard skills, domain knowledge, and cultural fit) based on customizable "Blueprints" and "Dimensions."
 * **Vector-Based Matching:** Compari converts these extracted criteria into mathematical vectors (embeddings). It then uses cosine similarity to score matches. This means it knows that a requirement for "Frontend Frameworks" is satisfied by an offering that lists "ReactJS," even if the exact words don't match.
 * **Automated Match Reports:** When an Offering is compared to a Requirement, Compari generates a comprehensive, AI-summarized report. It highlights "Perfect Matches," "Partial Matches," and "Missing Requirements," which can be exported directly to PDF.
-* **100% Local & Private:** Because Compari uses Ollama to run models like Gemma and Llama directly on your machine, **zero data is sent to the cloud**. Your sensitive resumes, internal job listings, and proprietary documents remain strictly on your hardware.
+* **Chat bot:** Experimental chat connection to local model.
+* **MCP server:** Exposes an MCP server for agents to communicate with the repository.
+¥* **100% Local & Private:** Because Compari uses Ollama to run models like Gemma and Llama directly on your machine, **zero data is sent to the cloud**. Your sensitive resumes, internal job listings, and proprietary documents remain strictly on your hardware.
 * **Configurable:** Create own dimensions and blueprints to match your specific needs. This could be for Grants and Applications for grants, or for matching candidates to job listings.
 
 ### Screenshots
 
-![Create new dimension](./assets/create.jpg)
-_Upload PDF for LLM assisted parsing and extraction of criteria._
+![Inspect criteria for Offerings and Requirements](./assets/create.jpg)
+_Upload a pdf and local AI will transform it to markdown._
 
 ![Inspect criteria for Offerings and Requirements](./assets/extraction.jpg)
-_The generated list of criteria is presented for offerings and requirements._
+_The extracted list of criteria is presented for offerings and requirements._
 
 ![Viewing a Match report](./assets/match.jpg)
 _The match report shows the scores for each dimension._
 
 ![Download match report as PDF](./assets/pdf.jpg)
 _The report can be downloaded as a PDF document._
+
+![Records are stored in Obsidian](./assets/obsidian.jpg)
+_Records are stored in an Obsidian Vault in a structured manner._
+
+![Agents can modify the vault](./assets/agentic.jpg)
+_Using the exposed MCP-server an AI agent can merge tags and perform operations in the vault._
+
+![Chat with bot](./assets/chatbot.jpg)
+_The local bot has a very narrow context window, but can sometimes provide useful answers._
+
+![Create new dimension](./assets/create.jpg)
+_Upload PDF for LLM assisted parsing and extraction of criteria._
 
 ![Tweak settings](./assets/settings.jpg)
 _Use different AI models, tweak blueprint, dimensions and extractions._

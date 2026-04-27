@@ -1,17 +1,19 @@
 const { createContainer, asClass, asValue, InjectionMode } = require('awilix');
 
 const db = require('../repositories/Database');
-const { AI_CACHE_DIR, ENTITY_TYPES } = require('./constants');
+const { AI_CACHE_DIR, ENTITY_TYPES, VAULT_DIR } = require('./constants');
 const VectorMath = require('../utils/VectorMath');
 const HashGenerator = require('../utils/HashGenerator');
 const MarkdownGenerator = require('../utils/MarkdownGenerator');
 const { processAiTasks } = require('../utils/asyncHandler');
 const { registerAllTasks } = require('../workers/TaskRegistry');
 const setupTaskListeners = require('../events/TaskListeners');
+const McpService = require('../services/McpService');
+const ReasoningController = require('../controllers/ReasoningController');
 
 let cachedContainer = null;
 
-function bootstrap() {
+async function bootstrap() {
     if (cachedContainer) return cachedContainer;
 
     const container = createContainer({ injectionMode: InjectionMode.PROXY });
@@ -23,7 +25,13 @@ function bootstrap() {
         vectorMath: asValue(VectorMath),
         hashGenerator: asValue(HashGenerator),
         markdownGenerator: asValue(MarkdownGenerator),
-        processAiTasks: asValue(processAiTasks)
+        processAiTasks: asValue(processAiTasks),
+        // Register the physical vault path as a resolvable dependency
+        vaultPath: asValue(VAULT_DIR),
+        // Simplified registration: Proxy mode will now automatically inject vaultPath by name
+        mcpService: asClass(McpService).singleton(),
+        // Reasoning controller for vault-aware AI reasoning
+        reasoningController: asClass(ReasoningController).singleton()
     });
 
     container.loadModules([
@@ -51,6 +59,20 @@ function bootstrap() {
     const fileService = container.resolve('fileService');
     const eventService = container.resolve('eventService');
     const logService = container.resolve('logService');
+    const mcpService = container.resolve('mcpService');
+
+    if (mcpService && VAULT_DIR) {
+        try {
+            await mcpService.initialize();
+        } catch (err) {
+            logService.logTerminal({ 
+                status: 'WARN', 
+                symbolKey: 'WARNING', 
+                origin: 'Container', 
+                message: `[MCP] Service initialization failed: ${err.message}` 
+            });
+        }
+    }
 
     registerAllTasks({
         queueService, entityService, matchService, docProcessor, 
@@ -70,7 +92,9 @@ function bootstrap() {
 }
 
 function getContainer() {
-    if (!cachedContainer) return bootstrap();
+    if (!cachedContainer) {
+        throw new Error("Container has not been bootstrapped. Ensure await bootstrap() is called during server startup.");
+    }
     return cachedContainer;
 }
 

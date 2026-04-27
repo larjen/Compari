@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { DOMAIN_ICONS } from '@/lib/iconRegistry';
 import { Button, CreateButton } from '@/components/ui';
+import { ChatDrawerWrapper } from './ChatDrawerWrapper';
 import { useModal, ModalType } from '@/hooks/useModal';
 import { useTerminology } from '@/hooks/useTerminology';
 import { Logo } from '@/components/ui/Logo';
@@ -142,6 +143,8 @@ export function Navbar({ isLoading }: NavbarProps) {
                 size="sm"
               />
             )}
+
+            <ChatDrawerWrapper />
 
             <Button variant="ghost" size="sm" onClick={() => openModal(MODAL_TYPES.SETTINGS)}>
               <DOMAIN_ICONS.SETTINGS className="w-4 h-4" />

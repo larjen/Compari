@@ -104,6 +104,13 @@ import {
   Clock,              // CLOCK
   ChevronsUpDown,     // COMBOBOX
   Plug,              // CONNECTION
+  MessageSquare,     // CHAT
+  MessageCircle,     // CHAT_IDLE
+  MessageCircleMore, // CHAT_BUSY
+  MessageCircleCheck, // CHAT_DONE
+  Send,              // SEND
+  Bot,               // BOT
+  ArrowUp,           // ARROW_UP
   LucideIcon,
   createLucideIcon,
 } from 'lucide-react';
@@ -211,6 +218,13 @@ export const DOMAIN_ICONS: Record<string, LucideIcon> = {
   DATABASE: Database,
   BRANCH: GitBranch,
   INDENT: CornerDownRight,
+  CHAT: MessageSquare,
+  CHAT_IDLE: MessageCircle,
+  CHAT_BUSY: MessageCircleMore,
+  CHAT_DONE: MessageCircleCheck,
+  SEND: Send,
+  BOT: Bot,
+  ARROW_UP: ArrowUp,
   CLOCK: Clock,
   COMBOBOX: ChevronsUpDown,
   CONNECTION: Plug,

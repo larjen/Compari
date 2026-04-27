@@ -23,15 +23,17 @@ const aiModelRoutes = require('./aiModelRoutes');
 const blueprintRoutes = require('./blueprintRoutes');
 const dimensionRoutes = require('./dimensionRoutes');
 const promptRoutes = require('./promptRoutes');
+const reasoningRoutes = require('./reasoningRoutes');
 
 /**
  * Sets up all API routes on the Express application.
  * This function is the single entry point for mounting all HTTP traffic.
  * 
  * @param {Object} app - Express application instance
+ * @param {Object} container - Awilix container for dependency resolution
  * @returns {void}
  */
-function setupRoutes(app) {
+function setupRoutes(app, container) {
     app.use('/api/entities', entityRoutes);
     app.use('/api/settings', settingRoutes);
     app.use('/api/events', eventRoutes);
@@ -42,6 +44,7 @@ function setupRoutes(app) {
     app.use('/api/blueprints', blueprintRoutes);
     app.use('/api/dimensions', dimensionRoutes);
     app.use('/api/prompts', promptRoutes);
+    app.use('/api/reasoning', reasoningRoutes(container));
 }
 
 module.exports = setupRoutes;

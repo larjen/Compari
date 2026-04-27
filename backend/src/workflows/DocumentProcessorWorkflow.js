@@ -370,17 +370,58 @@ class DocumentProcessorWorkflow {
         const criteria = this._criteriaService.getCriteriaForEntity(entityId);
         const criteriaFolderNames = criteria.map(c => this._criteriaService.getCleanLinkName(c));
 
+        const folderName = path.basename(finalFolderPath);
+        const masterFileName = `${folderName}.md`;
         const allFiles = this._fileService.listFilesInFolder(finalFolderPath) || [];
-        const associatedFiles = allFiles.filter(f => 
-            (f.endsWith('.md') || f.endsWith('.json'))
-        );
+        const associatedFiles = allFiles.filter(f => f !== masterFileName);
+
+        let verbatimContent = "";
+        if (allFiles.includes('verbatim_extraction.md')) {
+            const verbatimPath = path.join(finalFolderPath, 'verbatim_extraction.md');
+            verbatimContent = await this._fileService.readTextFile(verbatimPath) || "";
+        }
+
+        const blueprintId = this._entityService.getEntityBlueprintId(entityId);
+        let blueprintLabel = null;
+        if (blueprintId) {
+            const blueprint = this._blueprintRepo.getBlueprintById(blueprintId);
+            if (blueprint) {
+                const entityRole = this._entityService.getEntityRole(entityId);
+                blueprintLabel = entityRole === ENTITY_TYPES.REQUIREMENT ? blueprint.requirementLabelSingular : blueprint.offeringLabelSingular;
+            }
+        }
 
         // 3. Generate dynamic master document and update database via centralized lifecycle
         const finalFileName = await this._entityService.generateAndSaveMasterDocument(entityId, ({ entity, folderName }) => {
+            let parsedMetadata = {};
+            if (typeof entity.metadata === 'string') {
+                try { 
+                    parsedMetadata = JSON.parse(entity.metadata); 
+                } catch (parseError) {
+                    /**
+                     * @socexplanation
+                     * Avoids empty block warning and enforces the strict logging policy.
+                     * We use logSystemFault to ensure metadata corruption is captured in the 
+                     * persistent audit trail, rather than failing silently. The process degrades 
+                     * gracefully by leaving parsedMetadata as an empty object.
+                     */
+                    this._logService.logSystemFault({
+                        origin: 'DocumentProcessorWorkflow',
+                        message: `Failed to parse metadata JSON for entity ${entity.id} during master document generation.`,
+                        errorObj: parseError
+                    });
+                }
+            } else {
+                parsedMetadata = entity.metadata || {};
+            }
+
             return MarkdownGenerator.generateEntityMaster({
                 entityId: entity.id,
                 entityFolderName: folderName,
                 entityType: entity.entityType,
+                blueprintLabel,
+                metadata: parsedMetadata,
+                verbatimContent,
                 criteriaFolderNames,
                 associatedFiles
             });

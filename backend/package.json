@@ -10,17 +10,20 @@
         "lint": "eslint src/ server.js"
     },
     "dependencies": {
+        "@cfworker/json-schema": "^2.0.1",
         "awilix": "^13.0.3",
         "better-sqlite3": "^12.9.0",
         "dotenv": "^17.4.2",
         "express": "^5.2.1",
         "multer": "^2.1.1",
+        "@modelcontextprotocol/sdk": "^1.29.0",
         "openai": "^6.34.0",
         "pdf-parse": "^2.4.5",
         "puppeteer": "^24.42.0",
         "zod": "^4.3.6"
     },
     "devDependencies": {
+        "@bitbonsai/mcpvault": "latest",
         "@eslint/js": "^10.0.1",
         "@types/express": "^5.0.6",
         "@types/node": "^25.6.0",

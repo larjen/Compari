@@ -126,9 +126,13 @@ export interface Settings {
 /**
      * Model ID assigned to metadata extraction tasks (simple field extraction).
      */
-  model_routing_metadata?: string;
+model_routing_metadata?: string;
   /**
-   * Controls whether AI requests are executed concurrently or sequentially.
+   * Model ID assigned to reasoning tasks (high-context inference, cultural fit analysis).
+   */
+  model_routing_reasoning?: string;
+  /**
+    * Controls whether AI requests are executed concurrently or sequentially.
    * Enable for cloud AI providers (e.g., OpenAI) for faster extraction.
    * Disable for local models (e.g., Ollama) to prevent queue thrashing.
    */

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Settings } from '@/lib/types';
 import { settingsApi } from '@/lib/api/settingsApi';
 import { useAiModels } from '@/hooks/useAiModels';
@@ -23,10 +23,15 @@ export function ModelRoutingTab({ settings }: ModelRoutingTabProps) {
   const [routingVerification, setRoutingVerification] = useState(settings.model_routing_verification || '');
   const [routingEmbedding, setRoutingEmbedding] = useState(settings.model_routing_embedding || '');
   const [routingMetadata, setRoutingMetadata] = useState(settings.model_routing_metadata || '');
+  const [routingReasoning, setRoutingReasoning] = useState(settings.model_routing_reasoning || '');
 
-  if (error) {
-    addToast(TOAST_TYPES.ERROR, 'Failed to load models');
-  }
+  // SIDE-EFFECT: Handle error notifications after render to prevent lifecycle violations
+  // * @socexplanation Adheres to React rules: Side-effects like toasts must not be triggered during render.
+  useEffect(() => {
+    if (error) {
+      addToast(TOAST_TYPES.ERROR, 'Failed to load models');
+    }
+  }, [error, addToast]);
 
   const handleRoutingChange = async (key: string, value: string, setter: (v: string) => void) => {
     setter(value);
@@ -130,6 +135,27 @@ export function ModelRoutingTab({ settings }: ModelRoutingTabProps) {
           >
             <option value="">Select a model...</option>
             {embeddingModels.map(model => (
+              <option key={model.id} value={model.id}>
+                {model.name} ({model.modelIdentifier})
+              </option>
+            ))}
+          </FormSelect>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard
+        icon={DOMAIN_ICONS.BLUEPRINT}
+        title="Reasoning & Analysis"
+        description="Used for high-context tasks like cultural fit analysis and complex reasoning."
+      >
+        <div>
+          <FormSelect
+            value={routingReasoning}
+            onChange={(e) => handleRoutingChange('model_routing_reasoning', e.target.value, setRoutingReasoning)}
+            disabled={saving}
+          >
+            <option value="">Select a model...</option>
+            {chatModels.map(model => (
               <option key={model.id} value={model.id}>
                 {model.name} ({model.modelIdentifier})
               </option>

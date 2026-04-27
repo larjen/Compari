@@ -68,7 +68,8 @@ const AI_TASK_TYPES = Object.freeze({
     GENERAL: 'general',
     VERIFICATION: 'verification',
     EMBEDDING: 'embedding',
-    METADATA: 'metadata'
+    METADATA: 'metadata',
+    REASONING: 'reasoning'
 });
 
 /**
@@ -99,6 +100,7 @@ const SETTING_KEYS = Object.freeze({
     MODEL_ROUTING_VERIFICATION: 'model_routing_verification',
     MODEL_ROUTING_EMBEDDING: 'model_routing_embedding',
     MODEL_ROUTING_METADATA: 'model_routing_metadata',
+    MODEL_ROUTING_REASONING: 'model_routing_reasoning',
     ALLOW_CONCURRENT_AI: 'allow_concurrent_ai',
     USE_AI_CACHE: 'use_ai_cache'
 });
@@ -113,7 +115,9 @@ const PROMPT_SYSTEM_NAMES = Object.freeze({
     DYNAMIC_EXTRACTION: 'dynamic_extraction',
     MATCH_SUMMARY: 'match_summary',
     EXECUTIVE_SUMMARY: 'executive_summary',
-    SYNONYM_VALIDATOR: 'synonym_validator'
+    SYNONYM_VALIDATOR: 'synonym_validator',
+    REASONING_SYSTEM: 'reasoning_system',
+    QUERY_REFORMULATION: 'query_reformulation'
 });
 
 /**

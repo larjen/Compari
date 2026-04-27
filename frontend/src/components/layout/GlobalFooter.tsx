@@ -14,14 +14,24 @@ export function GlobalFooter() {
         return null;
     }
 
-    const activeBlueprint = blueprints.find(b => b.is_active) || blueprints;
-    const hasDynamicData = !blueprintsLoading && activeBlueprint;
+    const activeBlueprint = blueprints.find(b => b.is_active);
+    // hasDynamicData is true only if loading is finished AND we actually found an active blueprint object
+    const hasDynamicData = !blueprintsLoading && !!activeBlueprint;
 
+    /**
+     * Orchestrates the footer visibility transition.
+     * Guards against infinite re-renders by checking !isReady before updating.
+     * * @socexplanation
+     * Prevents "Maximum update depth exceeded" by ensuring the state update only 
+     * occurs once when the criteria are met, rather than on every render cycle.
+     */
     useEffect(() => {
-        if (hasDynamicData || !pathname?.includes('/matches/')) {
+        const shouldBeReady = hasDynamicData || !pathname?.includes('/matches/');
+        
+        if (shouldBeReady && !isReady) {
             setIsReady(true);
         }
-    }, [hasDynamicData, pathname]);
+    }, [hasDynamicData, pathname, isReady]);
 
     return (
         <footer className={`w-full mt-3 bg-themed-inner border-t border-themed-border transition-opacity duration-500 ease-in-out ${isReady ? 'opacity-100' : 'opacity-0'}`}>

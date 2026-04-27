@@ -50,13 +50,13 @@ class MarkdownGenerator {
 ${extractedData.verbatimPosting || extractedData.rawText || "No text parsed."}`;
     }
 
-/**
-     * Generates an Obsidian-compatible master markdown file for a Match entity.
-     * Uses Wiki Links ([[FileName]]) for vault traversal between Requirement and Offering.
-     *
-     * @method generateMatchMaster
-     * @memberof MarkdownGenerator
-     */
+    /**
+         * Generates an Obsidian-compatible master markdown file for a Match entity.
+         * Uses Wiki Links ([[FileName]]) for vault traversal between Requirement and Offering.
+         *
+         * @method generateMatchMaster
+         * @memberof MarkdownGenerator
+         */
     static generateMatchMaster({ matchFolderName, reqFolderName, offFolderName, executiveSummary, dimensionalSummaries, matchId, matchScore, associatedFiles }) {
         const safeMatchName = matchFolderName || "Unknown Match";
         const safeReqName = reqFolderName || "Unknown Requirement";
@@ -67,6 +67,7 @@ ${extractedData.verbatimPosting || extractedData.rawText || "No text parsed."}`;
         const safeDeeplink = matchId ? `${baseUrl}/matches?matchId=${matchId}` : baseUrl;
 
         let frontmatter = "---\n";
+        frontmatter += `Type: "Match Report"\n`;
         frontmatter += `Compari Link: "${safeDeeplink}"\n`;
 
         if (matchScore !== undefined && matchScore !== null) {
@@ -119,7 +120,7 @@ ${filesSection}${summarySection}`;
      * @param {Array<string>} dto.associatedFiles - Array of associated file names.
      * @returns {string} The formatted Obsidian-compatible markdown content.
      */
-    static generateEntityMaster({ entityId, entityFolderName, entityType, metadata, verbatimContent, criteriaFolderNames, associatedFiles }) {
+    static generateEntityMaster({ entityId, entityFolderName, entityType, blueprintLabel, metadata, verbatimContent, criteriaFolderNames, associatedFiles }) {
         const safeEntityName = entityFolderName || "Unknown Entity";
         const safeType = entityType || "entity";
         const criteriaLinks = Array.isArray(criteriaFolderNames) ? criteriaFolderNames : [];
@@ -130,6 +131,9 @@ ${filesSection}${summarySection}`;
         const safeDeeplink = entityId ? `${baseUrl}/${routePrefix}?entityId=${entityId}` : baseUrl;
 
         let frontmatter = "---\n";
+        const formattedType = safeType.charAt(0).toUpperCase() + safeType.slice(1);
+        const displayType = blueprintLabel || formattedType;
+        frontmatter += `Type: "${displayType}"\n`;
         frontmatter += `Compari Link: "${safeDeeplink}"\n`;
 
         if (metadata && Object.keys(metadata).length > 0) {
@@ -209,6 +213,7 @@ ${filesSection}${summarySection}`;
         const safeDeeplink = criterionId ? `${baseUrl}/criteria?criterionId=${criterionId}` : baseUrl;
 
         let frontmatter = "---\n";
+        frontmatter += `Type: "Criterion"\n`;
         frontmatter += `Compari Link: "${safeDeeplink}"\n`;
         frontmatter += `Dimension: "${safeDimensionNiceName}"\n`;
         frontmatter += "---\n\n";
@@ -238,8 +243,6 @@ ${filesSection}${summarySection}`;
         }
 
         return `${frontmatter}# ${safeCriterionName}
-
-**Dimension:** ${safeDimension}
 
 ${reqSection}${offSection}${similarSection}${mergedSection}`;
     }

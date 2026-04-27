@@ -60,6 +60,51 @@ class PromptBuilder {
     }
 
     /**
+     * Builds message array for the MCP reasoning assistant, dynamically injecting domain terminology.
+     * @method buildReasoningMessages
+     * @memberof PromptBuilder
+     * @param {string} context - The vault context text to analyze.
+     * @param {string} userPrompt - The specific question asked by the user.
+     * @param {string} requirementLabel - The plural label for requirements from the active blueprint.
+     * @param {string} offeringLabel - The plural label for offerings from the active blueprint.
+     * @param {Array<Object>} history - Optional array of prior chat messages {role, content}.
+     * @returns {Array<Object>} Array of message objects for the LLM.
+     */
+    buildReasoningMessages(context, userPrompt, requirementLabel, offeringLabel, history = []) {
+        const template = this._promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.REASONING_SYSTEM).prompt;
+        const systemPrompt = this._inject(template, { requirementLabel, offeringLabel });
+
+        const historyMessages = Array.isArray(history) 
+            ? history.map(h => ({ role: h.role, content: h.content }))
+            : [];
+
+        return [
+            { role: 'system', content: systemPrompt },
+            ...historyMessages,
+            { role: 'user', content: `Context:\n${context}\n\nQuestion:\n${userPrompt}` }
+        ];
+    }
+
+    /**
+     * Builds message array for query reformulation, dynamically injecting domain terminology.
+     * @method buildQueryReformulationMessages
+     * @memberof PromptBuilder
+     * @param {string} userPrompt - The specific question asked by the user.
+     * @param {string} requirementLabel - The singular label for requirements from the active blueprint.
+     * @param {string} offeringLabel - The singular label for offerings from the active blueprint.
+     * @returns {Array<Object>} Array of message objects for the LLM.
+     */
+    buildQueryReformulationMessages(userPrompt, requirementLabel, offeringLabel) {
+        const template = this._promptRepo.getPromptBySystemName(PROMPT_SYSTEM_NAMES.QUERY_REFORMULATION).prompt;
+        const systemPrompt = this._inject(template, { requirementLabel, offeringLabel });
+
+        return [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+        ];
+    }
+
+    /**
      * Builds message array for extracting entity metadata as structured JSON.
      * Uses a single LLM call with structured output to extract all metadata fields at once.
      * This method is dynamic - it constructs the schema and instructions based on
