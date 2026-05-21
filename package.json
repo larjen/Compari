@@ -7,6 +7,7 @@
         "frontend"
     ],
     "scripts": {
+        "export-all": "rm -rf ../exenova.dk-compari-export && repo-export --destination ../exenova.dk-compari-export",
         "setup": "npm install",
         "dev": "concurrently -n \"API,WEB\" -c \"cyan.bold,magenta.bold\" --kill-others \"cd backend && npm run dev\" \"cd frontend && npm run dev\"",
         "dev:wipe": "concurrently -n \"API,WEB\" -c \"cyan.bold,magenta.bold\" --kill-others \"cd backend && npm run dev:wipe\" \"cd frontend && npm run dev\"",
@@ -14,6 +15,7 @@
         "build": "npm run lint:backend && cd frontend && npm run build",
         "start": "concurrently -n \"API,WEB\" -c \"blue.bold,green.bold\" --kill-others \"cd backend && npm start\" \"cd frontend && npm start\"",
         "knip": "knip",
+        "opencode": "opencode",
         "clean": "node -e \"const fs = require('fs'); ['Data', 'frontend/node_modules', 'backend/node_modules', 'node_modules', 'frontend/.next'].forEach(p => { if(fs.existsSync(p)) { console.log('Deleting ' + p); fs.rmSync(p, { recursive: true, force: true }); } })\"",
         "bump:patch": "npm version patch --workspaces --include-workspace-root --no-git-tag-version && npm install --package-lock-only",
         "bump:minor": "npm version minor --workspaces --include-workspace-root --no-git-tag-version && npm install --package-lock-only",
@@ -60,6 +62,7 @@
     },
     "dependencies": {
         "@modelcontextprotocol/client": "^2.0.0-alpha.2",
-        "@modelcontextprotocol/sdk": "^1.29.0"
+        "@modelcontextprotocol/sdk": "^1.29.0",
+        "repo-exporter": "^1.0.0"
     }
 }

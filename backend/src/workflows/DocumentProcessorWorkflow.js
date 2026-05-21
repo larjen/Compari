@@ -83,10 +83,18 @@ class DocumentProcessorWorkflow {
      * - Saves raw-extraction.txt to the current staging folder.
      * - The folder REMAINS in staging (UPLOADS_DIR) during this step.
      * - Finalization to the vault happens in finalizeEntityWorkspace.
+     * - Recovers from race conditions where the folder was moved to vault but task status wasn't updated.
      *
      * @boundary_rules
      * - ❌ MUST NOT call finalizeEntityDirectory - that happens at END of pipeline.
      * - ✅ Saves raw-extraction.txt to the CURRENT folderPath (staging).
+     * - ✅ MAY query entity service for vault path recovery when staging file is missing.
+     *
+     * @socexplanation
+     * - Vault Check fallback handles the race condition where finalizeEntityWorkspace moves the folder
+     *   before the task status is updated, preventing fatal File Not Found errors.
+     * - File operations are routed through the injected FileService per architectural directive.
+     * - Error handling uses logSystemFault with errorObj to preserve stack traces.
      */
     async parseDocumentContent(payload) {
         const { entityId, fileName } = payload;
@@ -103,16 +111,51 @@ class DocumentProcessorWorkflow {
             throw new Error(`Invalid fileName provided for entity #${entityId}. Expected string, received ${typeof fileName}.`);
         }
 
-        const fileExists = await fileService.waitForFile(filePath);
+        let fileExists = await fileService.waitForFile(filePath);
 
         if (!fileExists) {
             filePath = this._entityService.resolveEntityFilePath(entityId, fileName);
-            
+
             if (!filePath || !fileService.validatePath(filePath)) {
                 const error = new Error(`File not found at path: ${filePath}. The file was not moved correctly during upload or the folder was moved by a concurrent task.`);
                 error.isFatalClientError = true;
                 throw error;
             }
+        }
+
+        if (!fileExists) {
+            try {
+                const entity = this._entityService.getById(entityId);
+                const isNotStaged = entity && (entity.isStaged === 0 || !entity.folderPath?.includes('[Staging]'));
+
+                if (isNotStaged) {
+                    const vaultPath = this._fileService.resolveAbsoluteVaultPath(entity.folderPath, fileName);
+                    const vaultFileExists = await fileService.waitForFile(vaultPath);
+
+                    if (vaultFileExists) {
+                        filePath = vaultPath;
+                        fileExists = true;
+                        this._logService.logTerminal({
+                            status: LOG_LEVELS.WARN,
+                            symbolKey: LOG_SYMBOLS.WARNING,
+                            origin: 'DocumentProcessorWorkflow',
+                            message: `Race condition recovery: File for Entity #${entityId} found in vault location instead of staging. Proceeding with vault path.`
+                        });
+                    }
+                }
+            } catch (err) {
+                this._logService.logSystemFault({
+                    origin: 'DocumentProcessorWorkflow',
+                    message: `Vault check fallback failed for Entity #${entityId}.`,
+                    errorObj: err
+                });
+            }
+        }
+
+        if (!fileExists) {
+            const error = new Error(`File not found after vault check at path: ${filePath}. The file was not moved correctly during upload or the folder was moved by a concurrent task.`);
+            error.isFatalClientError = true;
+            throw error;
         }
 
         let rawText;

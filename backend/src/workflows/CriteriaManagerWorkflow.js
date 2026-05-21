@@ -761,6 +761,22 @@ class CriteriaManagerWorkflow {
      * @param {boolean} [payload.isNewUpload] - Flag indicating if this is a new upload workflow.
      * @param {AbortSignal} [signal] - Optional signal.
      * @returns {Promise<number>} The entity ID.
+     *
+     * @responsibility
+     * - Generates vector embeddings for all criteria lacking them.
+     * - Applies sequential throttling (200ms delay) when batch size exceeds 5 to prevent 429 rate limits.
+     * - Updates criterion embeddings in the database via CriteriaRepo.
+     *
+     * @boundary_rules
+     * - ✅ MAY call AiService.generateEmbedding for vectorization.
+     * - ✅ MAY call CriteriaRepo.updateCriterionEmbedding for persistence.
+     * - ❌ MUST NOT contain business logic beyond embedding coordination.
+     * - ❌ MUST NOT modify criterion metadata — only the embedding field.
+     *
+     * @socexplanation
+     * - Embedding generation is batched and throttled to respect Gemini free-tier 100 RPM limits.
+     * - The 200ms sequential delay after each embedding prevents burst traffic during the first batch.
+     * - Error handling uses logTerminal with errorObj to preserve stack traces for debugging.
      */
 async vectorizeEntityCriteria(payload, signal) {
         const { entityId } = payload;
@@ -782,6 +798,10 @@ async vectorizeEntityCriteria(payload, signal) {
                     const embedding = await this._aiService.generateEmbedding(contextualizedText, { taskType: AI_TASK_TYPES.EMBEDDING, signal, logFolderPath: absoluteFolderPath });
 
                     this._criteriaRepo.updateCriterionEmbedding(criterion.id, embedding);
+
+                    if (criteriaWithoutEmbeddings.length > 5) {
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                    }
                 }
             }
 

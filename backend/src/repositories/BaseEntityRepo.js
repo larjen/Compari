@@ -199,18 +199,21 @@ class BaseEntityRepo extends BaseRepository {
      *
      * @method _sanitizeBaseDto
      * @param {Object} dto - The data transfer object to sanitize.
+     * @param {string} [dimension] - Optional dimension to use as nice_name_line_2 fallback.
      * @returns {Object} The sanitized DTO with default values set.
      * @private
      *
      * @responsibility
      * - Centralizes default value logic for base entity fields.
      * - Eliminates code duplication across child repositories.
+     * - Ensures nice_name_line_2 falls back to the provided dimension parameter.
      *
      * @socexplanation
      * - Called by child repositories before INSERT operations.
      * - Uses HashGenerator for deterministic hash creation.
+     * - The dimension parameter allows callers to override the DTO's dimension for nice_name_line_2.
      */
-    _sanitizeBaseDto(dto) {
+    _sanitizeBaseDto(dto, dimension) {
         const sanitized = { ...dto };
 
         if (!sanitized.normalizedName && !sanitized.normalized_name) {
@@ -223,7 +226,7 @@ class BaseEntityRepo extends BaseRepository {
         }
 
         if (!sanitized.niceNameLine2 && !sanitized.nice_name_line_2) {
-            sanitized.nice_name_line_2 = sanitized.dimension || 'General';
+            sanitized.nice_name_line_2 = dimension || sanitized.dimension || 'General';
         }
 
         if (!sanitized.hash) {

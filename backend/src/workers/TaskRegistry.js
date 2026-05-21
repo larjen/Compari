@@ -136,7 +136,7 @@ function registerAllTasks({ queueService, entityService, matchService, docProces
                 const markdownFiles = entityFiles.filter(f => f.match(/\.md$/i));
                 const pdfFiles = entityFiles.filter(f => f.match(/\.pdf$/i));
                 const allMatchingFiles = [...markdownFiles, ...pdfFiles];
-                const targetFile = allMatchingFiles.length > 0 ? allMatchingFiles[0] : null;
+                const targetFile = allMatchingFiles.length > 0 ? allMatchingFiles.at(0) : null;
                 if (targetFile) {
                     return await criteriaManagerWorkflow.extractEntityCriteria(
                         { entityId, fileName: targetFile, isNewUpload },

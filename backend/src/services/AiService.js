@@ -292,6 +292,58 @@ class AiService {
     }
 
     /**
+     * Executes an async API call with automatic retry for rate limit (429) errors.
+     * Parses retry delay from the error message when available, otherwise uses exponential backoff.
+     * This prevents a single 429 from failing the entire task — critical for free-tier rate limits.
+     * @private
+     * @param {Function} apiCallFn - Async function that makes the API call.
+     * @param {number} [maxRetries=5] - Maximum number of retries for 429 errors.
+     * @returns {Promise<*>} The API response.
+     * @throws {Error} The original error if not a 429, or the 429 error after all retries exhausted.
+     *
+     * @responsibility
+     * - Coordinates retry logic for transient 429 rate limit errors across all AI API calls.
+     * - Parses provider-suggested retry delays with robust regex matching.
+     * - Falls back to exponential backoff when no provider delay is detected.
+     *
+     * @boundary_rules
+     * - ✅ MAY use LogService to emit WARN-level terminal messages for retry waits.
+     * - ❌ MUST NOT contain business logic or domain-specific error handling.
+     * - ❌ MUST NOT swallow fatal errors — only retries 429 status codes.
+     *
+     * @socexplanation
+     * - Retry coordination is an infrastructure concern that belongs in the service layer.
+     * - Centralizing retry logic prevents duplication across generateChatResponse and generateEmbedding.
+     * - WARN-level logging ensures operators understand why the process is paused during rate limits.
+     */
+    async _executeWithRateLimitRetry(apiCallFn, maxRetries = 5) {
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                return await apiCallFn();
+            } catch (error) {
+                const status = error.status || error.statusCode;
+                if (status === 429 && attempt < maxRetries) {
+                    const retryMatch = error.message?.match(/retry[\s_]+in[\s_]+([\d.]+)\s*s/i) || error.message?.match(/([\d.]+)\s*seconds?/i);
+                    const retryDelay = retryMatch
+                        ? Math.ceil(parseFloat(retryMatch.at(1)) * 1000) + 1000
+                        : Math.min(Math.pow(2, attempt) * 2000, 60000);
+
+                    this._logService.logTerminal({
+                        status: LOG_LEVELS.WARN,
+                        symbolKey: LOG_SYMBOLS.WARNING,
+                        origin: 'AiService',
+                        message: `Rate limited (429). Waiting ${(retryDelay / 1000).toFixed(1)}s before retry ${attempt + 1}/${maxRetries}...`
+                    });
+
+                    await new Promise(resolve => setTimeout(resolve, retryDelay));
+                    continue;
+                }
+                throw error;
+            }
+        }
+    }
+
+    /**
      * Determines if an error from the OpenAI SDK is fundamentally fatal and should never be retried.
      * All 4xx errors are considered fatal (no retry) EXCEPT 429 (Rate Limit) and 408 (Timeout).
      * Relies on standard HTTP status codes rather than brittle string matching.
@@ -326,10 +378,21 @@ class AiService {
      * @param {Object} logContext - Context object for error logging (e.g., { messages: '...' } or { text: '...' }).
      * @throws {Error} Re-throws classified connection errors or the original error after logging.
      *
+     * @responsibility
+     * - Classifies AI provider errors into fatal, transient, and connection categories.
+     * - Provides diagnostic hints for 400 errors including format compatibility warnings.
+     * - Preserves full stack traces via logSystemFault with errorObj parameter.
+     *
+     * @boundary_rules
+     * - ✅ MAY call LogService.logSystemFault and LogService.logTerminal for error reporting.
+     * - ❌ MUST NOT contain business logic or domain-specific error recovery.
+     * - ❌ MUST NOT swallow errors — always re-throws after classification and logging.
+     *
      * @socexplanation
      * Error handling has been consolidated to the logSystemFault method to enforce DRY principles
      * and maintain terminal stack trace visibility. This replaces the previous pattern of calling
-     * logTerminal followed by logErrorFile separately.
+     * logTerminal followed by logErrorFile separately. Diagnostic logging for 400 errors includes
+     * apiKey status, baseURL, and response_format compatibility warnings to accelerate troubleshooting.
      */
     _handleAiApiError(error, logContext) {
         const rawResponse = error?.response?.data || error?.response || 'No raw response available';
@@ -343,6 +406,20 @@ class AiService {
         });
 
         const status = error.status || error.statusCode;
+
+        // Diagnostic hint for 400 "no body" errors — most commonly caused by misconfigured model/endpoint
+        if (status === 400 && (!error.message || error.message.includes('no body'))) {
+            const modelInfo = logContext?.model || 'unknown';
+            const apiUrlInfo = logContext?.apiUrl || 'unknown';
+            const apiKeyStatus = logContext?.apiKey ? 'set' : 'unset';
+            const formatWarning = logContext?.format ? ' [WARNING: response_format was provided — the model may not support structured output.]' : '';
+            this._logService.logTerminal({
+                status: LOG_LEVELS.ERROR,
+                symbolKey: LOG_SYMBOLS.ERROR,
+                origin: 'AiService',
+                message: `Diagnostic: 400 Bad Request with no response body. Model: "${modelInfo}", API URL: "${apiUrlInfo}", API Key: ${apiKeyStatus}.${formatWarning} This usually indicates a misconfigured model identifier, incompatible API endpoint, or the model does not support this request format. Please verify your model configuration in Settings.`
+            });
+        }
 
         // VRAM Swapping / Server Busy Trap
         // Local AI servers (e.g., Ollama) return 429 when busy swapping models in/out of GPU VRAM.
@@ -439,12 +516,14 @@ class AiService {
             const timeoutSignal = AbortSignal.timeout(300000);
             const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
-            response = await client.chat.completions.create(chatParams, { signal: combinedSignal });
+            response = await this._executeWithRateLimitRetry(
+                () => client.chat.completions.create(chatParams, { signal: combinedSignal })
+            );
         } catch (error) {
-            this._handleAiApiError(error, { messages: messages ? 'Query sent (omitted for brevity)' : null });
+            this._handleAiApiError(error, { messages: messages ? 'Query sent (omitted for brevity)' : null, model: selectedModel, apiUrl: config.apiUrl, apiKey: config.apiKey, baseURL: config.apiUrl, format });
         }
 
-        let content = response?.choices?.[0]?.message?.content?.trim() || '';
+        let content = response?.choices?.at(0)?.message?.content?.trim() || '';
 
         if (logFolderPath) {
             try {
@@ -534,9 +613,11 @@ class AiService {
             const timeoutSignal = AbortSignal.timeout(120000);
             const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
-            response = await client.embeddings.create(embedParams, { signal: combinedSignal });
+            response = await this._executeWithRateLimitRetry(
+                () => client.embeddings.create(embedParams, { signal: combinedSignal })
+            );
         } catch (error) {
-            this._handleAiApiError(error, { text: text ? 'Query sent (omitted for brevity)' : null });
+            this._handleAiApiError(error, { text: text ? 'Query sent (omitted for brevity)' : null, model: modelName, apiUrl: config.apiUrl, apiKey: config.apiKey, baseURL: config.apiUrl });
         }
 
         this._logService.logTerminal({ status: LOG_LEVELS.INFO, symbolKey: LOG_SYMBOLS.LIGHTNING, origin: 'AiService', message: `[Model: ${modelName}] Embedding Prompt: "${text}"` });
@@ -572,7 +653,7 @@ class AiService {
          * We strictly validate the presence of this array to prevent propagating undefined 
          * values to the cache layer or the domain layer (which results in NULL database vectors).
          */
-        const result = response?.data?.[0]?.embedding;
+        const result = response?.data?.at(0)?.embedding;
 
         if (!result || !Array.isArray(result) || result.length === 0) {
             const err = new Error(`Failed to extract valid embedding vector from AI provider using model ${modelName}.`);
@@ -709,7 +790,7 @@ class AiService {
                 model: selectedModel,
                 messages: [{ role: 'user', content: message }]
             });
-            return response.choices[0].message.content;
+            return response.choices.at(0).message.content;
         } finally {
             this.isTestingConnection = false;
         }
@@ -754,7 +835,7 @@ class AiService {
             this._handleAiApiError(error, { messages: 'Reasoning query sent (omitted for brevity)' });
         }
 
-        const content = response?.choices?.[0]?.message?.content?.trim() || '';
+        const content = response?.choices?.at(0)?.message?.content?.trim() || '';
         const durationMs = Date.now() - startTime;
 
         if (logAction) {
@@ -804,7 +885,7 @@ class AiService {
             const stream = await client.chat.completions.create(chatParams, { signal });
             
             for await (const chunk of stream) {
-                const text = chunk.choices?.[0]?.delta?.content || '';
+                const text = chunk.choices?.at(0)?.delta?.content || '';
                 if (text) {
                     fullContent += text;
                     if (onChunk) onChunk(text);

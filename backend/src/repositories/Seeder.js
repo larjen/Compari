@@ -41,12 +41,34 @@ function seedAiModels(db, logger) {
 
     const defaultModels = [
         {
+            name: 'Gemini 3.1 Flash-Lite',
+            model_identifier: 'gemini-3.1-flash-lite',
+            api_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+            api_key: null,
+            role: AI_MODEL_ROLES.CHAT,
+            is_active: 1,
+            is_system: 0,
+            temperature: 0.1,
+            context_window: 1000000
+        },
+        {
+            name: 'Gemini Embedding 2',
+            model_identifier: 'gemini-embedding-2',
+            api_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+            api_key: null,
+            role: AI_MODEL_ROLES.EMBEDDING,
+            is_active: 1,
+            is_system: 0,
+            temperature: 0.1,
+            context_window: 2048
+        },
+        {
             name: 'Gemma 4 (4B)',
             model_identifier: 'gemma4:e4b',
             api_url: 'http://127.0.0.1:11434/v1',
             api_key: null,
             role: AI_MODEL_ROLES.CHAT,
-            is_active: 1,
+            is_active: 0,
             is_system: 1,
             temperature: 0.1,
             context_window: 4096
@@ -57,7 +79,7 @@ function seedAiModels(db, logger) {
             api_url: 'http://127.0.0.1:11434/v1',
             api_key: null,
             role: AI_MODEL_ROLES.CHAT,
-            is_active: 1,
+            is_active: 0,
             is_system: 1,
             temperature: 0.1,
             context_window: 4096
@@ -68,7 +90,7 @@ function seedAiModels(db, logger) {
             api_url: 'http://127.0.0.1:11434/v1',
             api_key: null,
             role: AI_MODEL_ROLES.EMBEDDING,
-            is_active: 1,
+            is_active: 0,
             is_system: 1,
             temperature: 0.1,
             context_window: 8192
@@ -79,7 +101,7 @@ function seedAiModels(db, logger) {
             api_url: 'https://api.anthropic.com/v1',
             api_key: null,
             role: AI_MODEL_ROLES.CHAT,
-            is_active: 1,
+            is_active: 0,
             is_system: 0,
             temperature: 0.1,
             context_window: 200000
@@ -90,7 +112,7 @@ function seedAiModels(db, logger) {
             api_url: 'https://api.anthropic.com/v1',
             api_key: null,
             role: AI_MODEL_ROLES.CHAT,
-            is_active: 1,
+            is_active: 0,
             is_system: 0,
             temperature: 0.1,
             context_window: 200000
@@ -101,7 +123,7 @@ function seedAiModels(db, logger) {
             api_url: 'https://api.anthropic.com/v1',
             api_key: null,
             role: AI_MODEL_ROLES.CHAT,
-            is_active: 1,
+            is_active: 0,
             is_system: 0,
             temperature: 0.1,
             context_window: 200000
@@ -116,29 +138,8 @@ function seedAiModels(db, logger) {
             is_system: 0,
             temperature: 0.1,
             context_window: 2000000
-        },
-        {
-            name: 'Gemini 3.1 Pro Preview',
-            model_identifier: 'gemini-3.1-pro-preview',
-            api_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-            api_key: null,
-            role: AI_MODEL_ROLES.CHAT,
-            is_active: 0,
-            is_system: 0,
-            temperature: 0.1,
-            context_window: 1000000
-        },
-        {
-            name: 'Gemini Embedding 2',
-            model_identifier: 'gemini-embedding-2',
-            api_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-            api_key: null,
-            role: AI_MODEL_ROLES.EMBEDDING,
-            is_active: 0,
-            is_system: 0,
-            temperature: 0.1,
-            context_window: 2048
         }
+
     ];
 
     const stmt = db.prepare(`
@@ -339,7 +340,7 @@ function seedSettings(db, logger) {
         { key: 'ai_verify_merges', value: 'true' },
         { key: 'model_routing_general', value: '1' },
         { key: 'model_routing_verification', value: '1' },
-        { key: 'model_routing_embedding', value: '3' },
+        { key: 'model_routing_embedding', value: '2' },
         { key: 'model_routing_metadata', value: '1' },
         { key: 'model_routing_reasoning', value: '1' },
         { key: 'allow_concurrent_ai', value: 'false' },
